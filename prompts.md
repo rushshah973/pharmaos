@@ -111,11 +111,12 @@ STOP and wait for my review. Do not commit until I approve.
 ```text
 Stage 1, phase D1b: profile the reference datasets. Follow implementationplan.md §5.4 exactly.
 
-1. Create scripts/seed/profile-reference.ts. It reads every file in data/reference/sources.json with csv-parse (columns: true, trim: true, skip_empty_lines: true, bom: true), coerces numbers (strip ₹, commas) and dates, and writes data/reference/profile.json with ONLY the aggregate fields in the §5.4 table.
-2. profile.json must contain no names, IDs or individual rows. A missing source marks its fields "missing": true.
-3. Add the npm script "profile": "tsx scripts/seed/profile-reference.ts" and run it.
-4. Show me profile.json and a short plain-English summary (e.g. "62% tablets, median antibiotic price ₹X").
-5. Prove the no-copy rule: search profile.json for 10 brand names and 5 manufacturer names taken from the reference files and confirm none appear.
+1. Create scripts/seed/catalog.ts with only CATEGORY_KEYWORDS (the composition → category keyword map) and PTR_FROM_LISTED_FACTOR = 0.80, exactly as §5.4 "Two derivations" says. P05 adds the remaining lists to this file.
+2. Create scripts/seed/profile-reference.ts. It reads every file in data/reference/sources.json with csv-parse (columns: true, trim: true, skip_empty_lines: true, bom: true), coerces numbers (strip ₹, commas) and dates, and writes data/reference/profile.json with ONLY the aggregate fields in the §5.4 table. Derive the category from composition with CATEGORY_KEYWORDS and convert listed price to a PTR estimate (× PTR_FROM_LISTED_FACTOR, excluding price ≤ 0 and discontinued rows) before computing price quantiles. Report the matched-category share and the `other` share. Use an async main() (top-level await is not allowed in .ts scripts here).
+3. profile.json must contain no names, IDs or individual rows. A missing source marks its fields "missing": true.
+4. Add the npm script "profile": "tsx scripts/seed/profile-reference.ts" and run it.
+5. Show me profile.json and a short plain-English summary (e.g. "62% tablets, 71% of rows matched a category, median antibiotic PTR estimate ₹X").
+6. Prove the no-copy rule: search profile.json for 10 brand names and 5 manufacturer names taken from the reference files and confirm none appear.
 
 STOP and wait for my review. After I approve, run `npm run check` and commit: "stage 1: reference sources and profile".
 ```
@@ -127,7 +128,7 @@ STOP and wait for my review. After I approve, run `npm run check` and commit: "s
 Stage 1, phase D2a: synthetic data generator. Follow implementationplan.md §5.5 exactly, including the no-copy rules.
 
 1. scripts/seed/prng.ts: mulberry32(seed), and helpers int(min,max), float, pick, weighted pick, shuffle, poisson(lambda) (Knuth). Never use Math.random().
-2. scripts/seed/catalog.ts: short lists of common generic names (single and combination), brand-name syllables, fictional manufacturer and supplier name parts, categories, forms.
+2. scripts/seed/catalog.ts: keep CATEGORY_KEYWORDS and PTR_FROM_LISTED_FACTOR from P04 unchanged, and add short lists of common generic names per category (single and combination), brand-name syllables, fictional manufacturer and supplier name parts, and forms.
 3. scripts/seed/generate-synthetic.ts: export generate(profile, asOf, seed) returning in-memory rows for every table in the §5.5 table (products 200, suppliers 8, offers 1–3 per SKU, 90 days of sales, 240 bins, batches, balances, 15 open + 1 received + 1 cancelled POs with lines). Use profile.json where present, otherwise the defaults in §5.5. Every row: data_source = 'synthetic_demo'. Every offer: price_type = 'supplier_quote'. Money as strings.
 4. Use faker.seed(42) and mulberry32(42). The as-of date for generation = DEMO_AS_OF_DATE, or today's UTC date if unset.
 5. Add a unit test tests/unit/generator.test.ts: the same seed gives deep-equal output; row counts match §5.5; every bin_code is unique; no sales date is after as-of.

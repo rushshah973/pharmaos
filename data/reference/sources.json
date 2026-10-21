@@ -1,0 +1,46 @@
+[
+  {
+    "id": "indian_pharmacy_catalogue",
+    "file": "indian_medicine_data.csv",
+    "name": "Indian Pharmacy Analytics — medicine catalogue",
+    "url": "https://github.com/JohnnyWilson16/indian-pharmacy-analytics",
+    "source_type": "public_reference",
+    "licence_note": "No licence declared in the repository (all rights reserved by default). Upstream source of the catalogue is not stated. Use for aggregate statistics only; never redistribute or copy rows, names or prices.",
+    "retrieved_at": "2026-10-21",
+    "used_for": "products: dosage-form mix and pack-size patterns (from pack_size_label), single vs combination composition share, number of manufacturers, listed-price ranges (listed retail price, not a supplier quote). Brand and manufacturer names are used only by the no-copy check.",
+    "columns": {
+      "id": "id",
+      "name": "name",
+      "price": "price(₹)",
+      "discontinued": "Is_discontinued",
+      "manufacturer": "manufacturer_name",
+      "type": "type",
+      "pack": "pack_size_label",
+      "composition": "short_composition1",
+      "composition2": "short_composition2"
+    }
+  },
+  {
+    "id": "pharma_sales_github",
+    "file": "pharma_sales.csv",
+    "name": "Pharma Sales Analytics — pharma_sales.csv",
+    "url": "https://github.com/laxmikantpendam/pharma-sales-analytics",
+    "source_type": "unverified_sample",
+    "licence_note": "No licence declared in the repository. Provenance not verified and the rows look synthetic (5 drugs, dosage forms that do not match the drugs, retail chains listed as distributors). Never present any row or name as real.",
+    "retrieved_at": "2026-10-21",
+    "used_for": "sales_history and batches: shape of daily quantity per drug, share of zero-sale days, expiry-days-left distribution, share of expired stock. Distributor names are used only by the no-copy check.",
+    "columns": {
+      "order_id": "Order_ID",
+      "date": "Date",
+      "drug": "Drug_Name",
+      "form": "Category",
+      "region": "Region",
+      "distributor": "Distributor",
+      "quantity": "Quantity",
+      "unit_price": "Unit_Price",
+      "expiry_days_left": "Expiry_Days_Left",
+      "total_sales": "Total_Sales",
+      "expired_flag": "Expired_Stock"
+    }
+  }
+]

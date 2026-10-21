@@ -296,7 +296,7 @@ Reads each file in `sources.json` with `csv-parse` (`columns: true, trim: true, 
 |---|---|---|
 | `dosageFormShare` (tablet, capsule, syrup, injection…) | catalogue | product forms |
 | `packSizePatterns` (e.g. "strip of 10 tablets": share) | catalogue | `pack_size` and display labels |
-| `categoryShare` and `priceQuantilesByCategory` (p10, p50, p90) | catalogue | product mix and `ptr` ranges |
+| `categoryShare` and `priceQuantilesByCategory` (p10, p50, p90 of the **PTR estimate**, see below) | catalogue | product mix and `ptr` ranges |
 | `manufacturersPerCategory` (count only) | catalogue | how many fictional manufacturers to create |
 | `compositionCountShare` (single vs combination) | catalogue | generic-name combos |
 | `dailyDemandQuantiles`, `zeroDayShare` | sales samples | demand profiles |
@@ -304,6 +304,11 @@ Reads each file in `sources.json` with `csv-parse` (`columns: true, trim: true, 
 | `expiryDaysLeftQuantiles`, `expiredShare` | pharma_sales.csv | batch expiry spread |
 
 It must not write any name, ID or individual row. If a file is missing, the profile records `"missing": true` for its fields and the generator uses the defaults in 5.5.
+
+**Two derivations (the catalogue has no category column, and its price is a listed retail price):**
+
+1. **Therapeutic category from composition.** `scripts/seed/catalog.ts` exports `CATEGORY_KEYWORDS`: a case-insensitive keyword map from generic names in `short_composition1` (then `short_composition2`) to the eight plan categories, e.g. amoxycillin/amoxicillin, azithromycin, cefixime, ciprofloxacin → `antibiotic`; paracetamol, diclofenac, ibuprofen, aceclofenac → `analgesic`; metformin, glimepiride, sitagliptin, insulin → `antidiabetic`; amlodipine, telmisartan, atorvastatin, metoprolol → `cardiac`; pantoprazole, rabeprazole, omeprazole, domperidone → `gastro`; montelukast, levocetirizine, ambroxol, salbutamol → `respiratory`; vitamin, folic acid, calcium, zinc → `vitamins`; clotrimazole, mupirocin, clobetasol, ketoconazole → `dermatology`. First match wins (composition1 before composition2, map order as written). No match → `other`. The profile reports the matched share and the `other` share; the generator draws only from the eight plan categories, using `categoryShare` renormalised without `other`.
+2. **PTR from listed price.** The catalogue `price(₹)` is a listed retail price (like MRP), not the price to retailer. Before computing quantiles, convert each row: `ptrEstimate = listedPrice × 0.80` (approximate 20% retailer margin; constant `PTR_FROM_LISTED_FACTOR = 0.80` in `catalog.ts`, labelled as an assumption in `profile.json`). Rows with price ≤ 0 or discontinued (`Is_discontinued = TRUE`) are excluded from price statistics. The listed price itself is never stored or used as a purchase price.
 
 ### 5.5 D2 — `generate-synthetic.ts`
 
@@ -313,7 +318,7 @@ Use `faker.seed(42)` and `prng.ts` (`mulberry32(42)`) everywhere; never `Math.ra
 
 | Table | Target size | How rows are generated |
 |---|---|---|
-| products | 200 SKUs | Forms, pack patterns and category mix from the profile (defaults: tablet, capsule, syrup, injection, ointment, drops; analgesic, antibiotic, antidiabetic, cardiac, gastro, respiratory, vitamins, dermatology); 10% `cool`, 5% `cold_chain`; criticality 10% life_saving, 30% chronic, 45% acute, 15% otc; `ptr` sampled from the category's price quantiles (default ₹15–₹900); `unit_margin` = 8–10% of ptr; `shelf_life_days` 540–1095; GST 5% or 12% |
+| products | 200 SKUs | Forms, pack patterns and category mix from the profile (defaults: tablet, capsule, syrup, injection, ointment, drops; analgesic, antibiotic, antidiabetic, cardiac, gastro, respiratory, vitamins, dermatology); 10% `cool`, 5% `cold_chain`; criticality 10% life_saving, 30% chronic, 45% acute, 15% otc; `ptr` sampled from the category's **PTR-estimate** quantiles (listed price × 0.80, section 5.4; default ₹15–₹900); category assigned from the profile's `categoryShare` (composition keyword map, `other` excluded); `unit_margin` = 8–10% of ptr; `shelf_life_days` 540–1095; GST 5% or 12% |
 | suppliers | 8 (`SUP-01`…`SUP-08`) | 6 approved, 1 `pending`, 1 `blocked`; lead time 1–10 days; reliability 60–98; payment terms 15, 21, 30, 45 or 60 days; one approved supplier with null reliability (tests "missing data scores 0") |
 | supplier_offers | 1–3 per SKU | `price_type = 'supplier_quote'`; `unit_price` = ptr × 0.78–0.90 (stockist buys below PTR); MOQ ∈ {1, 5, 10, 20}; pack_multiple ∈ {1, 5, 10}; available 50–2,000; lead time = supplier default ± 1 (min 1); freight ₹0–₹1.50 per pack; schemes on ~15% of offers (`10+1`, `20+3`, `5+1`); `quoted_at` = as-of − 1…20 days (≈10% older than 14 days = stale); `valid_until` = `quoted_at` + 7…30 days (≈5% already expired) |
 | sales_history | 90 days ending on as-of, every product | Demand level from `dailyDemandQuantiles`, weekly shape from `weekdayFactors`; profile per SKU: 40% stable (Poisson), 20% intermittent (zero-day share from the profile, default 60%), 15% growing (+1%/day), 15% declining (−1%/day), 10% spike (last 5 days × 3) |
