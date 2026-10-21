@@ -8,7 +8,7 @@
 ## 0. How to use this plan
 
 1. Work **one stage at a time** (section 15). Each stage lists its files, exact behaviour, and a "Verify" block. Do not start the next stage until its Verify block passes.
-2. When an AI coding assistant writes the code, give it this file plus the stage number. Tell it: *"Implement stage N exactly as written in implementationplan.md. Do not invent features, tables or endpoints."*
+2. When an AI coding assistant writes the code, use the ready-made prompts in `prompts.md` (P00–P28), or give it this file plus the stage number. Tell it: *"Implement stage N exactly as written in implementationplan.md. Do not invent features, tables or endpoints."*
 3. After every stage: `npm run check` (typecheck + lint + unit tests), then commit: `git add -A && git commit -m "stage N: <name>"`.
 4. Every number shown in the UI must come from the database or from `lib/business-logic`. No hard-coded dashboard values.
 5. If something in this plan turns out to be wrong while building, fix the plan in the same commit so the plan and code never disagree.
@@ -81,6 +81,7 @@ pharmaos/
 ├── AGENTS.md                          ✅ Next.js agent rules + project rules
 ├── problemstatement.md                ✅
 ├── architecture.md                   ✅ layers, flows, data model, decisions
+├── prompts.md                        ✅ build prompts P00–P28, run one by one
 ├── implementationplan.md              ✅ this file
 ├── .env.example                       ✅ copy to .env.local
 ├── package.json                       ✅ scripts: dev, build, lint, typecheck, test, check, db:migrate, db:reset, seed
@@ -907,6 +908,7 @@ Verify: `profile.json` contains no names or rows; `npm run db:reset && npm run s
 - [ ] Write fixtures F1–F9 as tests **first** (hour 3), then implement until green.
 - [ ] `lib/db/queries/*` and `lib/services/context.ts` (`loadPlanningContext`).
 - [ ] Temporary script `scripts/debug-plan.ts` that prints the top 20 lines for ₹2,00,000 to eyeball results.
+- [ ] Switch `inject-demo-cases.ts` and `validate.ts` from their temporary stage-1 helpers to the engine functions, then `npm run db:reset && npm run seed` again (validation must still pass).
 
 Verify: `npm run test` all green (F1–F9); debug plan shows urgent SKUs first, deferred lines exist, total ≤ budget.
 

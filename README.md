@@ -5,6 +5,7 @@ Budget-capped, explainable purchase plans for Indian pharma stockists, with huma
 - Problem: [problemstatement.md](problemstatement.md)
 - Architecture: [architecture.md](architecture.md)
 - Build plan: [implementationplan.md](implementationplan.md)
+- Build prompts, run one by one: [prompts.md](prompts.md)
 
 ## Quick start
 
