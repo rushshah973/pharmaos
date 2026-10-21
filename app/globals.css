@@ -78,35 +78,34 @@
   --radius-4xl: calc(var(--radius) * 3);
 }
 
-/* Light is the only theme; :root and .dark carry the same values. */
+/* Dark is the only theme; :root and .dark carry the same values. */
 :root,
 .dark {
   /* §10.1 colour tokens */
-  --bg: #f5f7fa;
-  --surface-1: #ffffff;
-  --surface-2: #f8fafc;
-  --surface-3: #eef2f6;
-  --border-strong: #d3dbe5;
-  --text-1: #0f172a;
-  --text-2: #475569;
-  --text-3: #64748b;
-  --brand: #0f766e; /* "--accent" in the plan; named brand so it does not clash with shadcn's --accent (hover) */
-  --brand-strong: #0f766e;
-  --brand-glow: rgba(13, 148, 136, 0.08);
-  /* Status colours are the darker steps so text on white stays ≥ 4.5:1. */
-  --stockout: #dc2626;
-  --stockout-bg: rgba(220, 38, 38, 0.08);
-  --expiry: #b45309;
-  --expiry-bg: rgba(217, 119, 6, 0.1);
-  --excess: #7c3aed;
-  --excess-bg: rgba(124, 58, 237, 0.08);
-  --healthy: #047857;
-  --healthy-bg: rgba(5, 150, 105, 0.1);
-  --neutral: #475569;
-  --neutral-bg: rgba(100, 116, 139, 0.1);
-  --proposed: rgba(8, 145, 178, 0.35);
-  /* One soft shadow for popovers, dialogs and the drawer; a hairline lift for cards. */
-  --shadow-pop: 0 12px 32px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.06);
+  --bg: #070b14;
+  --surface-1: #0d1424;
+  --surface-2: #121b2f;
+  --surface-3: #18233a;
+  --border-strong: #2a3954;
+  --text-1: #e6edf7;
+  --text-2: #94a3b8;
+  --text-3: #5b6b85;
+  --brand: #2dd4bf; /* "--accent" in the plan; named brand so it does not clash with shadcn's --accent (hover) */
+  --brand-strong: #14b8a6;
+  --brand-glow: rgba(45, 212, 191, 0.1);
+  --stockout: #f87171;
+  --stockout-bg: rgba(248, 113, 113, 0.12);
+  --expiry: #fbbf24;
+  --expiry-bg: rgba(251, 191, 36, 0.12);
+  --excess: #a78bfa;
+  --excess-bg: rgba(167, 139, 250, 0.12);
+  --healthy: #34d399;
+  --healthy-bg: rgba(52, 211, 153, 0.12);
+  --neutral: #94a3b8;
+  --neutral-bg: rgba(148, 163, 184, 0.1);
+  --proposed: rgba(34, 211, 238, 0.35);
+  /* One soft shadow for popovers, dialogs and the drawer. */
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
 
   /* shadcn variables mapped onto the tokens */
   --background: var(--bg);
@@ -116,7 +115,7 @@
   --popover: var(--surface-2);
   --popover-foreground: var(--text-1);
   --primary: var(--brand-strong);
-  --primary-foreground: #ffffff;
+  --primary-foreground: #03201c;
   --secondary: var(--surface-2);
   --secondary-foreground: var(--text-1);
   --muted: var(--surface-2);
@@ -124,7 +123,7 @@
   --accent: var(--surface-3);
   --accent-foreground: var(--text-1);
   --destructive: var(--stockout);
-  --border: #e3e8ef;
+  --border: #1c2740;
   --input: var(--border-strong);
   --ring: var(--brand);
   --chart-1: var(--brand);
@@ -136,13 +135,13 @@
   --sidebar: var(--surface-1);
   --sidebar-foreground: var(--text-2);
   --sidebar-primary: var(--brand);
-  --sidebar-primary-foreground: #ffffff;
+  --sidebar-primary-foreground: #03201c;
   --sidebar-accent: var(--surface-3);
   --sidebar-accent-foreground: var(--text-1);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--brand);
 
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 @layer base {
@@ -160,7 +159,7 @@
     line-height: 20px;
   }
   ::selection {
-    background: rgba(13, 148, 136, 0.18);
+    background: rgba(45, 212, 191, 0.25);
   }
   :focus-visible {
     outline: 2px solid var(--brand);
@@ -174,16 +173,16 @@
     background: var(--surface-1);
     border: 1px solid var(--border);
     border-radius: 12px;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   }
   /* The one signature gradient: Command Center hero and Plan Impact Card only. */
   .surface-hero {
     background:
-      radial-gradient(120% 140% at 0% 0%, rgba(13, 148, 136, 0.09) 0%, rgba(13, 148, 136, 0) 55%),
+      radial-gradient(120% 140% at 0% 0%, rgba(45, 212, 191, 0.1) 0%, rgba(45, 212, 191, 0) 55%),
       var(--surface-1);
     border: 1px solid var(--border);
     border-radius: 16px;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.04);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
   }
   .micro-label {
     font-size: 11px;
@@ -220,7 +219,7 @@
 
 @keyframes flash-change {
   0% {
-    background-color: rgba(13, 148, 136, 0.16);
+    background-color: rgba(45, 212, 191, 0.18);
   }
   100% {
     background-color: transparent;

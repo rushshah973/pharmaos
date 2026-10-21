@@ -162,7 +162,7 @@ pharmaos/
 │   ├── scenarios/apply.ts             applies scenario params to the planning context in memory
 │   └── warehouse/geometry.ts          bin layout helpers shared by 2D and 3D
 ├── app/
-│   ├── layout.tsx                     ✅ (edit in stage 3: light theme, fonts, Toaster)
+│   ├── layout.tsx                     ✅ (edit in stage 3: dark theme, fonts, Toaster)
 │   ├── globals.css                    ✅ (edit in stage 3: PharmaOS tokens)
 │   ├── (dashboard)/
 │   │   ├── layout.tsx                 sidebar + top bar
@@ -842,41 +842,40 @@ PharmaOS is a web dashboard: a left sidebar, a top bar and data-dense screens (t
 
 ### 10.1 Design system — premium quality bar
 
-**Goal:** the dashboard must look like a funded B2B product, not a hackathon template. Reference quality: Linear, Vercel dashboard, Stripe dashboard, Ramp. Calm, light, precise, data-dense; one accent colour; every pixel aligned. Judges decide in the first 10 seconds, so the first screen must already look finished.
+**Goal:** the dashboard must look like a funded B2B product, not a hackathon template. Reference quality: Linear, Vercel dashboard, Stripe dashboard, Ramp. Calm, dark, precise, data-dense; one accent colour; every pixel aligned. Judges decide in the first 10 seconds, so the first screen must already look finished.
 
 #### Principles
 1. **Restraint.** One accent (teal). Colour is used for meaning (status, selection, the primary action), never for decoration.
 2. **Hierarchy through type and space**, not boxes and borders. Big numbers, small quiet labels.
-3. **Depth through layered surfaces**, not heavy drop shadows: a soft grey page, white cards with hairline borders and a barely-there lift, light grey for raised and hover states.
+3. **Depth through layered surfaces**, not drop shadows: page → surface → raised surface, each one step lighter, with hairline borders.
 4. **Numbers are the product.** Tabular figures, right-aligned, Indian digit grouping (₹2,00,000), consistent decimals.
 5. **Motion explains change** (a total updating, a drawer opening), short and subtle. Nothing bounces.
 6. **Finished states everywhere:** loading skeletons shaped like the content, designed empty states, clear errors.
 
-#### Colour tokens (`app/globals.css`, mapped onto the shadcn variables; light is the only theme)
+#### Colour tokens (`app/globals.css`, mapped onto the shadcn variables; dark is the only theme)
 
 | Token | Value | Use |
 |---|---|---|
-| `--bg` | `#F5F7FA` | page background |
-| `--surface-1` | `#FFFFFF` | cards, sidebar, tables |
-| `--surface-2` | `#F8FAFC` | raised: popovers, drawer, table header, inputs |
-| `--surface-3` | `#EEF2F6` | hover and selected rows |
-| `--border` | `#E3E8EF` | hairline dividers (1 px) |
-| `--border-strong` | `#D3DBE5` | inputs, focused cards |
-| `--text-1` | `#0F172A` | primary text and numbers |
-| `--text-2` | `#475569` | secondary text, column headers |
-| `--text-3` | `#64748B` | tertiary: captions, axis labels, placeholders |
-| `--accent` (`--brand` in CSS) | `#0F766E` | brand, focus ring, selected, links |
-| `--accent-strong` | `#0F766E` | primary button background (white text) |
-| `--accent-glow` | `rgba(13, 148, 136, 0.08)` | hero card glow, selected row tint |
-| `--stockout` | `#DC2626` on `rgba(220,38,38,0.08)` | stockout risk |
-| `--expiry` | `#B45309` on `rgba(217,119,6,0.10)` | expiry risk |
-| `--excess` | `#7C3AED` on `rgba(124,58,237,0.08)` | excess stock |
-| `--healthy` | `#047857` on `rgba(5,150,105,0.10)` | healthy / approved |
-| `--neutral` | `#475569` on `rgba(100,116,139,0.10)` | deferred, info |
-| `--proposed` | `#0891B2` at 35% opacity | ghost / proposed stock (3D) |
-| `--shadow-pop` | `0 12px 32px rgba(15,23,42,0.12)` | popovers, dialogs, drawer |
+| `--bg` | `#070B14` | page background |
+| `--surface-1` | `#0D1424` | cards, sidebar, tables |
+| `--surface-2` | `#121B2F` | raised: popovers, drawer, table header, inputs |
+| `--surface-3` | `#18233A` | hover and selected rows |
+| `--border` | `#1C2740` | hairline dividers (1 px) |
+| `--border-strong` | `#2A3954` | inputs, focused cards |
+| `--text-1` | `#E6EDF7` | primary text and numbers |
+| `--text-2` | `#94A3B8` | secondary text, column headers |
+| `--text-3` | `#5B6B85` | tertiary: captions, axis labels, placeholders |
+| `--accent` | `#2DD4BF` | brand, focus ring, selected, links |
+| `--accent-strong` | `#14B8A6` | primary button background |
+| `--accent-glow` | `rgba(45, 212, 191, 0.10)` | hero card glow, selected row tint |
+| `--stockout` | `#F87171` on `rgba(248,113,113,0.12)` | stockout risk |
+| `--expiry` | `#FBBF24` on `rgba(251,191,36,0.12)` | expiry risk |
+| `--excess` | `#A78BFA` on `rgba(167,139,250,0.12)` | excess stock |
+| `--healthy` | `#34D399` on `rgba(52,211,153,0.12)` | healthy / approved |
+| `--neutral` | `#94A3B8` on `rgba(148,163,184,0.10)` | deferred, info |
+| `--proposed` | `#22D3EE` at 35% opacity | ghost / proposed stock (3D) |
 
-Contrast: all text ≥ WCAG AA on its surface (status colours use the darker steps so they read on white). Status is always **dot + label** (never colour alone).
+Contrast: all text ≥ WCAG AA on its surface. Status is always **dot + label** (never colour alone).
 
 #### Typography (Geist Sans for UI, Geist Mono for SKU codes, IDs and formulas — both already loaded)
 
@@ -903,14 +902,14 @@ Money: `formatINR()` → "₹2,00,000" (no paise on KPI tiles, paise in tables a
 - Page header: title + one-line description + primary action on the right.
 
 #### Components
-- **Buttons:** primary = `--accent-strong` bg, white text, 36 px; secondary = `--surface-2` + border; ghost for row actions. One primary button per view.
+- **Buttons:** primary = `--accent-strong` bg, dark text, 36 px; secondary = `--surface-2` + border; ghost for row actions. One primary button per view.
 - **KPI tile:** micro label, hero number (count-up on first load), a one-line context ("12 below reorder point"), and a sparkline **only when backed by real data** (e.g. 28-day sales). No fake trends.
 - **Status pill:** 6 px dot + label, tinted background from the status table, 22 px tall.
 - **Tables:** 44 px rows, sticky header on `--surface-2`, micro-label headers, hairline row dividers, hover `--surface-3`, selected row = accent-glow tint + 2 px accent left edge; numbers right-aligned and tabular; SKU in mono with brand/strength as a second line in `--text-2`; row actions appear on hover.
 - **Drawer (line detail):** 560 px wide, `--surface-2`, slides from the right (220 ms); sticky header with SKU, status pill and Edit controls; sections separated by space and micro labels, not boxes.
 - **Formula panel:** each formula on one line in mono, with the real values substituted and the result highlighted in `--text-1` ("ROP = 9.2 × 4 + 27.6 = **64.4**").
 - **Charts (Recharts):** no chart junk — faint horizontal gridlines only, axis text 11 px `--text-3`, teal line 2 px with an area fill fading from 20% to 0%, reference lines dashed for d7/d28/d̄, custom tooltip card on `--surface-2`.
-- **Toasts (sonner):** light, bottom-right, icon + one line + optional link.
+- **Toasts (sonner):** dark, bottom-right, icon + one line + optional link.
 - **Empty states:** 40 px icon in a soft circle, one line of explanation, one action. **Errors:** what happened + what to do + Retry. **Loading:** skeletons with the same layout as the content, subtle shimmer.
 
 #### Motion (CSS transitions + `tw-animate-css`, already installed; no new library)
@@ -927,7 +926,7 @@ Money: `formatINR()` → "₹2,00,000" (no paise on KPI tiles, paise in tables a
 2. Plan Impact Card with counting numbers and the supplier PO strip (Owner approval badge above ₹4,00,000).
 3. A ranked plan table that reads like a decision list (reason chips, Why? on hover).
 4. The line drawer: demand chart + supplier comparison + live formulas.
-5. The 3D warehouse: light scene, soft shadows, clearly coloured heatmap bins, smooth camera fly-to.
+5. The 3D warehouse: dark scene, soft lighting, emissive heatmap bins, smooth camera fly-to.
 
 #### Don'ts
 No emoji, no stock illustrations, no gradients on ordinary cards, no glassmorphism except the top bar, no more than one accent, no default unstyled shadcn look, no lorem ipsum, no placeholder numbers, no layout shift when data loads.
@@ -1105,7 +1104,7 @@ Verify: `npm run test` all green (F1–F9); debug plan shows urgent SKUs first a
 
 ### Stage 3 — Procurement UI and demand model (hours 9–19) · P0
 
-- [ ] Theme tokens in `globals.css` (light only), `Toaster` in root layout; real shell (Sidebar, TopBar, DataSourceBadge).
+- [ ] Theme tokens in `globals.css`, `<html className="dark">`, `Toaster` in root layout; real shell (Sidebar, TopBar, DataSourceBadge).
 - [ ] `lib/validation/api.ts`; routes: dashboard, analyze, get plan, PATCH line (with preview), recalculate.
 - [ ] `lib/services/plans.ts` (createPlan, getPlan, editLine, recalculatePlan), `dashboard.ts`, `explain.ts`.
 - [ ] Command Center screen; Create Purchase Plan dialog; Procurement list; Plan screen with Impact Card, supplier PO strip, table, "Not in this plan" section, line drawer (demand chart, stock breakdown, batches, supplier comparison, formulas), edit with preview.

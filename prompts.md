@@ -242,13 +242,13 @@ Stage 3, step 1: theme and dashboard shell. Follow implementationplan.md §10 (i
 Design: follow implementationplan.md §10.1 (premium design system) exactly, and do its Visual QA step (screenshots at 1440×900 and 1024×768) before committing.
 
 1. app/globals.css: map the §10.1 colour tokens onto the shadcn CSS variables (background, card, popover, border, input, ring, primary = teal, muted…) and add the surface, text and status tokens (stockout, expiry, excess, healthy, neutral, proposed). Keep the existing shadcn structure.
-2. app/layout.tsx: light theme (no dark class), keep the Geist fonts, title "PharmaOS", add <Toaster /> from components/ui/sonner.tsx and a TooltipProvider if the component requires one (check components/ui/tooltip.tsx).
+2. app/layout.tsx: <html className="dark">, keep the Geist fonts, title "PharmaOS", add <Toaster /> from components/ui/sonner.tsx and a TooltipProvider if the component requires one (check components/ui/tooltip.tsx).
 3. components/layout/: Logo (§10.1 Brand, + app/icon.svg), Sidebar (§10.1 Layout: 6 links with lucide icons, active state, collapsible icon rail, DataSourceBadge "Synthetic demo data" and DEMO_USER at the bottom), TopBar (sticky, blurred; page title, active scenario chip if not baseline, as-of date, default budget via formatINR), PageHeader (title, description, action slot), StatusPill.
 4. Replace the temporary app/(dashboard)/layout.tsx with the real shell. TopBar data is read server-side inside <Suspense>.
 5. Create placeholder pages (title + "Coming in stage N") for /procurement, /warehouse, /purchase-orders, /activity and /data so every sidebar link works.
 6. `npm run check` and `npm run build` must pass. Commit: "stage 3: theme and shell".
 ```
-**You check:** a clean light (white) web dashboard with a working sidebar on every route; at tablet width the sidebar collapses to icons.
+**You check:** a dark navy web dashboard with a working sidebar on every route; at tablet width the sidebar collapses to icons.
 
 ### P13 — Plan services and API
 

@@ -660,7 +660,7 @@ Fallback: with no API key, an API error, a timeout, a non-`STOP` finish, or an i
 | `/activity` | `activity/page.tsx` | Server, paginated |
 | `/data` | `data/page.tsx` | Server summary + client scenario cards and ROI model |
 
-`app/(dashboard)/layout.tsx` holds the sidebar and top bar. The root `app/layout.tsx` sets the fonts, `<TooltipProvider>` and `<Toaster />`; the theme is light only.
+`app/(dashboard)/layout.tsx` holds the sidebar and top bar. The root `app/layout.tsx` sets `className="dark"`, fonts, `<TooltipProvider>` and `<Toaster />`; dark is the only theme.
 
 ### 10.2 Server/client split and data flow
 
@@ -684,7 +684,7 @@ flowchart TB
 
 ### 10.4 Design system
 
-Light surfaces (soft grey page, white cards), deep-teal primary, and fixed status colours (stockout red, expiry amber, excess violet, healthy slate, proposed cyan ghost). Base UI–based shadcn components (`render` prop composition). Tabular numbers, INR formatting via `formatINR()`. Tokens are listed in plan §10.1.
+Dark navy surfaces, teal primary, and fixed status colours (stockout red, expiry amber, excess violet, healthy slate, proposed cyan ghost). Base UI–based shadcn components (`render` prop composition). Tabular numbers, INR formatting via `formatINR()`. Tokens are listed in plan §10.1.
 
 ---
 
