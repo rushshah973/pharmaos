@@ -706,7 +706,7 @@ flowchart LR
     end
     subgraph cloud["Optional cloud"]
         vercel["Vercel (Node runtime)"]
-        supa[("Supabase Postgres<br/>ap-south-1, transaction pooler :6543")]
+        supa[("Supabase Postgres<br/>session pooler :5432")]
     end
     dev --> supa
     dev -.-> lpg
@@ -719,7 +719,7 @@ flowchart LR
 |---|---|---|
 | Development | Supabase or local Postgres | `npm run dev`; `db:reset` + `seed` any time |
 | Demo | Same, freshly seeded before judging | Production build; backup video |
-| Vercel (optional) | Supabase pooler | Env vars in the Vercel project; `prepare: false` already set for the pooler |
+| Vercel (optional) | Supabase session pooler (:5432) | Env vars in the Vercel project; keep the pool small (`max: 5`): session mode holds one server connection per client connection |
 
 ---
 

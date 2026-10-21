@@ -52,7 +52,7 @@ Rules for this whole session:
 ### Before P01, do this yourself (15 minutes, plan §3.2)
 
 1. Create a Supabase project (region Mumbai).
-2. Copy the **Transaction pooler** connection string (port 6543).
+2. Copy the **Session pooler** connection string (port **5432**). Not the transaction pooler (6543): parallel queries hang on it.
 3. Run `cp .env.example .env.local` and paste the string into `DATABASE_URL`. Add `GEMINI_API_KEY` if you have one (from aistudio.google.com/apikey).
 
 ### P01 — Database

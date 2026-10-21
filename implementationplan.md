@@ -192,7 +192,7 @@ pharmaos/
 ### 3.2 You do once (15 minutes, start of stage 1)
 
 1. Create a Supabase project (free tier). Region: Mumbai (`ap-south-1`) for latency.
-2. Project Settings → Database → Connection string → **Transaction pooler** (port 6543). Copy it.
+2. Connect (top of the project) → **Session pooler** (port **5432**). Copy it. Do **not** use the transaction pooler (port 6543): several queries sent in parallel (as `loadPlanningContext` does) hang on it.
 3. `cp .env.example .env.local` and set `DATABASE_URL` (replace `[YOUR-PASSWORD]`).
 4. Set `GEMINI_API_KEY` if you have one (from Google AI Studio, aistudio.google.com/apikey; optional until stage 6).
 5. `npm run db:migrate` → expect `Applied 001_init.sql` and `Migrations up to date.`
@@ -435,7 +435,8 @@ A SKU becomes a **candidate line** only if d̄ > 0 and `stockPosition < ROP(L_fa
 
 ```
 qRaw = max(0, target(L_offer) − stockPosition)
-if the SKU has at-risk batches: qRaw = max(0, ROP(L_offer) − stockPosition)   reason EXPIRY_REDUCED_QTY
+if the SKU has at-risk batches AND status ≠ STOCKOUT_RISK:
+     qRaw = max(0, ROP(L_offer) − stockPosition)                     reason EXPIRY_REDUCED_QTY
 q    = ceil(qRaw / pack_multiple) × pack_multiple
 q    = max(q, moq)                                                       only when qRaw > 0
 ```
@@ -451,6 +452,8 @@ else if q ≥ P (free goods arrive anyway):                   keep q, free = flo
 else:                                                        keep q, free = 0, reason SCHEME_SKIPPED_EXPIRY
 ```
 `expiryAvoidedValue` for `SCHEME_SKIPPED_EXPIRY` = `(qScheme − q) × effective unit cost` (the stock not bought).
+
+**Why stockout lines are never reduced (decided at P11 review):** a medicine about to run out must not be under-ordered, and under FEFO the new, long-dated stock sells after the old at-risk batch, so ordering less would not save that batch anyway. For the same reason a reduced quantity is not counted as "expiry avoided" on the Impact Card.
 
 ### 6.6 Supplier eligibility, effective cost and score (`supplier-scoring.ts`)
 
@@ -526,7 +529,7 @@ Guarantee (tested): Σ in-basket lineTotal ≤ budget. Documented as a heuristic
 | `stockoutsCovered` | in-basket lines whose SKU status is `STOCKOUT_RISK` |
 | `marginProtected` | Σ lossPrevented of in-basket lines |
 | `expiryExposure` | Σ atRiskValue of all batches (current stock) |
-| `expiryAvoided` | Σ expiryAvoidedValue of lines with `SCHEME_SKIPPED_EXPIRY` or `EXPIRY_REDUCED_QTY` (for the latter: `(qFull − qReduced) × effectiveCost`) |
+| `expiryAvoided` | Σ expiryAvoidedValue of in-basket lines with `SCHEME_SKIPPED_EXPIRY` (free goods not taken because they would have expired). Reduced quantities (`EXPIRY_REDUCED_QTY`) are **not** counted |
 | `cashCommitted` | planTotal |
 | `budgetRemaining` | budget − planTotal |
 | `deferredCount`, `deferredRisk` | count and Σ lossPrevented of deferred lines |
@@ -1058,7 +1061,7 @@ P2 stretch (only if ahead at hour 22): ghost cartons polish, simulated put-away 
 | `CHEAPER_OFFER_TOO_SLOW` | reason | A cheaper supplier was skipped because it delivers after the projected stockout |
 | `SCHEME_TAKEN` | reason | Scheme taken; the extra stock sells before expiry |
 | `SCHEME_SKIPPED_EXPIRY` | reason | Scheme skipped; the extra stock would not sell before expiry |
-| `EXPIRY_REDUCED_QTY` | reason | Quantity reduced to the reorder point because existing batches are at expiry risk |
+| `EXPIRY_REDUCED_QTY` | reason | Quantity reduced to the reorder point because existing batches are at expiry risk (never on stockout-risk lines) |
 | `BUDGET_DEFERRED` | reason | Deferred: not enough budget left for this line |
 | `ALT_OFFER_FOR_BUDGET` | reason | Switched to the next-best supplier to fit the budget |
 | `PARTIAL_QTY_BUDGET` | reason | Quantity reduced to fit the remaining budget |

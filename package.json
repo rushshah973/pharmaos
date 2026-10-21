@@ -14,7 +14,8 @@
     "db:reset": "tsx scripts/db/migrate.ts --reset",
     "seed": "tsx scripts/seed/index.ts",
     "check": "npm run typecheck && npm run lint && npm run test",
-    "profile": "tsx scripts/seed/profile-reference.ts"
+    "profile": "tsx scripts/seed/profile-reference.ts",
+    "debug:plan": "tsx scripts/debug-plan.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

@@ -19,12 +19,8 @@ export function computeImpact(args: {
   const deferred = args.lines.filter((l) => !l.inBasket);
 
   const marginProtected = sumMoney(inBasket.map((l) => l.lossPrevented));
-  // Expiry avoided by this plan's purchase decisions (scheme skipped or quantity reduced).
-  const expiryAvoided = sumMoney(
-    inBasket
-      .filter((l) => l.reasons.includes("SCHEME_SKIPPED_EXPIRY") || l.reasons.includes("EXPIRY_REDUCED_QTY"))
-      .map((l) => l.expiryAvoidedValue),
-  );
+  // Expiry avoided by this plan's purchases: free goods not taken because they would have expired.
+  const expiryAvoided = sumMoney(inBasket.filter((l) => l.reasons.includes("SCHEME_SKIPPED_EXPIRY")).map((l) => l.expiryAvoidedValue));
   const cashCommitted = sumMoney(inBasket.map((l) => l.totals?.lineTotal ?? "0"));
 
   return {

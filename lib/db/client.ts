@@ -16,7 +16,8 @@ export function getSql(): Sql {
 
   const sql = postgres(url, {
     max: 5,
-    // Supabase's transaction pooler (port 6543) does not support prepared statements.
+    // Use Supabase's session pooler (port 5432); parallel queries hang on the transaction pooler (6543).
+    // Prepared statements are off so the same client also works through any pooler.
     prepare: false,
   });
 

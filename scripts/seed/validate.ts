@@ -1,20 +1,19 @@
 // Phase D2: integrity, demo-case and no-copy checks (implementationplan.md §5.7).
+// Every case and the default plan are checked with the real decision engine.
 // Returns a list of failures; index.ts exits 1 if it is not empty.
-//
-// TODO(stage 2 / P11): the "default plan" check uses estimateLine() from
-// inject-demo-cases.ts; switch it to buildPlan() from lib/business-logic.
+import { sumMoney } from "@/lib/money";
+import { buildPlan } from "@/lib/business-logic/engine";
 import type { SyntheticDataset } from "./generate-synthetic";
+import { datasetToContext } from "./to-engine";
 import {
   addDays,
   binFill,
   buildIndex,
   daysBetween,
-  effectiveCostApprox,
   eligibleOffers,
   estimateLine,
   rop,
   skuState,
-  target,
   type DemoCases,
 } from "./inject-demo-cases";
 
@@ -127,29 +126,14 @@ export function validate(
     }
   }
   for (const sku of cases.cheapestTooSlow) {
-    const s = state(sku);
-    const cheapest = [...s.offers].sort((a, b) => effectiveCostApprox(a) - effectiveCostApprox(b))[0];
-    if (!cheapest || s.cover === null || cheapest.lead_time_days <= s.cover || cheapest.lead_time_days === s.lFastest) {
-      fail(`cheapestTooSlow ${sku}: cheapest offer is not slower than cover and the fastest offer`);
-    }
-    const need = Math.ceil(target(s.dbar, s.lFastest) - s.stockPosition);
-    const fasterCanSupply = s.offers.some((o) => o !== cheapest && o.lead_time_days < (cheapest?.lead_time_days ?? 0) && o.available_qty >= need);
-    if (!fasterCanSupply) fail(`cheapestTooSlow ${sku}: no faster offer can supply ${need} packs`);
+    // The engine must skip the cheapest offer because it delivers too late, and still find a faster one.
+    const a = state(sku).analysis;
+    if (!a.reasons.includes("CHEAPER_OFFER_TOO_SLOW")) fail(`cheapestTooSlow ${sku}: engine reasons are ${a.reasons.join(", ") || "none"}`);
+    if (!a.candidate || !a.chosen) fail(`cheapestTooSlow ${sku}: no offer chosen`);
   }
   for (const sku of cases.schemeSkip) {
-    const s = state(sku);
-    const product = idx.productBySku.get(sku)!;
-    const est = estimateLine(data, idx, pid(sku), asOf);
-    const offer = est.candidate ? est.offer : undefined;
-    if (!offer?.scheme_paid_qty || !offer.scheme_free_qty) fail(`schemeSkip ${sku}: chosen offer has no scheme`);
-    else {
-      const p = offer.scheme_paid_qty;
-      const qScheme = Math.max(est.candidate ? est.qty : 0, Math.ceil(p / offer.pack_multiple) * offer.pack_multiple);
-      const received = qScheme + Math.floor(qScheme / p) * offer.scheme_free_qty;
-      const daysToSell = (s.stockPosition + received) / s.dbar;
-      const qBelowP = est.candidate && est.qty < p;
-      if (!(daysToSell >= product.shelf_life_days - 90 && qBelowP)) fail(`schemeSkip ${sku}: skip rule would not trigger (${daysToSell.toFixed(0)} days)`);
-    }
+    const a = state(sku).analysis;
+    if (!a.reasons.includes("SCHEME_SKIPPED_EXPIRY")) fail(`schemeSkip ${sku}: engine reasons are ${a.reasons.join(", ") || "none"}`);
   }
   for (const sku of cases.staleQuote) {
     const all = idx.offersByProduct.get(pid(sku)) ?? [];
@@ -168,26 +152,25 @@ export function validate(
   const unmappedRows = data.inventoryBalances.filter((b) => b.location_id === null);
   if (unmappedRows.length !== 3) fail(`unmapped: ${unmappedRows.length} balances, need 3`);
   for (const sku of cases.spike) {
-    const s = state(sku);
-    if (!(s.d28 > 0 && s.d7 / s.d28 >= 2)) fail(`spike ${sku}: d7/d28 = ${(s.d7 / s.d28).toFixed(2)}`);
+    const a = state(sku).analysis;
+    if (!a.warnings.includes("DEMAND_SPIKE")) fail(`spike ${sku}: engine did not flag DEMAND_SPIKE (d7/d28 = ${(a.demand.d7 / a.demand.d28).toFixed(2)})`);
   }
 
-  // ---- Default plan binds the budget (estimate until the engine exists) ----
-  const lines = data.products
-    .map((p) => estimateLine(data, idx, p.id, asOf))
-    .filter((e): e is Extract<ReturnType<typeof estimateLine>, { candidate: true }> => e.candidate);
-  const total = lines.reduce((s, l) => s + l.cost, 0);
-  let fit = 0;
-  let spent = 0;
-  for (const l of [...lines].sort((a, b) => a.cost - b.cost)) {
-    if (spent + l.cost > 100_000) break;
-    spent += l.cost;
-    fit++;
-  }
-  notes.push(`default plan estimate: ${lines.length} candidate lines, ≈ ₹${Math.round(total).toLocaleString("en-IN")} total; ${fit} lines fit in ₹1,00,000`);
-  if (lines.length < 15) fail(`only ${lines.length} candidate lines (need ≥ 15)`);
-  if (total <= 200_000) fail(`candidate lines total ≈ ₹${Math.round(total)} — does not exceed ₹2,00,000, so the budget would not bind`);
-  if (fit < 5) fail(`only ${fit} lines fit in ₹1,00,000 (need ≥ 5)`);
+  // ---- Default plan binds the budget (the real engine) ----
+  const ctx = datasetToContext(data);
+  const plan = buildPlan(ctx, "200000.00");
+  const tight = buildPlan(ctx, "100000.00");
+  const candidates = plan.lines.filter((l) => l.totals);
+  const wanted = sumMoney(candidates.map((l) => l.totals!.lineTotal));
+  const inTight = tight.lines.filter((l) => l.inBasket).length;
+  notes.push(
+    `default plan: ${candidates.length} candidate lines worth ₹${Math.round(wanted.toNumber()).toLocaleString("en-IN")}; ` +
+      `₹2,00,000 buys ${plan.lines.filter((l) => l.inBasket).length} (total ₹${plan.planTotal}); ₹1,00,000 buys ${inTight} (total ₹${tight.planTotal})`,
+  );
+  if (candidates.length < 15) fail(`only ${candidates.length} candidate lines (need ≥ 15)`);
+  if (!wanted.greaterThan(200_000)) fail(`candidate lines total ₹${wanted.toFixed(2)}: does not exceed ₹2,00,000, so the budget would not bind`);
+  if (inTight < 5) fail(`only ${inTight} lines fit in ₹1,00,000 (need ≥ 5)`);
+  if (sumMoney([plan.planTotal]).greaterThan(200_000) || sumMoney([tight.planTotal]).greaterThan(100_000)) fail("a plan exceeds its budget");
 
   // ---- No-copy checks ----
   const tables = {

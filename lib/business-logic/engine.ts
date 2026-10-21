@@ -1,6 +1,6 @@
 // §6.12 — analyseSku() and buildPlan(): compose the modules above. Pure and deterministic:
 // no I/O, no clock, no randomness; the same context always gives the same result.
-import { dec, roundMoney } from "@/lib/money";
+import { dec } from "@/lib/money";
 import { buildBasket } from "./basket";
 import { ENGINE_CONFIG, type EngineConfig } from "./config";
 import { computeDemand } from "./demand";
@@ -34,7 +34,6 @@ type Working = {
   offer: OfferInput;
   evaluation: OfferEvaluation;
   baseCost: Money | null; // effective cost without a scheme
-  fullQty: number | null; // quantity if expiry did not reduce it
 };
 
 export function analyseSku(sku: SkuContext, config: EngineConfig = ENGINE_CONFIG): SkuAnalysis {
@@ -66,6 +65,10 @@ export function analyseSku(sku: SkuContext, config: EngineConfig = ENGINE_CONFIG
   const rop = reorderPoint(dbar, leadFastest, config);
   const target = targetStock(dbar, leadFastest, config);
   const needsStock = isCandidate({ avgDailyDemand: dbar, stockPosition: position, leadFastest }, config);
+  // At-risk batches cap the order at ROP (EXPIRY_REDUCED_QTY) — except on stockout-risk lines:
+  // a medicine about to run out is never under-ordered, and under FEFO the new, long-dated stock
+  // sells after the old batch, so ordering less would not save that batch anyway.
+  const reduceForExpiry = hasAtRisk && status !== "STOCKOUT_RISK";
   const reasons: ReasonCode[] = [];
 
   // 3. Evaluate every offer.
@@ -83,19 +86,13 @@ export function analyseSku(sku: SkuContext, config: EngineConfig = ENGINE_CONFIG
       factors: null,
       score: null,
     };
-    const w: Working = { offer, evaluation, baseCost: null, fullQty: null };
+    const w: Working = { offer, evaluation, baseCost: null };
     if (!needsStock || evaluation.exclusions.length > 0 || offer.unitPrice === null) return w;
 
     const order = orderQuantity(
-      { avgDailyDemand: dbar, stockPosition: position, leadTimeDays: offer.leadTimeDays, moq: offer.moq, packMultiple: offer.packMultiple, hasAtRiskBatches: hasAtRisk },
+      { avgDailyDemand: dbar, stockPosition: position, leadTimeDays: offer.leadTimeDays, moq: offer.moq, packMultiple: offer.packMultiple, hasAtRiskBatches: reduceForExpiry },
       config,
     );
-    w.fullQty = hasAtRisk
-      ? orderQuantity(
-          { avgDailyDemand: dbar, stockPosition: position, leadTimeDays: offer.leadTimeDays, moq: offer.moq, packMultiple: offer.packMultiple, hasAtRiskBatches: false },
-          config,
-        ).q
-      : order.q;
     evaluation.order = order;
     if (order.q <= 0) return w;
 
@@ -177,12 +174,8 @@ export function analyseSku(sku: SkuContext, config: EngineConfig = ENGINE_CONFIG
       : "0.00";
   const priority = chosen?.totals ? priorityScore(loss, chosen.totals.lineTotal) : 0;
 
-  let expiryAvoidedValue = dec(0);
-  if (chosen?.scheme?.reason === "SCHEME_SKIPPED_EXPIRY") expiryAvoidedValue = expiryAvoidedValue.plus(chosen.scheme.expiryAvoidedValue);
-  if (chosenWork && chosen?.order?.reasons.includes("EXPIRY_REDUCED_QTY") && chosenWork.fullQty !== null && chosenWork.baseCost) {
-    const notBought = chosenWork.fullQty - chosen.order.q;
-    if (notBought > 0) expiryAvoidedValue = expiryAvoidedValue.plus(roundMoney(dec(notBought).times(chosenWork.baseCost)));
-  }
+  // Expiry avoided counts only a skipped scheme: the extra packs not bought would have expired unsold.
+  const expiryAvoidedValue = dec(chosen?.scheme?.reason === "SCHEME_SKIPPED_EXPIRY" ? chosen.scheme.expiryAvoidedValue : 0);
 
   const anomalous = priceAnomalies(sku.offers.filter((o) => o.unitPrice !== null).map((o) => ({ offerId: o.id, unitPrice: o.unitPrice! })));
   const warnings = softWarnings({
@@ -226,7 +219,6 @@ export function analyseSku(sku: SkuContext, config: EngineConfig = ENGINE_CONFIG
       reliabilityScore: supplierOf(w.offer)?.reliabilityScore ?? null,
       paymentTermsDays: supplierOf(w.offer)?.paymentTermsDays ?? null,
       priceAnomaly: anomalous.includes(w.offer.id),
-      fullQty: w.fullQty,
     })),
     urgency,
     chosenOfferId: chosen?.offerId ?? null,

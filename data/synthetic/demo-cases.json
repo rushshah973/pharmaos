@@ -30,14 +30,14 @@
     "PHX-0022",
     "PHX-0044",
     "PHX-0071",
-    "PHX-0189",
     "PHX-0191",
+    "PHX-0220",
     "PHX-0480"
   ],
   "priceAnomaly": [
     "PHX-0099",
     "PHX-0127",
-    "PHX-0444"
+    "PHX-0446"
   ],
   "capacity": [
     "PHX-0089",
@@ -54,7 +54,7 @@
   ],
   "staleQuote": [
     "PHX-0062",
-    "PHX-0388"
+    "PHX-0317"
   ],
   "unmapped": [
     "PHX-0076",
@@ -62,9 +62,9 @@
     "PHX-0350"
   ],
   "spike": [
-    "PHX-0243",
     "PHX-0319",
-    "PHX-0354"
+    "PHX-0321",
+    "PHX-0334"
   ],
   "noEligibleOffer": [
     "PHX-0139"

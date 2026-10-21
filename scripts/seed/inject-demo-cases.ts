@@ -1,21 +1,16 @@
 // Phase D2: force the guaranteed demo cases (implementationplan.md §5.6) into the
 // generated rows, in place, and return which SKUs belong to which case.
-//
-// TODO(stage 2 / P11): the helpers below re-implement a simplified version of the
-// §6 formulas because lib/business-logic does not exist yet. Switch skuState(),
-// eligibleOffers() and estimateLine() to the engine functions after stage 2.
+// Every condition is checked with the real decision engine (lib/business-logic).
 import { dec, roundUnit } from "@/lib/money";
+import { addDays as engineAddDays, daysBetween as engineDaysBetween } from "@/lib/business-logic/dates";
+import { computeDemand } from "@/lib/business-logic/demand";
+import { analyseSku } from "@/lib/business-logic/engine";
+import { reorderPoint, targetStock } from "@/lib/business-logic/inventory";
+import { ENGINE_CONFIG } from "@/lib/business-logic/config";
+import { effectiveUnitCost, offerExclusions } from "@/lib/business-logic/supplier-scoring";
 import type { BalanceRow, BatchRow, LocationRow, OfferRow, SyntheticDataset } from "./generate-synthetic";
 import { createRng, type Rng } from "./prng";
-
-// §6 constants (mirror lib/business-logic/config.ts)
-const RISK_WINDOW = 90;
-const STALE_DAYS = 14;
-const HORIZON = 14;
-const REVIEW_DAYS = 7;
-const SAFETY_DAYS = 3;
-const MIN_SAFETY = 2;
-const EXCESS_FACTOR = 1.5;
+import { buildEngineIndex, skuContext, toOffer, type EngineIndex } from "./to-engine";
 
 export type DemoCases = {
   stockout: string[];
@@ -32,18 +27,13 @@ export type DemoCases = {
 };
 
 // ---------------------------------------------------------------------------
-// Simplified §6 helpers (pure functions of the dataset)
+// Engine-backed helpers over the seed dataset
 // ---------------------------------------------------------------------------
 
-export function daysBetween(fromIso: string, toIso: string): number {
-  const [y1, m1, d1] = fromIso.split("-").map(Number);
-  const [y2, m2, d2] = toIso.split("-").map(Number);
-  return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86_400_000);
-}
-export function addDays(dateIso: string, days: number): string {
-  const [y, m, d] = dateIso.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
-}
+export const daysBetween = engineDaysBetween;
+export const addDays = engineAddDays;
+export const rop = (dbar: number, lead: number) => reorderPoint(dbar, lead);
+export const target = (dbar: number, lead: number) => targetStock(dbar, lead);
 
 export type Index = ReturnType<typeof buildIndex>;
 
@@ -53,121 +43,82 @@ export function buildIndex(data: SyntheticDataset) {
     for (const r of rows) m.set(key(r), [...(m.get(key(r)) ?? []), r]);
     return m;
   };
-  const salesByProduct = new Map<string, Map<string, number>>();
-  for (const s of data.salesHistory) {
-    const m = salesByProduct.get(s.product_id) ?? new Map<string, number>();
-    m.set(s.sale_date, s.units_sold);
-    salesByProduct.set(s.product_id, m);
-  }
   return {
+    data,
+    engine: buildEngineIndex(data) as EngineIndex,
     productById: new Map(data.products.map((p) => [p.id, p])),
     productBySku: new Map(data.products.map((p) => [p.sku, p])),
     supplierById: new Map(data.suppliers.map((s) => [s.id, s])),
     binById: new Map(data.inventoryLocations.map((b) => [b.id, b])),
-    salesByProduct,
     salesRowsByProduct: group(data.salesHistory, (s) => s.product_id),
     batchesByProduct: group(data.batches, (b) => b.product_id),
     balancesByBatch: group(data.inventoryBalances, (b) => b.batch_id),
     offersByProduct: group(data.supplierOffers, (o) => o.product_id),
-    linesByPo: group(data.purchaseOrderLines, (l) => l.po_id),
   };
 }
 
 export function demand(idx: Index, productId: string, asOf: string) {
-  const sales = idx.salesByProduct.get(productId) ?? new Map<string, number>();
-  let s7 = 0;
-  let s28 = 0;
-  for (let i = 0; i < 28; i++) {
-    const units = sales.get(addDays(asOf, -i)) ?? 0;
-    s28 += units;
-    if (i < 7) s7 += units;
-  }
-  const d7 = s7 / 7;
-  const d28 = s28 / 28;
-  return { d7, d28, dbar: 0.6 * d7 + 0.4 * d28 };
+  const rows = idx.salesRowsByProduct.get(productId) ?? [];
+  const first = rows.reduce<string | null>((m, s) => (m === null || s.sale_date < m ? s.sale_date : m), null);
+  const d = computeDemand(rows.map((s) => ({ date: s.sale_date, units: s.units_sold })), asOf, first);
+  return { d7: d.d7, d28: d.d28, dbar: d.avgDailyDemand };
 }
 
 export function isOfferEligible(idx: Index, o: OfferRow, asOf: string): boolean {
-  const supplier = idx.supplierById.get(o.supplier_id);
-  return (
-    supplier?.approved_status === "approved" &&
-    o.is_active &&
-    Number(o.unit_price) > 0 &&
-    o.moq > 0 &&
-    o.pack_multiple > 0 &&
-    o.valid_until.slice(0, 10) >= asOf &&
-    daysBetween(o.quoted_at.slice(0, 10), asOf) <= STALE_DAYS
-  );
+  const supplier = idx.engine.suppliers[o.supplier_id];
+  return offerExclusions({ offer: toOffer(o), supplier, productId: o.product_id, asOf, qty: 0 }).length === 0;
 }
 
 export function eligibleOffers(idx: Index, productId: string, asOf: string): OfferRow[] {
   return (idx.offersByProduct.get(productId) ?? []).filter((o) => isOfferEligible(idx, o, asOf));
 }
 
-const safety = (dbar: number) => Math.max(MIN_SAFETY, dbar * SAFETY_DAYS);
-export const rop = (dbar: number, lead: number) => dbar * lead + safety(dbar);
-export const target = (dbar: number, lead: number) => dbar * (lead + REVIEW_DAYS) + safety(dbar);
+/** The engine's analysis of one SKU in the current (possibly mutated) dataset. */
+export function analyse(data: SyntheticDataset, idx: Index, productId: string) {
+  return analyseSku(skuContext(data, idx.engine, productId));
+}
 
 export function skuState(data: SyntheticDataset, idx: Index, productId: string, asOf: string) {
-  const { d7, d28, dbar } = demand(idx, productId, asOf);
-  const batches = (idx.batchesByProduct.get(productId) ?? [])
-    .filter((b) => b.quality_status === "released" && b.expiry_date > asOf)
-    .sort((a, b) => a.expiry_date.localeCompare(b.expiry_date) || a.batch_number.localeCompare(b.batch_number));
-  let consumed = 0;
-  let eligibleAvailable = 0;
-  const atRisk: { batch: BatchRow; atRiskQty: number }[] = [];
-  for (const batch of batches) {
-    const available = (idx.balancesByBatch.get(batch.id) ?? []).reduce((s, b) => s + b.on_hand_qty - b.reserved_qty, 0);
-    const sellable = Math.max(0, daysBetween(asOf, addDays(batch.expiry_date, -RISK_WINDOW)));
-    const capacity = Math.max(0, dbar * sellable - consumed);
-    const sold = Math.min(available, capacity);
-    if (available - sold > 0) atRisk.push({ batch, atRiskQty: available - sold });
-    consumed += sold;
-    eligibleAvailable += sold;
-  }
-  let incoming = 0;
-  for (const po of data.purchaseOrders) {
-    if (po.status !== "open" || po.expected_delivery_date > addDays(asOf, HORIZON)) continue;
-    for (const l of idx.linesByPo.get(po.id) ?? []) if (l.product_id === productId) incoming += l.quantity_packs + l.free_qty;
-  }
-  const stockPosition = eligibleAvailable + incoming;
-  const offers = eligibleOffers(idx, productId, asOf);
-  const product = idx.productById.get(productId)!;
-  const fallbackLead = idx.supplierById.get((idx.offersByProduct.get(productId) ?? [])[0]?.supplier_id ?? "")?.default_lead_time_days ?? 7;
-  const lFastest = offers.length ? Math.min(...offers.map((o) => o.lead_time_days)) : fallbackLead;
-  const cover = dbar > 0 ? stockPosition / dbar : null;
-  const status =
-    dbar === 0
-      ? "NO_DEMAND"
-      : cover! < lFastest
-        ? "STOCKOUT_RISK"
-        : stockPosition < rop(dbar, lFastest)
-          ? "BELOW_ROP"
-          : stockPosition > EXCESS_FACTOR * target(dbar, lFastest)
-            ? "EXCESS"
-            : "HEALTHY";
-  return { product, d7, d28, dbar, eligibleAvailable, incoming, stockPosition, lFastest, cover, status, atRisk, offers };
+  const a = analyse(data, idx, productId);
+  const batchById = new Map((idx.batchesByProduct.get(productId) ?? []).map((b) => [b.id, b]));
+  return {
+    product: idx.productById.get(productId)!,
+    analysis: a,
+    d7: a.demand.d7,
+    d28: a.demand.d28,
+    dbar: a.demand.avgDailyDemand,
+    eligibleAvailable: a.expiry.eligibleAvailable,
+    incoming: a.incomingQty,
+    stockPosition: a.stockPosition,
+    lFastest: a.leadFastest,
+    cover: a.cover,
+    status: a.status,
+    atRisk: a.expiry.batches.filter((b) => b.atRiskQty > 0).map((b) => ({ batch: batchById.get(b.batchId)!, atRiskQty: b.atRiskQty })),
+    offers: eligibleOffers(idx, productId, asOf),
+  };
 }
 
-/** Rough line estimate: cheapest eligible offer, q per §6.5 (no scheme). */
+/** The engine's line for a SKU: whether it is a candidate, and the chosen offer, quantity and cost. */
 export function estimateLine(data: SyntheticDataset, idx: Index, productId: string, asOf: string) {
-  const s = skuState(data, idx, productId, asOf);
-  const candidate = s.dbar > 0 && s.offers.length > 0 && s.stockPosition < rop(s.dbar, s.lFastest);
-  if (!candidate) return { candidate: false as const, state: s };
-  let best: { offer: OfferRow; qty: number; cost: number } | null = null;
-  for (const o of s.offers) {
-    const raw = Math.max(0, (s.atRisk.length ? rop(s.dbar, o.lead_time_days) : target(s.dbar, o.lead_time_days)) - s.stockPosition);
-    if (raw <= 0) continue;
-    const qty = Math.max(o.moq, Math.ceil(raw / o.pack_multiple) * o.pack_multiple);
-    const cost = qty * (Number(o.unit_price) * (1 + Number(o.tax_rate) / 100) + Number(o.freight_per_pack));
-    if (!best || cost < best.cost) best = { offer: o, qty, cost };
-  }
-  return best ? { candidate: true as const, state: s, ...best } : { candidate: false as const, state: s };
+  const state = skuState(data, idx, productId, asOf);
+  const a = state.analysis;
+  if (!a.candidate || !a.chosen || !a.totals) return { candidate: false as const, state };
+  const offer = (idx.offersByProduct.get(productId) ?? []).find((o) => o.id === a.chosen!.offerId)!;
+  return { candidate: true as const, state, offer, qty: a.qty, cost: Number(a.totals.lineTotal) };
 }
 
-/** Effective cost per pack without a scheme: price × (1 + GST) + freight (as the engine compares offers). */
+/** Effective cost per pack without a scheme (price × (1 + GST) + freight), as the engine compares offers. */
 export function effectiveCostApprox(o: OfferRow): number {
-  return Number(o.unit_price) * (1 + Number(o.tax_rate) / 100) + Number(o.freight_per_pack);
+  return Number(
+    effectiveUnitCost({
+      unitPrice: o.unit_price,
+      taxRate: o.tax_rate,
+      freightPerPack: o.freight_per_pack,
+      schemePaidQty: o.scheme_paid_qty,
+      schemeFreeQty: o.scheme_free_qty,
+      schemeTaken: false,
+    }),
+  );
 }
 
 export function binFill(data: SyntheticDataset): Map<string, number> {
@@ -364,7 +315,7 @@ export function injectDemoCases(data: SyntheticDataset, seed = 42): DemoCases {
     if (!batch || s.dbar === 0) continue;
     const oldExpiry = batch.expiry_date;
     batch.expiry_date = addDays(asOf, rng.int(95, 150));
-    const sellable = daysBetween(asOf, addDays(batch.expiry_date, -RISK_WINDOW));
+    const sellable = daysBetween(asOf, addDays(batch.expiry_date, -ENGINE_CONFIG.expiryRiskWindowDays));
     const available = (idx.balancesByBatch.get(batch.id) ?? []).reduce((t, b) => t + b.on_hand_qty - b.reserved_qty, 0);
     const wanted = Math.ceil(s.dbar * sellable) + rng.int(30, 80);
     if (available < wanted) addToBatch(batch, wanted - available);
@@ -382,7 +333,7 @@ export function injectDemoCases(data: SyntheticDataset, seed = 42): DemoCases {
     if (excess.length >= 6) break;
     const s = skuState(data, idx, pid, asOf);
     if (s.dbar === 0) continue;
-    const need = Math.floor(EXCESS_FACTOR * target(s.dbar, s.lFastest)) + rng.int(10, 30) - s.stockPosition;
+    const need = Math.floor(ENGINE_CONFIG.excessFactor * target(s.dbar, s.lFastest)) + rng.int(10, 30) - s.stockPosition;
     const batch = (idx.batchesByProduct.get(pid) ?? [])
       .filter((b) => b.quality_status === "released" && b.expiry_date > addDays(asOf, 500))
       .sort((a, b) => b.expiry_date.localeCompare(a.expiry_date))[0];
