@@ -1,23 +1,51 @@
 // §6.11 — hard stops (block approval) and soft warnings (allowed with a note).
-import type { EngineConfig } from "./config";
+import { dec } from "@/lib/money";
+import { ENGINE_CONFIG, type EngineConfig } from "./config";
+import { daysBetween } from "./dates";
 import type { BatchInput, HardStopCode, IsoDate, Money, OfferInput, ProductInput, SupplierInput, WarningCode } from "./types";
-import { notImplemented } from "./_stub";
 
-export const hardStops: (
+/**
+ * Every hard stop for one line. Budget checks run only when `budget` is given
+ * (the SKU-level analysis has no budget; approval and edits pass it).
+ */
+export function hardStops(
   args: {
     product: ProductInput | undefined;
     offer: OfferInput | undefined;
     supplier: SupplierInput | undefined;
     qty: number;
     asOf: IsoDate;
-    budget: Money;
-    planTotal: Money;
+    budget?: Money;
+    planTotal?: Money;
     batches: BatchInput[];
   },
-  config?: EngineConfig,
-) => HardStopCode[] = () => notImplemented("hardStops");
+  config: EngineConfig = ENGINE_CONFIG,
+): HardStopCode[] {
+  const { product, offer, supplier, qty, asOf, budget, planTotal, batches } = args;
+  const stops = new Set<HardStopCode>();
 
-export const softWarnings: (args: {
+  if (!product || !product.isActive || (offer && offer.productId !== product.id)) stops.add("INVALID_SKU");
+  if (!supplier || supplier.approvedStatus !== "approved") stops.add("SUPPLIER_NOT_APPROVED");
+  if (!offer || offer.unitPrice === null || !dec(offer.unitPrice).greaterThan(0)) stops.add("MISSING_PRICE");
+  if (offer) {
+    if (offer.validUntil.slice(0, 10) < asOf) stops.add("QUOTE_EXPIRED");
+    if (daysBetween(offer.quotedAt.slice(0, 10), asOf) > config.quoteStaleDays) stops.add("QUOTE_STALE");
+    if (qty > 0 && (offer.packMultiple <= 0 || qty % offer.packMultiple !== 0)) stops.add("INVALID_PACK_MULTIPLE");
+    if (qty > 0 && qty < offer.moq) stops.add("BELOW_MOQ");
+    if (qty > offer.availableQty) stops.add("ABOVE_AVAILABILITY");
+  }
+  if (!Number.isInteger(qty) || qty <= 0) stops.add("NON_POSITIVE_QTY");
+  if (budget !== undefined) {
+    if (!dec(budget).greaterThan(0)) stops.add("INVALID_BUDGET");
+    else if (planTotal !== undefined && dec(planTotal).greaterThan(budget)) stops.add("OVER_BUDGET");
+  }
+  if (product && batches.some((b) => b.productId === product.id && b.qualityStatus === "recalled")) stops.add("PRODUCT_RECALLED");
+
+  return [...stops];
+}
+
+/** Soft warnings in a fixed order; overriding them needs a note. */
+export function softWarnings(args: {
   hasAtRiskBatches: boolean;
   chosenIsTopScored: boolean;
   demandFlags: WarningCode[];
@@ -25,4 +53,13 @@ export const softWarnings: (args: {
   priceAnomaly: boolean;
   capacityReview: boolean;
   hasUnmappedStock: boolean;
-}) => WarningCode[] = () => notImplemented("softWarnings");
+}): WarningCode[] {
+  const out: WarningCode[] = [...args.demandFlags];
+  if (args.hasAtRiskBatches) out.push("AT_RISK_BATCHES");
+  if (!args.chosenIsTopScored) out.push("NOT_TOP_SUPPLIER");
+  if (args.schemeWarning) out.push(args.schemeWarning);
+  if (args.priceAnomaly) out.push("PRICE_ANOMALY");
+  if (args.capacityReview) out.push("CAPACITY_REVIEW");
+  if (args.hasUnmappedStock) out.push("UNMAPPED_STOCK");
+  return [...new Set(out)];
+}

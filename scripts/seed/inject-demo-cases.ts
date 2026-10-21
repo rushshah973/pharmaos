@@ -165,6 +165,11 @@ export function estimateLine(data: SyntheticDataset, idx: Index, productId: stri
   return best ? { candidate: true as const, state: s, ...best } : { candidate: false as const, state: s };
 }
 
+/** Effective cost per pack without a scheme: price × (1 + GST) + freight (as the engine compares offers). */
+export function effectiveCostApprox(o: OfferRow): number {
+  return Number(o.unit_price) * (1 + Number(o.tax_rate) / 100) + Number(o.freight_per_pack);
+}
+
 export function binFill(data: SyntheticDataset): Map<string, number> {
   const fill = new Map<string, number>();
   for (const b of data.inventoryBalances) if (b.location_id) fill.set(b.location_id, (fill.get(b.location_id) ?? 0) + b.on_hand_qty);
@@ -270,7 +275,12 @@ export function injectDemoCases(data: SyntheticDataset, seed = 42): DemoCases {
   for (const b of data.inventoryBalances) if (b.location_id === null) used.add(b.product_id);
 
   // 1. No eligible offer (1 SKU): every offer of one SKU has expired.
-  const noEligible = pickProducts((pid) => ambientOrCool(pid) && !hasIncoming(pid), 1);
+  // Must be a SKU that needs ordering (d̄ > 0, stock below ROP), so it shows on the plan with NO_ELIGIBLE_OFFER.
+  const needsOrder = (pid: string) => {
+    const s = skuState(data, idx, pid, asOf);
+    return s.dbar > 0 && s.stockPosition < rop(s.dbar, s.lFastest);
+  };
+  const noEligible = pickProducts((pid) => ambientOrCool(pid) && !hasIncoming(pid) && needsOrder(pid), 1);
   for (const pid of noEligible) {
     used.add(pid);
     for (const o of idx.offersByProduct.get(pid) ?? []) {
@@ -318,9 +328,20 @@ export function injectDemoCases(data: SyntheticDataset, seed = 42): DemoCases {
   );
   for (const pid of fastWithTwoOffers) {
     used.add(pid);
-    const offers = [...eligibleOffers(idx, pid, asOf)].sort((a, b) => Number(a.unit_price) - Number(b.unit_price));
+    // "Cheapest" means lowest effective cost (price + GST + freight), as the engine compares it.
+    const offers = [...eligibleOffers(idx, pid, asOf)].sort((a, b) => effectiveCostApprox(a) - effectiveCostApprox(b));
     offers[0].lead_time_days = rng.int(9, 10);
-    for (const o of offers.slice(1)) o.lead_time_days = rng.int(2, 3);
+    // The faster (dearer) offers must be able to supply the whole order, or there is nothing to choose between.
+    for (const o of offers.slice(1)) {
+      o.lead_time_days = rng.int(2, 3);
+      o.available_qty = Math.max(o.available_qty, 1000);
+      // Keep the slow offer clearly cheapest (≥ 3% gap) after freight and GST.
+      const floor = effectiveCostApprox(offers[0]) * 1.03;
+      if (effectiveCostApprox(o) < floor) {
+        const perPackBeforeFreight = (floor - Number(o.freight_per_pack)) / (1 + Number(o.tax_rate) / 100);
+        o.unit_price = roundUnit(dec(perPackBeforeFreight).plus("0.01")).toFixed(4);
+      }
+    }
   }
   reindex();
   const moreStockout = pickProducts((pid) => ambientOrCool(pid) && !hasIncoming(pid) && eligibleOffers(idx, pid, asOf).length > 0, 9, "fast");

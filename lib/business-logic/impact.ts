@@ -1,8 +1,9 @@
 // §6.10 — Plan Impact Card.
+import { sumMoney } from "@/lib/money";
+import { budgetRemaining } from "./totals";
 import type { ImpactCard, LineTotals, Money, ReasonCode, SkuStatus } from "./types";
-import { notImplemented } from "./_stub";
 
-export const computeImpact: (args: {
+export function computeImpact(args: {
   skus: { status: SkuStatus; atRiskValue: Money }[];
   lines: {
     status: SkuStatus;
@@ -13,4 +14,31 @@ export const computeImpact: (args: {
     expiryAvoidedValue: Money;
   }[];
   budget: Money;
-}) => ImpactCard = () => notImplemented("computeImpact");
+}): ImpactCard {
+  const inBasket = args.lines.filter((l) => l.inBasket);
+  const deferred = args.lines.filter((l) => !l.inBasket);
+
+  const marginProtected = sumMoney(inBasket.map((l) => l.lossPrevented));
+  // Expiry avoided by this plan's purchase decisions (scheme skipped or quantity reduced).
+  const expiryAvoided = sumMoney(
+    inBasket
+      .filter((l) => l.reasons.includes("SCHEME_SKIPPED_EXPIRY") || l.reasons.includes("EXPIRY_REDUCED_QTY"))
+      .map((l) => l.expiryAvoidedValue),
+  );
+  const cashCommitted = sumMoney(inBasket.map((l) => l.totals?.lineTotal ?? "0"));
+
+  return {
+    skusAtRisk: args.skus.filter((s) => s.status === "STOCKOUT_RISK").length,
+    stockoutsCovered: inBasket.filter((l) => l.status === "STOCKOUT_RISK").length,
+    marginProtected: marginProtected.toFixed(2),
+    expiryExposure: sumMoney(args.skus.map((s) => s.atRiskValue)).toFixed(2),
+    expiryAvoided: expiryAvoided.toFixed(2),
+    cashCommitted: cashCommitted.toFixed(2),
+    budgetRemaining: budgetRemaining(args.budget, cashCommitted.toFixed(2)),
+    deferredCount: deferred.length,
+    deferredRisk: sumMoney(deferred.map((l) => l.lossPrevented)).toFixed(2),
+    lossPreventedPerRupee: cashCommitted.greaterThan(0)
+      ? marginProtected.plus(expiryAvoided).dividedBy(cashCommitted).toDecimalPlaces(6).toNumber()
+      : null,
+  };
+}

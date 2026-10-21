@@ -278,6 +278,8 @@ export type SkuAnalysis = {
   freeQty: number;
   totals: LineTotals | null;
   lossPrevented: Money;
+  /** Stock not bought because of expiry rules (scheme skipped or quantity reduced), valued at effective cost. */
+  expiryAvoidedValue: Money;
   priority: number;
   reasons: ReasonCode[];
   warnings: WarningCode[];
@@ -298,6 +300,7 @@ export type PlanLine = {
   unitPrice: Money | null;
   totals: LineTotals | null;
   lossPrevented: Money;
+  expiryAvoidedValue: Money;
   priority: number;
   inBasket: boolean;
   reasons: ReasonCode[];
@@ -321,7 +324,7 @@ export type ImpactCard = {
 export type PlanResult = {
   asOf: IsoDate;
   budget: Money;
-  lines: PlanLine[]; // candidates only, ranked
+  lines: PlanLine[]; // candidates (ranked), then SKUs that need stock but have no eligible offer
   skuStatuses: { productId: string; sku: string; status: SkuStatus; atRiskValue: Money }[];
   planTotal: Money;
   budgetRemaining: Money;
@@ -343,6 +346,9 @@ export type BasketOption = {
   moq: number;
   packMultiple: number;
   lineTotal: Money;
+  /** Scheme on this option, so a partial quantity keeps only the free goods it still earns. */
+  schemePaidQty?: number | null;
+  schemeFreeQty?: number | null;
 };
 
 export type BasketCandidate = {

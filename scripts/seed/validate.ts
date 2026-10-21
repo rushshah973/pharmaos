@@ -9,9 +9,12 @@ import {
   binFill,
   buildIndex,
   daysBetween,
+  effectiveCostApprox,
   eligibleOffers,
   estimateLine,
+  rop,
   skuState,
+  target,
   type DemoCases,
 } from "./inject-demo-cases";
 
@@ -63,6 +66,10 @@ export function validate(
 
   // ---- Every SKU has an eligible approved offer, except the one deliberate SKU ----
   const noOffer = data.products.filter((p) => eligibleOffers(idx, p.id, asOf).length === 0).map((p) => p.sku).sort();
+  for (const sku of cases.noEligibleOffer) {
+    const s = skuState(data, idx, idx.productBySku.get(sku)!.id, asOf);
+    if (!(s.dbar > 0 && s.stockPosition < rop(s.dbar, s.lFastest))) fail(`noEligibleOffer ${sku}: does not need ordering, so it would not show on the plan`);
+  }
   if (JSON.stringify(noOffer) !== JSON.stringify([...cases.noEligibleOffer].sort())) {
     fail(`SKUs without an eligible offer should be exactly ${cases.noEligibleOffer.join(", ")}; found ${noOffer.join(", ") || "none"}`);
   }
@@ -121,10 +128,13 @@ export function validate(
   }
   for (const sku of cases.cheapestTooSlow) {
     const s = state(sku);
-    const cheapest = [...s.offers].sort((a, b) => Number(a.unit_price) - Number(b.unit_price))[0];
+    const cheapest = [...s.offers].sort((a, b) => effectiveCostApprox(a) - effectiveCostApprox(b))[0];
     if (!cheapest || s.cover === null || cheapest.lead_time_days <= s.cover || cheapest.lead_time_days === s.lFastest) {
       fail(`cheapestTooSlow ${sku}: cheapest offer is not slower than cover and the fastest offer`);
     }
+    const need = Math.ceil(target(s.dbar, s.lFastest) - s.stockPosition);
+    const fasterCanSupply = s.offers.some((o) => o !== cheapest && o.lead_time_days < (cheapest?.lead_time_days ?? 0) && o.available_qty >= need);
+    if (!fasterCanSupply) fail(`cheapestTooSlow ${sku}: no faster offer can supply ${need} packs`);
   }
   for (const sku of cases.schemeSkip) {
     const s = state(sku);
