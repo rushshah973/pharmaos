@@ -56,3 +56,17 @@ export function toLineChange(b: PatchLineBody): LineChange {
 
 export const recalculateBody = z.object({}).strict();
 export type RecalculateBody = z.infer<typeof recalculateBody>;
+
+/** POST /api/purchase-plans/[id]/approve — the client generates idempotencyKey once per confirmation dialog. */
+export const approveBody = z
+  .object({
+    lineIds: z.array(z.uuid()).min(1).max(200),
+    idempotencyKey: z.uuid(),
+  })
+  .strict();
+
+const reason = z.string().trim().min(3, "Give a reason of at least 3 characters.").max(500);
+
+export const rejectPlanBody = z.object({ reason }).strict();
+export const approvePoBody = z.object({ note: z.string().trim().max(500).optional() }).strict();
+export const rejectPoBody = z.object({ reason }).strict();

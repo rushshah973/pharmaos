@@ -13,7 +13,6 @@ import {
   PauseCircle,
   MoreHorizontal,
   Pencil,
-  ShieldCheck,
   TrendingUp,
   UserCog,
   Warehouse,
@@ -22,7 +21,6 @@ import {
 import { toast } from "sonner";
 import { cn } from "cn";
 import { SkuStatusPill } from "@/components/layout/SkuStatusPill";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -32,6 +30,7 @@ import { REASON_ORDER, REASON_TEXT, WARNING_TEXT } from "@/lib/format/codes";
 import { formatINR, sumMoney } from "@/lib/money";
 import type { LineView, PlanStatus } from "@/lib/services/plans";
 import { requestLine } from "./drawer/line-store";
+import { ApproveDialog } from "./ApproveDialog";
 import { ReasonDialog, type ReasonTarget } from "./ReasonDialog";
 import { WhyButton } from "./WhyButton";
 
@@ -74,11 +73,13 @@ export function PlanTable({
   planId,
   planStatus,
   lines,
+  approvalLimit,
   children,
 }: {
   planId: string;
   planStatus: PlanStatus;
   lines: LineView[];
+  approvalLimit: string;
   /** Rendered between the table and the selection footer (the "Not in this plan" list). */
   children?: React.ReactNode;
 }) {
@@ -173,7 +174,7 @@ export function PlanTable({
       </section>
 
       {children}
-      <FooterBar count={chosen.length} total={selectedTotal} />
+      <FooterBar planId={planId} chosen={chosen} total={selectedTotal} approvalLimit={approvalLimit} locked={locked} onApproved={() => setSelected(new Set())} />
       <ReasonDialog target={reasonTarget} onClose={() => setReasonTarget(null)} onSubmit={changeStatus} />
     </>
   );
@@ -343,8 +344,23 @@ function Tag({ className, children }: { className?: string; children: React.Reac
   return <span className={cn("rounded border px-1.5 text-[10.5px] leading-4 font-medium", className)}>{children}</span>;
 }
 
-/** Sticky selection bar. Approving lines into purchase orders arrives in stage 4. */
-function FooterBar({ count, total }: { count: number; total: string }) {
+/** Sticky selection bar: the selected count and total, and Approve (creates the POs). */
+function FooterBar({
+  planId,
+  chosen,
+  total,
+  approvalLimit,
+  locked,
+  onApproved,
+}: {
+  planId: string;
+  chosen: LineView[];
+  total: string;
+  approvalLimit: string;
+  locked: boolean;
+  onApproved: () => void;
+}) {
+  const count = chosen.length;
   return (
     <div className="sticky bottom-4 z-20">
       <div className="surface flex items-center justify-between gap-4 border-border-strong bg-surface-2/95 px-5 py-3 shadow-(--shadow-pop) backdrop-blur">
@@ -358,18 +374,7 @@ function FooterBar({ count, total }: { count: number; total: string }) {
             </>
           )}
         </p>
-        <div className="flex items-center gap-3">
-        <span className="text-[12.5px] text-fg-3">Available in stage 4</span>
-        <Tooltip>
-          <TooltipTrigger render={<span className="inline-flex" tabIndex={0} />}>
-            <Button className="h-9 px-4" disabled>
-              <ShieldCheck className="size-4" strokeWidth={1.75} aria-hidden />
-              Approve selected
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Approving lines into purchase orders arrives in stage 4</TooltipContent>
-        </Tooltip>
-        </div>
+        <ApproveDialog planId={planId} lines={chosen} approvalLimit={approvalLimit} disabled={locked || count === 0} onApproved={onApproved} />
       </div>
     </div>
   );

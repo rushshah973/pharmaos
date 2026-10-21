@@ -27,12 +27,12 @@ function groupBy<T>(rows: T[], key: (r: T) => string): Map<string, T[]> {
   return m;
 }
 
-/** `productId` limits the context to one SKU (suppliers are always all loaded). */
+/** `productId` limits the context to one SKU or a list of SKUs (suppliers are always all loaded). */
 export async function loadPlanningContext(
   sql: SqlHandle,
   asOf: IsoDate,
   scenarioId: string,
-  productId?: string,
+  productId?: string | string[],
 ): Promise<PlanningContext> {
   const [products, suppliers, offers, sales, firstSales, batches, balances, incoming, latestModel] = await Promise.all([
     listActiveProducts(sql, productId),

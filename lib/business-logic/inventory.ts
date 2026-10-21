@@ -5,13 +5,13 @@ import { addDays } from "./dates";
 import type { IncomingInput, IsoDate, SkuStatus } from "./types";
 
 /**
- * Σ packs (+ free) on POs with status 'open' expected on or before asOf + planning horizon.
- * Received / cancelled POs never count; PharmaOS draft POs are never passed in at all.
+ * Σ packs (+ free) on POs with status 'open' (seeded) or 'sent' (PharmaOS, simulated) expected on or before
+ * asOf + planning horizon. Received / cancelled POs never count; unsent PharmaOS POs are never passed in.
  */
 export function confirmedIncoming(incoming: IncomingInput[], asOf: IsoDate, config: EngineConfig = ENGINE_CONFIG): number {
   const horizonEnd = addDays(asOf, config.planningHorizonDays);
   return incoming
-    .filter((i) => i.status === "open" && i.expectedDeliveryDate <= horizonEnd)
+    .filter((i) => (i.status === "open" || i.status === "sent") && i.expectedDeliveryDate <= horizonEnd)
     .reduce((sum, i) => sum + i.quantityPacks + i.freeQty, 0);
 }
 

@@ -10,6 +10,7 @@ import { NotInPlanList } from "@/components/procurement/NotInPlanList";
 import { PlanStatusPill } from "@/components/procurement/PlanStatusPill";
 import { PlanTable } from "@/components/procurement/PlanTable";
 import { RecalculateButton } from "@/components/procurement/RecalculateButton";
+import { RejectPlanButton } from "@/components/procurement/RejectPlanButton";
 import { SupplierPoStrip } from "@/components/procurement/SupplierPoStrip";
 import { ServiceError } from "@/lib/api/errors";
 import { formatDateTime, formatDisplayDate } from "@/lib/format/date";
@@ -84,11 +85,16 @@ async function Plan({ params }: { params: PageProps<"/procurement/[planId]">["pa
             Created {formatDateTime(plan.createdAt)} · as of {formatDisplayDate(plan.asOf)} · {plan.scenarioName}
           </span>
         }
-        action={<RecalculateButton planId={plan.id} disabled={locked} />}
+        action={
+          <>
+            <RejectPlanButton planId={plan.id} disabled={locked} />
+            <RecalculateButton planId={plan.id} disabled={locked} />
+          </>
+        }
       />
       <ImpactCard impact={plan.impact} approvalLimit={plan.approvalLimit} />
       <SupplierPoStrip pos={plan.supplierPos} approvalLimit={plan.approvalLimit} />
-      <PlanTable planId={plan.id} planStatus={plan.status} lines={inPlan}>
+      <PlanTable planId={plan.id} planStatus={plan.status} lines={inPlan} approvalLimit={plan.approvalLimit}>
         <NotInPlanList planId={plan.id} planStatus={plan.status} lines={notInPlan} />
       </PlanTable>
     </div>

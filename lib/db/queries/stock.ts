@@ -1,10 +1,11 @@
 // Read queries: batches (all quality states) and inventory balances (mapped and unmapped).
 import type { BalanceInput, BatchInput } from "@/lib/business-logic/types";
 import type { SqlHandle } from "@/lib/services/audit";
+import { type ProductFilter, productIds } from "./filters";
 
 export type BalanceRow = BalanceInput & { productId: string };
 
-export async function listBatches(sql: SqlHandle, productId?: string): Promise<BatchInput[]> {
+export async function listBatches(sql: SqlHandle, productId?: ProductFilter): Promise<BatchInput[]> {
   return sql<BatchInput[]>`
     select
       b.id,
@@ -16,12 +17,12 @@ export async function listBatches(sql: SqlHandle, productId?: string): Promise<B
       b.quality_status as "qualityStatus",
       b.return_policy_status as "returnPolicy"
     from batches b
-    join products p on p.id = b.product_id and p.is_active ${productId ? sql`and p.id = ${productId}` : sql``}
+    join products p on p.id = b.product_id and p.is_active ${productId ? sql`and p.id = any(${productIds(productId)}::uuid[])` : sql``}
     order by b.product_id, b.expiry_date, b.batch_number
   `;
 }
 
-export async function listBalances(sql: SqlHandle, productId?: string): Promise<BalanceRow[]> {
+export async function listBalances(sql: SqlHandle, productId?: ProductFilter): Promise<BalanceRow[]> {
   return sql<BalanceRow[]>`
     select
       id,
@@ -31,7 +32,7 @@ export async function listBalances(sql: SqlHandle, productId?: string): Promise<
       on_hand_qty as "onHandQty",
       reserved_qty as "reservedQty"
     from inventory_balances
-    where true ${productId ? sql`and product_id = ${productId}` : sql``}
+    where true ${productId ? sql`and product_id = any(${productIds(productId)}::uuid[])` : sql``}
     order by product_id, batch_id, id
   `;
 }

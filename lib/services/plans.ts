@@ -793,3 +793,31 @@ export async function recalculatePlan(planId: string, opts: { actor?: Actor } = 
     return { ...summarize(saved!, afterLines), lines: afterLines };
   });
 }
+
+// ---------------------------------------------------------------------------
+// rejectPlan (§7.7)
+// ---------------------------------------------------------------------------
+
+/** Reject a whole plan (reason required). It creates no POs; POs already created from it are not touched. */
+export async function rejectPlan(planId: string, reason: string, actor: Actor = defaultActor(), sql: postgres.Sql = getSql()): Promise<PlanSummary> {
+  const why = reason.trim();
+  if (why.length < 3) throw new ServiceError("REASON_REQUIRED", 400, "Give a reason (at least 3 characters) to reject the plan.");
+  return sql.begin(async (tx) => {
+    const plan = await selectPlan(tx, planId, true);
+    if (!plan) throw notFound("Plan", planId);
+    if (plan.status === "approved" || plan.status === "rejected") {
+      throw new ServiceError("PLAN_LOCKED", 409, `The plan is already ${plan.status}.`);
+    }
+    const [, , , saved, rows] = await Promise.all([
+      tx`update purchase_plans set status = 'rejected', reject_reason = ${why}, updated_at = now() where id = ${planId}`.execute(),
+      tx`insert into approvals (entity_type, entity_id, decision, user_id, note) values ('plan', ${planId}, 'rejected', ${actor.id}, ${why})`.execute(),
+      writeAudit(
+        { actorType: actor.type, actorId: actor.id, action: "plan.rejected", entityType: "plan", entityId: planId, before: { status: plan.status }, after: { status: "rejected" }, reason: why },
+        tx,
+      ),
+      selectPlan(tx, planId),
+      selectLines(tx, planId),
+    ]);
+    return summarize(saved!, rows.map(toLineView));
+  });
+}

@@ -1,11 +1,12 @@
-// Read queries: confirmed external POs (status 'open') with their lines, as incoming stock.
-// PharmaOS draft POs are never incoming, so they are not selected here.
+// Read queries: confirmed incoming stock — seeded external POs ('open') and PharmaOS POs once 'sent'
+// (simulated). PharmaOS POs that are ready / pending approval / approved / rejected are not incoming.
 import type { IncomingInput } from "@/lib/business-logic/types";
 import type { SqlHandle } from "@/lib/services/audit";
+import { type ProductFilter, productIds } from "./filters";
 
 export type IncomingRow = IncomingInput & { productId: string };
 
-export async function listOpenIncoming(sql: SqlHandle, productId?: string): Promise<IncomingRow[]> {
+export async function listOpenIncoming(sql: SqlHandle, productId?: ProductFilter): Promise<IncomingRow[]> {
   return sql<IncomingRow[]>`
     select
       po.id as "poId",
@@ -16,7 +17,7 @@ export async function listOpenIncoming(sql: SqlHandle, productId?: string): Prom
       l.free_qty as "freeQty"
     from purchase_orders po
     join purchase_order_lines l on l.po_id = po.id
-    where po.status = 'open' and po.expected_delivery_date is not null ${productId ? sql`and l.product_id = ${productId}` : sql``}
+    where po.status in ('open', 'sent') and po.expected_delivery_date is not null ${productId ? sql`and l.product_id = any(${productIds(productId)}::uuid[])` : sql``}
     order by l.product_id, po.po_number
   `;
 }

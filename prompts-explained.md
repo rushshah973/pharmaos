@@ -24,8 +24,9 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P15 | Plan screen | ✅ `8d364b0` |
 | P16 | Line drawer and edit preview | ✅ `9d4d4bd` |
 | P16B | ML demand model | ✅ |
-| P17 | Approval service | ⏭ |
-| P18–P28 | … (plus P22B, P23B after P23) | ⬜ |
+| P17 | Approval service | ✅ |
+| P18 | Purchase orders and Activity | ⏭ |
+| P19–P28 | … (plus P22B, P23B after P23) | ⬜ |
 
 > Budget cap removed; ₹4,00,000 per-PO Owner approval added (after P13).
 >
@@ -195,14 +196,14 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 
 ## Stage 4 — Approval and audit
 
-### P17 — Approval service ⏭
+### P17 — Approval service ✅
 
 - **What it does:** Builds the only code allowed to create purchase orders: re-checks every rule with fresh data, groups approved lines by supplier and creates one PO per supplier inside one database transaction (a PO above ₹4,00,000 is held as "Awaiting Owner approval"), and makes a double click or retry harmless. Also adds the Owner's Approve / Reject for held POs and a simulated "Send to supplier" that refuses held POs. Adds Approve and Reject plan to the screen.
 - **Creates or changes:** `lib/services/approval.ts`, PO approve/reject/send in `purchase-orders.ts`, their routes, approval dialog, an optional integration test.
 - **You will see:** Approving 5 lines across 3 suppliers creates 3 POs; repeating the request creates nothing extra; a PO above the limit cannot be sent until the Owner approves it.
 - **Why it matters:** Human control: nothing is ordered without a person, large orders need the Owner's sign-off, nothing actually leaves the app (sending is simulated), and money can never be committed twice.
 
-### P18 — Purchase orders and Activity ⬜
+### P18 — Purchase orders and Activity ⏭
 
 - **What it does:** Builds the PO list and a printable PO document (watermarked "NOT SENT" until sent, then "SENT (simulated)") with Approve / Reject for the Owner, Send (simulated), CSV export and Print, and the Activity log showing every action.
 - **Creates or changes:** `lib/services/purchase-orders.ts`, PO and audit routes, `/purchase-orders`, `/activity`.

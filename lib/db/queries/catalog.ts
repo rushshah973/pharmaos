@@ -2,9 +2,10 @@
 // Money stays as strings (numeric → text); timestamps are formatted in SQL as UTC ISO strings.
 import type { OfferInput, ProductInput, SupplierInput } from "@/lib/business-logic/types";
 import type { SqlHandle } from "@/lib/services/audit";
+import { type ProductFilter, productIds } from "./filters";
 
 /** All active products, or just one when `productId` is given (line edits re-analyse one SKU). */
-export async function listActiveProducts(sql: SqlHandle, productId?: string): Promise<ProductInput[]> {
+export async function listActiveProducts(sql: SqlHandle, productId?: ProductFilter): Promise<ProductInput[]> {
   return sql<ProductInput[]>`
     select
       id, sku,
@@ -21,7 +22,7 @@ export async function listActiveProducts(sql: SqlHandle, productId?: string): Pr
       gst_rate::text as "gstRate",
       is_active as "isActive"
     from products
-    where is_active ${productId ? sql`and id = ${productId}` : sql``}
+    where is_active ${productId ? sql`and id = any(${productIds(productId)}::uuid[])` : sql``}
     order by sku
   `;
 }
@@ -41,7 +42,7 @@ export async function listSuppliers(sql: SqlHandle): Promise<SupplierInput[]> {
   `;
 }
 
-export async function listOffers(sql: SqlHandle, productId?: string): Promise<OfferInput[]> {
+export async function listOffers(sql: SqlHandle, productId?: ProductFilter): Promise<OfferInput[]> {
   return sql<OfferInput[]>`
     select
       o.id,
@@ -60,7 +61,7 @@ export async function listOffers(sql: SqlHandle, productId?: string): Promise<Of
       to_char(o.valid_until at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as "validUntil",
       o.is_active as "isActive"
     from supplier_offers o
-    join products p on p.id = o.product_id and p.is_active ${productId ? sql`and p.id = ${productId}` : sql``}
+    join products p on p.id = o.product_id and p.is_active ${productId ? sql`and p.id = any(${productIds(productId)}::uuid[])` : sql``}
     order by o.product_id, o.id
   `;
 }
