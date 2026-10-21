@@ -13,6 +13,8 @@ Run these prompts **one at a time, in order**, with your AI coding assistant ope
 5. **Behind schedule?** Use **CUT** (end of file).
 6. Prompts marked **STOP** end with the assistant waiting for your review. Don't skip that review.
 
+> **Change after P13:** the purchase budget was removed. A plan now includes every SKU that needs stock, ranked by priority, and any single PO above ₹4,00,000 needs Owner approval before it can be sent (sending is simulated). The budget wording in the already-run prompts P06 and P10–P12 is kept as history; prompts from P13 on describe the current design.
+
 | # | Stage | Hours | Prompt |
 |---|---|---|---|
 | — | Any | — | P00 Session primer |
@@ -251,12 +253,12 @@ Design: follow implementationplan.md §10.1 (premium design system) exactly, and
 ```text
 Stage 3, step 2: plan services and API routes. Follow implementationplan.md §7.2, §7.3, §7.4, §7.5, §7.7 (dashboard, explain) and §8.
 
-1. lib/validation/api.ts: Zod schemas for analyze, get plan, PATCH line (exactly one change, plus optional preview), recalculate.
-2. lib/services/plans.ts: createPlan, getPlan, editLine (with preview, LINE_LOCKED, OVER_BUDGET with overBy), recalculatePlan (frozen/edited/rejected rules from §7.5). Each mutation runs in sql.begin() and calls writeAudit with the §13 action names. createPlan logs its duration in ms.
+1. lib/validation/api.ts: Zod schemas for analyze ({ priorities? }), get plan, PATCH line (exactly one change, plus optional preview), recalculate ({}).
+2. lib/services/plans.ts: createPlan({ priorities? }) with no budget (every candidate SKU is in the plan, ranked by priority; supplierTotals with needsApproval above app_state.po_approval_limit), getPlan, editLine (with preview, LINE_LOCKED, hard-stop codes; the preview returns the new plan total and supplier PO totals), recalculatePlan (frozen/rejected/owner-deferred/edited rules from §7.5). Each mutation runs in sql.begin() and calls writeAudit with the §13 action names. createPlan logs its duration in ms.
 3. lib/services/dashboard.ts: getCommandCenter() per §7.7.
 4. lib/services/explain.ts: explainLine(evidence), returning deterministic sentences like the §7.7 example. No LLM.
 5. Route handlers: POST /api/procurement/analyze, GET /api/purchase-plans/[id], PATCH /api/purchase-plans/[id]/lines/[lineId], POST /api/purchase-plans/[id]/recalculate, POST /api/purchase-plans/[id]/lines/[lineId]/explain (deterministic for now), GET /api/dashboard. Use RouteContext<'…'> and `await ctx.params`. Error envelope and status codes exactly as §8.
-6. Test with curl or a small tsx script (not committed): create a plan, preview an edit, save it, trigger OVER_BUDGET, recalculate at ₹1,00,000. Show me the responses.
+6. Test with curl or a small tsx script (not committed): create a plan, preview an edit, save it, trigger a hard stop (below MOQ, bad pack multiple), defer and restore a line, recalculate. Show me the responses, including the supplier PO totals and which (if any) are above ₹4,00,000.
 7. `npm run check` and `npm run build`. Commit: "stage 3: plan services and API".
 ```
 
@@ -266,9 +268,9 @@ Stage 3, step 2: plan services and API routes. Follow implementationplan.md §7.
 Stage 3, step 3: Command Center and procurement list. Follow implementationplan.md §10.3 (Command Center, Procurement list).
 Design: follow implementationplan.md §10.1 (premium design system) exactly, and do its Visual QA step (screenshots at 1440×900 and 1024×768) before committing.
 
-1. app/(dashboard)/page.tsx: KPI tiles (components/dashboard/KpiTile) for available budget, proposed spend, SKUs at stockout risk, ₹ expiry exposure and pending approvals; CriticalSkuList (top 8) with "Open in plan" and "Locate" (/warehouse?sku=…) links. All values come from getCommandCenter().
-2. Create Purchase Plan dialog (client): budget prefilled from app_state.default_budget, optional priority text; POST /api/procurement/analyze; loading state; on success navigate to /procurement/[planId]; on error show a toast with the error message.
-3. app/(dashboard)/procurement/page.tsx: plans table (created, budget, total, status, scenario) plus the Create button.
+1. app/(dashboard)/page.tsx: KPI tiles (components/dashboard/KpiTile) for proposed spend, SKUs at stockout risk, ₹ expiry exposure, lines awaiting PO and POs awaiting Owner approval; CriticalSkuList (top 8) with "Open in plan" and "Locate" (/warehouse?sku=…) links. All values come from getCommandCenter().
+2. Create Purchase Plan dialog (client): optional priority text only (no budget); POST /api/procurement/analyze; loading state; on success navigate to /procurement/[planId]; on error show a toast with the error message.
+3. app/(dashboard)/procurement/page.tsx: plans table (created, total, lines, POs needing approval, status, scenario) plus the Create button.
 4. Loading skeletons, empty state ("No plans yet") and error state for both pages.
 5. `npm run check` and `npm run build`. Commit: "stage 3: command center and plan list".
 ```
@@ -281,10 +283,10 @@ Stage 3, step 4: the Procurement Plan screen. Follow implementationplan.md §10.
 Design: follow implementationplan.md §10.1 (premium design system) exactly, and do its Visual QA step (screenshots at 1440×900 and 1024×768) before committing.
 
 1. app/(dashboard)/procurement/[planId]/page.tsx (PageProps, await params, Suspense).
-2. components/procurement/ImpactCard: every §6.10 field, large numbers, one line of explanation each; budget bar (committed vs remaining).
+2. components/procurement/ImpactCard: every §6.10 field, large numbers, one line of explanation each; SupplierPoStrip: one chip per supplier with its projected PO total and an amber "Owner approval" badge above ₹4,00,000.
 3. PlanTable (client): columns exactly as §10.3, sorted by rank, row checkboxes, status badges with text, flag icons with tooltips showing the Appendix B meaning, tabular-nums right-aligned money via formatINR. Row actions: Why? (calls /explain, shows the text in a popover), Edit (opens the drawer, P16), Defer and Reject (dialog with a required reason, PATCH status).
-4. DeferredList with reason, ₹ risk and Restore.
-5. Recalculate control (budget input → POST recalculate → router.refresh()).
+4. "Not in this plan" list: owner-deferred / rejected lines with reason, ₹ risk and Restore, plus SKUs with no eligible offer.
+5. Recalculate button (POST recalculate → router.refresh()).
 6. Footer bar with selected count and total, and the Approve button disabled with "Available in stage 4". Leave Reject plan for P17.
 7. Every mutation: disable the button while running, toast on success or error, then router.refresh().
 8. `npm run check` and `npm run build`. Commit: "stage 3: plan screen".
@@ -298,10 +300,10 @@ Design: follow implementationplan.md §10.1 (premium design system) exactly, and
 
 1. The drawer opens from ?line=<id> (Sheet component) and reads everything from the line's evidence_json.
 2. Sections: product identity (+ data_source label); DemandChart (Recharts, last 28 days, with d7/d28/d̄ reference lines); stock breakdown (available, reserved, incoming, ineligible with reasons); cover, ROP, target; batches table with FEFO projection and at-risk value; SupplierComparison (all offers, including excluded ones with reason codes, factor scores, winner highlighted, quote timestamps); FormulaPanel (each §6 formula with the actual values substituted); "Locate in warehouse" link.
-3. Edit controls: qty stepper in steps of pack_multiple (min MOQ) and an offer select (eligible offers only). Every change calls PATCH with preview: true and shows before → after (line total, plan total, budget remaining) before Save. Show 400/409 errors inline (e.g. "₹1,240 over budget").
+3. Edit controls: qty stepper in steps of pack_multiple (min MOQ) and an offer select (eligible offers only). Every change calls PATCH with preview: true and shows before → after (line total, plan total, that supplier's PO total, and "will need Owner approval" if it crosses ₹4,00,000) before Save. Show 400/409 errors inline (e.g. "Below the supplier's MOQ of 10 packs").
 4. `npm run check` and `npm run build`. Then click through 3 lines in the browser, edit one, and confirm the totals changed. Commit: "stage 3: line drawer and edit preview".
 ```
-**You check:** stage 3 Verify in plan §15: create, open, edit, preview, save, over-budget refused, state kept after refresh.
+**You check:** stage 3 Verify in plan §15: create, open, edit, preview, save, supplier PO totals change, state kept after refresh.
 
 ---
 
@@ -310,28 +312,29 @@ Design: follow implementationplan.md §10.1 (premium design system) exactly, and
 ### P17 — Approval service
 
 ```text
-Stage 4, step 1: approval. Follow implementationplan.md §7.6 exactly and architecture.md §7.3. This is the ONLY code allowed to create purchase orders.
+Stage 4, step 1: approval. Follow implementationplan.md §7.6 and §7.6a exactly and architecture.md §7.3 and §7.3a. approveLines is the ONLY code allowed to create purchase orders.
 
-1. lib/services/approval.ts: approveLines(planId, lineIds, idempotencyKey, userId) in ONE transaction: SELECT … FOR UPDATE on the plan → idempotency lookup → load lines → re-run analysis + ALL hard stops with fresh context (422 with { lineId, codes } on failure) → group by supplier → insert POs (status 'draft', po_number from po_number_seq, totals from the shared totals function, expected_delivery_date) → insert PO lines with recommendation_id → update line statuses, approvals, plan status → audit po.draft_created ×N and plan.lines_approved.
+1. lib/services/approval.ts: approveLines(planId, lineIds, idempotencyKey, userId) in ONE transaction: SELECT … FOR UPDATE on the plan → idempotency lookup → load lines → re-run analysis + ALL hard stops with fresh context (422 with { lineId, codes } on failure) → group by supplier → insert POs (status 'pending_approval' if grand_total > app_state.po_approval_limit, else 'ready'; po_number from po_number_seq, totals from the shared totals function, expected_delivery_date) → insert PO lines with recommendation_id → update line statuses, approvals, plan status → audit po.created ×N and plan.lines_approved.
 2. rejectPlan(planId, reason) in plans.ts.
-3. Routes: POST /api/purchase-plans/[id]/approve and POST /api/purchase-plans/[id]/reject (Zod, §8 status codes).
-4. UI: enable Approve on the plan screen. Generate crypto.randomUUID() when the confirmation dialog opens; the dialog lists the POs per supplier with totals; the button is disabled while running; success toast with links to the POs. Add Reject plan (reason required).
-5. tests/integration/approval.test.ts (skip when TEST_DATABASE_URL is unset): approve twice with the same key → the same POs, no extra rows; PO total = Σ lines; a second approval of the same line fails; a rejected plan creates no POs.
-6. Manually: approve 5 lines across 3 suppliers, then replay the same request with curl. Show me the result.
-7. `npm run check` and `npm run build`. Commit: "stage 4: approval service".
+3. lib/services/purchase-orders.ts: approvePo (pending_approval → approved, approvals row, audit po.approved), rejectPo (pending_approval → rejected, reason ≥ 3, audit po.rejected), sendPo (ready | approved → sent, sent_at, sent_by, audit po.sent; pending_approval → 409 APPROVAL_REQUIRED; others → 409 PO_LOCKED). Sending is SIMULATED: no email, no API, nothing leaves the app. Each runs in one transaction with SELECT … FOR UPDATE on the PO.
+4. Routes: POST /api/purchase-plans/[id]/approve, POST /api/purchase-plans/[id]/reject, POST /api/purchase-orders/[id]/approve, /reject, /send (Zod, §8 status codes).
+5. UI: enable Approve on the plan screen. Generate crypto.randomUUID() when the confirmation dialog opens; the dialog lists the POs per supplier with totals and marks which will need Owner approval; the button is disabled while running; success toast with links to the POs. Add Reject plan (reason required).
+6. tests/integration/approval.test.ts (skip when TEST_DATABASE_URL is unset): approve twice with the same key → the same POs, no extra rows; PO total = Σ lines; a second approval of the same line fails; a rejected plan creates no POs; a PO above the limit is pending_approval, send → 409 APPROVAL_REQUIRED, approve then send → sent; a PO at exactly the limit is ready.
+7. Manually: approve 5 lines across 3 suppliers, then replay the same request with curl. To test the gate without a scenario, temporarily set po_approval_limit low (e.g. ₹10,000) with SQL, approve, try send, approve the PO, send, then restore ₹4,00,000. Show me the results.
+8. `npm run check` and `npm run build`. Commit: "stage 4: approval service".
 ```
 
 ### P18 — Purchase orders and Activity
 
 ```text
-Stage 4, step 2: PO screens and activity log. Follow implementationplan.md §10.3 (Purchase Orders, Activity), §7.7 (exportPo) and §13.
+Stage 4, step 2: PO screens and activity log. Follow implementationplan.md §10.3 (Purchase Orders, Activity), §7.6a, §7.7 (exportPo) and §13.
 Design: follow implementationplan.md §10.1 (premium design system) exactly, and do its Visual QA step (screenshots at 1440×900 and 1024×768) before committing.
 
-1. lib/services/purchase-orders.ts: listPurchaseOrders, getPurchaseOrder, exportPo (CSV, status → exported, audit po.exported).
+1. lib/services/purchase-orders.ts: listPurchaseOrders, getPurchaseOrder, exportPo (CSV, any status, status unchanged, audit po.exported).
 2. Routes: GET /api/purchase-orders, GET /api/purchase-orders/[id], POST /api/purchase-orders/[id]/export (text/csv download), GET /api/audit.
-3. /purchase-orders list and /purchase-orders/[poId] detail as a printable PO document with the "DRAFT — not sent to supplier" watermark, Export CSV and Print (print CSS hides the dashboard shell).
+3. /purchase-orders list (status pill per PO; filter "Awaiting Owner approval") and /purchase-orders/[poId] detail as a printable PO document with a "NOT SENT" watermark until sent, then "SENT (simulated)"; actions by status: Approve / Reject (Owner, reason required) for pending_approval, "Send to supplier (simulated)" for ready / approved (toast "Marked as sent — simulated, nothing was emailed"), Export CSV and Print in any status (print CSS hides the dashboard shell).
 4. /activity: AuditTable (time, actor, action, entity, before → after summary, reason), filters, Load more.
-5. Search the codebase and confirm the words "sent", "ordered" and "confirmed" are never used as a status or label.
+5. Search the codebase and confirm "ordered" and "confirmed" are never used as a status or label, and that every place showing "sent" also says it is simulated.
 6. `npm run check` and `npm run build`. Commit: "stage 4: purchase orders and activity".
 ```
 **You check:** stage 4 Verify in plan §15.
@@ -394,7 +397,7 @@ Design: follow implementationplan.md §10.1 (premium design system) exactly, and
 ```text
 Stage 6, step 1: the AI orchestrator. Follow implementationplan.md §9.2, §9.3 and §9.4 exactly, plus architecture.md §9.
 
-1. lib/agents/tools.ts: exactly the 19 tools in the §9.2 table. Each has a name, a description, a Zod input schema converted with z.toJSONSchema() and passed as parametersJsonSchema (keep schemas simple: no oneOf, no recursion) and a handler that calls services and returns a ToolResult (lib/validation/tool-contract.ts). Re-validate every input with Zod before running. recalculate_plan is the only write tool and audits with actor_type 'agent'. Do NOT add tools for approve, reject, PO creation or SQL.
+1. lib/agents/tools.ts: exactly the 19 tools in the §9.2 table. Each has a name, a description, a Zod input schema converted with z.toJSONSchema() and passed as parametersJsonSchema (keep schemas simple: no oneOf, no recursion) and a handler that calls services and returns a ToolResult (lib/validation/tool-contract.ts). Re-validate every input with Zod before running. recalculate_plan is the only write tool and audits with actor_type 'agent'. Do NOT add tools for approve, reject, PO creation, Owner PO approval, sending a PO, changing the approval limit or SQL.
 2. lib/agents/prompts.ts: the §9.3 system prompt, byte for byte (sent as config.systemInstruction).
 3. lib/agents/orchestrator.ts: runAgent({ message, planId }) with the §9.4 manual function-calling loop using @google/genai: model from GEMINI_MODEL (default gemini-flash-latest), systemInstruction, tools: [{ functionDeclarations }], functionCallingConfig mode AUTO, automaticFunctionCalling { disable: true }, maxOutputTokens 8192, httpOptions { timeout: 15000 }, max 8 turns. Append candidate.content EXACTLY as returned (keeps thoughtSignature parts), then all functionResponse parts in ONE user turn, in call order, with matching id and name. Catch ApiError and network/timeout errors. Missing GEMINI_API_KEY, any non-STOP finishReason, or any failure → deterministic fallback with source 'deterministic'.
    Check exact type names in node_modules/@google/genai/dist/genai.d.ts. Do not guess.
@@ -412,7 +415,7 @@ Design: follow implementationplan.md §10.1 (premium design system) exactly, and
 1. AskPanel (Sheet) on the plan screen: message box, conversation list, replies with `references` rendered as links (SKU → drawer, bin → warehouse), a "source: AI / calculated" tag, and a small note when the AI is unavailable.
 2. The Why? popover shows the source tag too.
 3. After createPlan, if the key is set, generate a 3–5 sentence plan summary through the agent (non-blocking), store it in assumptions_json.summary and show it above the Impact Card.
-4. Run all 7 Appendix A prompts in the UI. Prompt 3 must recalculate the saved plan and list deferred lines. Prompts 6 and 7 must explain that the user edits and approves (the agent cannot). Prompt 2's numbers must match the drawer.
+4. Run all 7 Appendix A prompts in the UI. Prompt 3 must list the supplier POs and which need Owner approval (from get_po_projection). Prompts 6 and 7 must explain that the user edits and approves, that POs above ₹4,00,000 need the Owner, and that sending is simulated (the agent cannot do any of it). Prompt 2's numbers must match the drawer.
 5. Remove GEMINI_API_KEY and confirm every button still works.
 6. `npm run check` and `npm run build`. Commit: "stage 6: ask panel, why and summary".
 ```
@@ -429,12 +432,12 @@ Stage 7, step 1: scenarios and the Data & Scenarios screen. Follow implementatio
 Design: follow implementationplan.md §10.1 (premium design system) exactly, and do its Visual QA step (screenshots at 1440×900 and 1024×768) before committing.
 
 1. lib/scenarios/apply.ts: implement all 5 scenarios as IN-MEMORY changes to the planning context, exactly as the §12 table says, using SKUs from data/synthetic/demo-cases.json. Never write scenario effects to the seed tables.
-2. lib/services/scenarios.ts: list, run (sets app_state.active_scenario_id, audit scenario.run), reset (baseline, audit scenario.reset). budget_cut makes ₹1,00,000 the budget for new and recalculated plans.
+2. lib/services/scenarios.ts: list, run (sets app_state.active_scenario_id, audit scenario.run), reset (baseline, audit scenario.reset). seasonal_surge multiplies the last 10 days of sales × 4 for analgesic, antibiotic and respiratory SKUs; check that at least one supplier PO then exceeds ₹4,00,000 and tune the multiplier in the scenario params if not.
 3. Routes: GET /api/scenarios, POST /api/scenarios/[id]/run, POST /api/scenarios/reset.
-4. /data page: data summary (rows per table, as-of date, seed), the Data sources list from data_sources (name, link, label, what it informed), 5 scenario cards with Run/Reset, a "Recalculate current plan" button after Run, default budget input (audit settings.budget_changed), and components/scenarios/RoiModel with sliders for each problemstatement.md §11 assumption and live totals, labelled "Illustrative model — edit the assumptions".
+4. /data page: data summary (rows per table, as-of date, seed), the Data sources list from data_sources (name, link, label, what it informed), 5 scenario cards with Run/Reset, a "Recalculate current plan" button after Run, an Owner approval limit input (default ₹4,00,000; PATCH /api/settings; audit settings.approval_limit_changed), and components/scenarios/RoiModel with sliders for each problemstatement.md §11 assumption and live totals, labelled "Illustrative model — edit the assumptions".
 5. Show the active scenario chip in the TopBar.
 6. Unit tests for apply.ts (each scenario changes the expected field; baseline changes nothing).
-7. Verify stage 7 in §15: budget cut → total ≤ ₹1,00,000 with deferred reasons; supplier delay re-ranks; Reset restores the baseline numbers. Show me before/after numbers.
+7. Verify stage 7 in §15: seasonal surge → recalculate → at least one supplier PO above ₹4,00,000 with the Owner approval badge; supplier delay re-ranks; Reset restores the baseline numbers. Show me before/after numbers (plan total and each supplier's PO total).
 8. `npm run check` and `npm run build`. Commit: "stage 7: scenarios and ROI model".
 ```
 
@@ -467,7 +470,7 @@ Stage 8, step 1: audit against the definition of done. Do not add features.
 
 1. Go through implementationplan.md §18 line by line. For each item, state PASS or FAIL with evidence (file + test name, or the exact manual step you ran and what you saw).
 2. Go through the §14.3 manual checklist the same way.
-3. Check the rules R1–R10 (§0.1): grep for float money maths outside lib/money.ts, DB or agent imports in "use client" files, PO inserts outside approval.ts, audit inserts outside audit.ts, and Math.random in the engine or seed.
+3. Check the rules R1–R10 (§0.1): grep for float money maths outside lib/money.ts, DB or agent imports in "use client" files, PO inserts outside approval.ts, PO status changes to 'sent' outside sendPo, any email/HTTP call that could reach a supplier, audit inserts outside audit.ts, and Math.random in the engine or seed. Confirm no PO above ₹4,00,000 can reach 'sent' without an approvals row.
 4. List every FAIL, ordered by demo impact.
 
 STOP. Do not fix anything until I choose which FAILs to fix.
@@ -480,7 +483,7 @@ Stage 8, step 2: prepare the demo environment.
 
 1. `npm run db:reset && npm run seed`. Confirm validation passes.
 2. `npm run build`, then `npm run start`, and smoke-test every route at http://localhost:3000.
-3. Time "Create plan" at ₹2,00,000 three times and report the measured time-to-reviewable-plan (this is the real number for the pitch).
+3. Time "Create plan" three times and report the measured time-to-reviewable-plan (this is the real number for the pitch).
 4. If a local Postgres is available, seed it the same way and confirm the dashboard works against it by swapping DATABASE_URL (backup for demo day). If not, tell me how to set it up (plan §3.2).
 5. Report anything that failed. Commit only if files changed: "stage 8: demo build".
 ```
@@ -491,10 +494,10 @@ Stage 8, step 2: prepare the demo environment.
 Stage 8, step 3: demo notes. Create docs/demo-notes.md (no code changes).
 
 Using implementationplan.md §17 and data/synthetic/demo-cases.json, write the exact click path for the 3–4 minute demo:
-- which SKU to open at each step (its brand name and SKU code), which supplier comparison to show, which bin to click, which scenario to run, and which line to edit to what quantity;
+- which SKU to open at each step (its brand name and SKU code), which supplier comparison to show, which bin to click, which scenario to run (Seasonal surge, so one supplier PO crosses ₹4,00,000), which line to edit to what quantity, and the approval moment: approve lines → the large PO is "Awaiting Owner approval" → Send is blocked → Owner approves → Send (simulated);
 - the expected numbers at each step, read from the running dashboard (not guessed);
 - one fallback line per step if something fails (e.g. "If the AI is slow, use Why?, which is deterministic");
-- the 3 questions judges are most likely to ask, with short honest answers (synthetic data, the forecast is a baseline, nothing is sent to suppliers).
+- the 3 questions judges are most likely to ask, with short honest answers (synthetic data, the forecast is a baseline, sending is simulated and nothing leaves the app, why there is no budget cap: the Owner controls spend through the ₹4,00,000 per-PO approval).
 Commit: "stage 8: demo notes".
 ```
 Then rehearse the demo 3 times with a timer and record a backup video yourself.

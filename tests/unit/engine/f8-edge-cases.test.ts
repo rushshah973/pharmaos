@@ -1,10 +1,10 @@
 // F8 — edge cases, one test each (implementationplan.md §14.1).
 import { describe, expect, it } from "vitest";
-import { buildBasket } from "@/lib/business-logic/basket";
 import { analyseSku } from "@/lib/business-logic/engine";
 import { projectExpiry } from "@/lib/business-logic/expiry";
 import { confirmedIncoming, stockPosition } from "@/lib/business-logic/inventory";
 import { offerExclusions } from "@/lib/business-logic/supplier-scoring";
+import { needsOwnerApproval } from "@/lib/business-logic/totals";
 import { hardStops } from "@/lib/business-logic/validation";
 import {
   AS_OF,
@@ -72,8 +72,6 @@ describe("F8 edge cases", () => {
       supplier: makeSupplier(),
       qty: 85,
       asOf: AS_OF,
-      budget: "200000.00",
-      planTotal: "1000.00",
       batches: [makeBatch()],
     });
     expect(stops).toContain("INVALID_PACK_MULTIPLE");
@@ -94,21 +92,8 @@ describe("F8 edge cases", () => {
     expect(offerExclusions({ offer: makeOffer(), supplier, productId: "prod-1", asOf: AS_OF, qty: 90 })).toContain("SUPPLIER_NOT_APPROVED");
   });
 
-  it("budget boundary: a line total exactly equal to the remaining budget is included", () => {
-    const r = buildBasket(
-      [
-        {
-          key: "L1",
-          priority: 1,
-          cover: 1,
-          criticalityWeight: 1,
-          option: { offerId: "o", qty: 10, freeQty: 0, unitPrice: "100.00", taxRate: "0", freightPerPack: "0", moq: 10, packMultiple: 10, lineTotal: "1000.00" },
-          alternatives: [],
-        },
-      ],
-      "1000.00",
-    );
-    expect(r.lines[0].inBasket).toBe(true);
-    expect(r.remaining).toBe("0.00");
+  it("approval boundary: a PO of exactly ₹4,00,000 is sent without approval; one paisa more needs the Owner", () => {
+    expect(needsOwnerApproval("400000.00", "400000.00")).toBe(false);
+    expect(needsOwnerApproval("400000.01", "400000.00")).toBe(true);
   });
 });

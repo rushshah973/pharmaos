@@ -19,9 +19,6 @@ export type ReasonCode =
   | "SCHEME_TAKEN"
   | "SCHEME_SKIPPED_EXPIRY"
   | "EXPIRY_REDUCED_QTY"
-  | "BUDGET_DEFERRED"
-  | "ALT_OFFER_FOR_BUDGET"
-  | "PARTIAL_QTY_BUDGET"
   | "NO_ELIGIBLE_OFFER";
 
 export type WarningCode =
@@ -56,8 +53,6 @@ export type HardStopCode =
   | "BELOW_MOQ"
   | "ABOVE_AVAILABILITY"
   | "NON_POSITIVE_QTY"
-  | "OVER_BUDGET"
-  | "INVALID_BUDGET"
   | "PRODUCT_RECALLED";
 
 export type SkuStatus = "NO_DEMAND" | "STOCKOUT_RISK" | "BELOW_ROP" | "EXCESS" | "HEALTHY";
@@ -314,60 +309,31 @@ export type ImpactCard = {
   marginProtected: Money;
   expiryExposure: Money;
   expiryAvoided: Money;
-  cashCommitted: Money;
-  budgetRemaining: Money;
-  deferredCount: number;
-  deferredRisk: Money;
+  totalSpend: Money; // Σ line totals of the lines in the plan
+  poCount: number; // projected purchase orders (one per supplier)
+  posNeedingApproval: number; // projected POs above the Owner approval limit
+  excludedCount: number; // lines not bought: no eligible offer, or deferred / rejected by the owner
+  excludedRisk: Money; // loss prevented those lines would have given
   lossPreventedPerRupee: number | null; // null when the plan total is 0
+};
+
+/** The purchase order one supplier would get if every counted line were approved. */
+export type SupplierTotal = {
+  supplierId: string;
+  lines: number;
+  total: Money; // PO grand total (Σ line totals incl. GST and freight)
+  needsApproval: boolean; // total > approval limit
 };
 
 export type PlanResult = {
   asOf: IsoDate;
-  budget: Money;
   lines: PlanLine[]; // candidates (ranked), then SKUs that need stock but have no eligible offer
   skuStatuses: { productId: string; sku: string; status: SkuStatus; atRiskValue: Money }[];
   planTotal: Money;
-  budgetRemaining: Money;
+  approvalLimit: Money;
+  supplierTotals: SupplierTotal[];
   impact: ImpactCard;
 };
-
-// ---------------------------------------------------------------------------
-// Basket inputs (§6.9)
-// ---------------------------------------------------------------------------
-
-/** A priced option for a line: the chosen offer or a next-best alternative. */
-export type BasketOption = {
-  offerId: string;
-  qty: number;
-  freeQty: number;
-  unitPrice: Money;
-  taxRate: Money;
-  freightPerPack: Money;
-  moq: number;
-  packMultiple: number;
-  lineTotal: Money;
-  /** Scheme on this option, so a partial quantity keeps only the free goods it still earns. */
-  schemePaidQty?: number | null;
-  schemeFreeQty?: number | null;
-};
-
-export type BasketCandidate = {
-  key: string; // usually the SKU
-  priority: number;
-  cover: number | null;
-  criticalityWeight: number;
-  option: BasketOption; // best-scored offer
-  alternatives: BasketOption[]; // next-best eligible offers, in score order
-};
-
-export type BasketLine = {
-  key: string;
-  inBasket: boolean;
-  option: BasketOption; // what is (or would be) bought
-  reasons: ReasonCode[]; // BUDGET_DEFERRED, ALT_OFFER_FOR_BUDGET, PARTIAL_QTY_BUDGET
-};
-
-export type BasketResult = { lines: BasketLine[]; total: Money; remaining: Money };
 
 export type RecommendationStatus = "proposed" | "edited" | "approved_for_po" | "rejected" | "deferred";
 

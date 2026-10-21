@@ -1,7 +1,6 @@
 // §6.12 — analyseSku() and buildPlan(): compose the modules above. Pure and deterministic:
 // no I/O, no clock, no randomness; the same context always gives the same result.
-import { dec } from "@/lib/money";
-import { buildBasket } from "./basket";
+import { dec, sumMoney } from "@/lib/money";
 import { ENGINE_CONFIG, type EngineConfig } from "./config";
 import { computeDemand } from "./demand";
 import { projectExpiry } from "./expiry";
@@ -10,10 +9,8 @@ import { confirmedIncoming, coverDays, reorderPoint, safetyStock, skuStatus, sto
 import { applyScheme, isCandidate, orderQuantity } from "./ordering";
 import { comparePriority, criticalityWeight, lossPrevented, priorityScore } from "./priority";
 import { applyUrgencyRule, effectiveUnitCost, offerExclusions, priceAnomalies, scoreOffers } from "./supplier-scoring";
-import { budgetRemaining, lineTotals } from "./totals";
+import { lineTotals, supplierTotals } from "./totals";
 import type {
-  BasketCandidate,
-  BasketOption,
   Money,
   OfferEvaluation,
   OfferInput,
@@ -261,24 +258,12 @@ export function analyseSku(sku: SkuContext, config: EngineConfig = ENGINE_CONFIG
   };
 }
 
-/** The priced option for an evaluated offer (used as the basket option or an alternative). */
-function toOption(offer: OfferInput, ev: OfferEvaluation): BasketOption {
-  return {
-    offerId: offer.id,
-    qty: ev.scheme!.qty,
-    freeQty: ev.scheme!.freeQty,
-    unitPrice: offer.unitPrice!,
-    taxRate: offer.taxRate,
-    freightPerPack: offer.freightPerPack,
-    moq: offer.moq,
-    packMultiple: offer.packMultiple,
-    lineTotal: ev.totals!.lineTotal,
-    schemePaidQty: ev.scheme!.taken ? offer.schemePaidQty : null,
-    schemeFreeQty: ev.scheme!.taken ? offer.schemeFreeQty : null,
-  };
-}
-
-export function buildPlan(ctx: PlanningContext, budget: Money, config: EngineConfig = ENGINE_CONFIG): PlanResult {
+/**
+ * The plan: every SKU that needs stock and has an eligible offer, at the engine's quantity, ranked by
+ * priority (§6.8); then SKUs that need stock but have no eligible offer. There is no budget cap —
+ * spend is controlled per purchase order by the Owner approval limit (projected in `supplierTotals`).
+ */
+export function buildPlan(ctx: PlanningContext, config: EngineConfig = ENGINE_CONFIG): PlanResult {
   const analyses = ctx.skus
     .filter((s) => s.product.isActive)
     .map((s) => ({ ctx: s, a: analyseSku(s, config) }));
@@ -293,28 +278,8 @@ export function buildPlan(ctx: PlanningContext, budget: Money, config: EngineCon
       ),
     );
 
-  const basketInput: BasketCandidate[] = candidates.map(({ ctx: s, a }) => {
-    const offerById = new Map(s.offers.map((o) => [o.id, o]));
-    const scored = a.offers
-      .filter((ev) => ev.score !== null && ev.totals && ev.scheme)
-      .sort((p, q) => q.score! - p.score! || p.offerId.localeCompare(q.offerId));
-    const ordered = [a.chosen!, ...scored.filter((ev) => ev.offerId !== a.chosen!.offerId)];
-    const options = ordered.map((ev) => toOption(offerById.get(ev.offerId)!, ev));
-    return {
-      key: a.sku,
-      priority: a.priority,
-      cover: a.cover,
-      criticalityWeight: criticalityWeight(s.product.criticality, config),
-      option: options[0],
-      alternatives: options.slice(1),
-    };
-  });
-  const basket = buildBasket(basketInput, budget);
-
   const lines: PlanLine[] = candidates.map(({ ctx: s, a }, i) => {
-    const b = basket.lines[i];
-    const offer = s.offers.find((o) => o.id === b.option.offerId)!;
-    const totals = lineTotals({ qty: b.option.qty, unitPrice: b.option.unitPrice, taxRate: b.option.taxRate, freightPerPack: b.option.freightPerPack });
+    const offer = s.offers.find((o) => o.id === a.chosen!.offerId)!;
     return {
       productId: a.productId,
       sku: a.sku,
@@ -323,17 +288,17 @@ export function buildPlan(ctx: PlanningContext, budget: Money, config: EngineCon
       cover: a.cover,
       offerId: offer.id,
       supplierId: offer.supplierId,
-      qty: b.option.qty,
-      freeQty: b.option.freeQty,
-      unitPrice: b.option.unitPrice,
-      totals,
+      qty: a.qty,
+      freeQty: a.freeQty,
+      unitPrice: offer.unitPrice,
+      totals: a.totals,
       lossPrevented: a.lossPrevented,
       expiryAvoidedValue: a.expiryAvoidedValue,
       priority: a.priority,
-      inBasket: b.inBasket,
-      reasons: [...a.reasons, ...b.reasons],
+      inBasket: true,
+      reasons: a.reasons,
       warnings: a.warnings,
-      evidence: { ...a.evidence, basket: { inBasket: b.inBasket, reasons: b.reasons, option: b.option } },
+      evidence: a.evidence,
     };
   });
 
@@ -364,6 +329,12 @@ export function buildPlan(ctx: PlanningContext, budget: Money, config: EngineCon
       }),
     );
 
+  const included = lines.filter((l) => l.inBasket && l.totals);
+  const planTotal = sumMoney(included.map((l) => l.totals!.lineTotal)).toFixed(2);
+  const suppliers = supplierTotals(
+    included.map((l) => ({ supplierId: l.supplierId, lineTotal: l.totals!.lineTotal, inBasket: true, status: "proposed" as const })),
+    config.poApprovalLimit,
+  );
   const skuStatuses = analyses.map(({ a }) => ({ productId: a.productId, sku: a.sku, status: a.status, atRiskValue: a.expiry.atRiskValue }));
   const impact = computeImpact({
     skus: skuStatuses,
@@ -375,16 +346,16 @@ export function buildPlan(ctx: PlanningContext, budget: Money, config: EngineCon
       reasons: l.reasons,
       expiryAvoidedValue: l.expiryAvoidedValue,
     })),
-    budget,
+    supplierTotals: suppliers,
   });
 
   return {
     asOf: ctx.asOf,
-    budget: dec(budget).toFixed(2),
     lines,
     skuStatuses,
-    planTotal: basket.total,
-    budgetRemaining: budgetRemaining(budget, basket.total),
+    planTotal,
+    approvalLimit: config.poApprovalLimit,
+    supplierTotals: suppliers,
     impact,
   };
 }

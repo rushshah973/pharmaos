@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { orderQuantity, applyScheme } from "@/lib/business-logic/ordering";
 import { comparePriority, lossPrevented, priorityScore } from "@/lib/business-logic/priority";
 import { applyUrgencyRule, offerExclusions, priceAnomalies, scoreOffers } from "@/lib/business-logic/supplier-scoring";
-import { budgetRemaining, planTotal } from "@/lib/business-logic/totals";
+import { planTotal, supplierTotals } from "@/lib/business-logic/totals";
 import { AS_OF, makeOffer, makeSupplier } from "@/tests/fixtures/engine";
 
 describe("§6.5 ordering rules", () => {
@@ -78,7 +78,7 @@ describe("§6.6 supplier rules", () => {
 });
 
 describe("§6.7 totals", () => {
-  it("plan total counts only in-basket proposed / edited / approved lines; remaining never negative", () => {
+  it("plan total counts only in-plan proposed / edited / approved lines", () => {
     const total = planTotal([
       { lineTotal: "100.10", inBasket: true, status: "proposed" },
       { lineTotal: "200.20", inBasket: true, status: "edited" },
@@ -88,8 +88,24 @@ describe("§6.7 totals", () => {
       { lineTotal: "777.00", inBasket: true, status: "deferred" },
     ]);
     expect(total).toBe("600.60");
-    expect(budgetRemaining("1000.00", total)).toBe("399.40");
-    expect(budgetRemaining("500.00", total)).toBe("0.00");
+  });
+
+  it("projects one PO per supplier from counted lines and flags those above the approval limit", () => {
+    const pos = supplierTotals(
+      [
+        { supplierId: "S1", lineTotal: "250000.00", inBasket: true, status: "proposed" },
+        { supplierId: "S1", lineTotal: "150000.01", inBasket: true, status: "edited" },
+        { supplierId: "S2", lineTotal: "400000.00", inBasket: true, status: "proposed" },
+        { supplierId: "S2", lineTotal: "90000.00", inBasket: true, status: "rejected" },
+        { supplierId: "S3", lineTotal: "10.00", inBasket: false, status: "proposed" },
+        { supplierId: null, lineTotal: "0.00", inBasket: false, status: "proposed" },
+      ],
+      "400000.00",
+    );
+    expect(pos).toEqual([
+      { supplierId: "S1", lines: 2, total: "400000.01", needsApproval: true },
+      { supplierId: "S2", lines: 1, total: "400000.00", needsApproval: false },
+    ]);
   });
 });
 

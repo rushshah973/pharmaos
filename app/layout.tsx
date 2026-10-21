@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: { default: "PharmaOS", template: "PharmaOS · %s" },
-  description: "Budget-capped, explainable purchase plans for pharma stockists. Synthetic demo data.",
+  description: "Ranked, explainable purchase plans for pharma stockists, with Owner approval for large orders. Synthetic demo data.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

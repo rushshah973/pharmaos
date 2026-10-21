@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { CalendarDays, FlaskConical, Wallet } from "lucide-react";
+import { CalendarDays, FlaskConical, ShieldCheck } from "lucide-react";
 import { formatDisplayDate } from "@/lib/format/date";
 import { formatINR } from "@/lib/money";
 import { getShellState } from "@/lib/services/app-state";
@@ -32,8 +32,8 @@ async function TopBarFacts() {
       <Fact icon={<CalendarDays className="size-3.5" strokeWidth={1.75} />} label="As of">
         {formatDisplayDate(state.asOf)}
       </Fact>
-      <Fact icon={<Wallet className="size-3.5" strokeWidth={1.75} />} label="Budget">
-        {formatINR(state.defaultBudget, { paise: false })}
+      <Fact icon={<ShieldCheck className="size-3.5" strokeWidth={1.75} />} label="Approval above">
+        {formatINR(state.approvalLimit, { paise: false })}
       </Fact>
     </div>
   );
@@ -55,7 +55,7 @@ function TopBarFactsSkeleton() {
   return (
     <div className="flex shrink-0 items-center gap-2" aria-hidden>
       <span className="shimmer h-7 w-[150px] rounded-md" />
-      <span className="shimmer h-7 w-[150px] rounded-md" />
+      <span className="shimmer h-7 w-[200px] rounded-md" />
     </div>
   );
 }

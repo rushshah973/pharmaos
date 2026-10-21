@@ -33,7 +33,7 @@ describe("expiry reduction", () => {
   });
 
   it("the Impact Card counts no expiry avoided for reduced quantities", () => {
-    const plan = buildPlan({ asOf: AS_OF, skus: [skuWithNearExpiryBatch(6)] }, "200000.00");
+    const plan = buildPlan({ asOf: AS_OF, skus: [skuWithNearExpiryBatch(6)] });
     expect(plan.lines[0].reasons).toContain("EXPIRY_REDUCED_QTY");
     expect(plan.impact.expiryAvoided).toBe("0.00");
   });

@@ -22,7 +22,6 @@ type Evidence = {
   freeQty?: number;
   reasons?: string[];
   expiryAvoidedValue?: string;
-  basket?: { inBasket?: boolean; reasons?: string[] };
 };
 
 /** The line as it stands now (after owner edits), when it differs from the engine's evidence. */
@@ -42,7 +41,7 @@ const packs = (n: number) => `${n.toLocaleString("en-IN")} pack${n === 1 ? "" : 
 export function explainLine(evidenceJson: Record<string, unknown>, current?: CurrentLine): string {
   const ev = evidenceJson as Evidence;
   const offers = ev.offers ?? [];
-  const reasons = new Set(current?.reasons ?? [...(ev.reasons ?? []), ...(ev.basket?.reasons ?? [])]);
+  const reasons = new Set(current?.reasons ?? ev.reasons ?? []);
   const cover = ev.stock?.cover ?? null;
   const name = ev.product?.brandName ?? ev.product?.sku ?? "This SKU";
   const offerId = current ? current.offerId : (ev.chosenOfferId ?? null);
@@ -88,14 +87,10 @@ export function explainLine(evidenceJson: Record<string, unknown>, current?: Cur
   if (reasons.has("EXPIRY_REDUCED_QTY")) {
     out.push("The quantity is capped at the reorder point because existing batches are at expiry risk.");
   }
-  if (reasons.has("ALT_OFFER_FOR_BUDGET")) out.push(`${chosen.supplierCode} was used instead of the top-scored offer so the line fits the budget.`);
-  if (reasons.has("PARTIAL_QTY_BUDGET")) out.push("The quantity was reduced so the line fits the remaining budget.");
 
   if (current?.status === "deferred") out.push(`Deferred${current.deferReason ? `: ${current.deferReason}` : ""}.`);
   else if (current?.status === "rejected") out.push(`Rejected${current.deferReason ? `: ${current.deferReason}` : ""}.`);
+  else if (current?.status === "edited" && !current.inBasket) out.push(`The owner's edit can no longer be bought (${current.deferReason ?? "hard stop"}).`);
   else if (current?.status === "edited") out.push("The owner edited this line.");
-  else if ((current ? !current.inBasket : ev.basket?.inBasket === false) || reasons.has("BUDGET_DEFERRED")) {
-    out.push("It is deferred because it did not fit the budget after higher-priority lines.");
-  }
   return out.join(" ");
 }

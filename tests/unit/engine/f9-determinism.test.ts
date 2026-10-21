@@ -6,8 +6,8 @@ import { makeContext } from "@/tests/fixtures/engine";
 describe("F9 determinism", () => {
   it("buildPlan twice on the same context gives deep-equal output", () => {
     const ctx = makeContext();
-    const first = buildPlan(ctx, "200000.00");
-    const second = buildPlan(makeContext(), "200000.00");
+    const first = buildPlan(ctx);
+    const second = buildPlan(makeContext());
     expect(second).toEqual(first);
     expect(JSON.stringify(second)).toBe(JSON.stringify(first));
   });

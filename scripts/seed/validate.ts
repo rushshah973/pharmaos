@@ -1,7 +1,6 @@
 // Phase D2: integrity, demo-case and no-copy checks (implementationplan.md §5.7).
 // Every case and the default plan are checked with the real decision engine.
 // Returns a list of failures; index.ts exits 1 if it is not empty.
-import { sumMoney } from "@/lib/money";
 import { buildPlan } from "@/lib/business-logic/engine";
 import type { SyntheticDataset } from "./generate-synthetic";
 import { datasetToContext } from "./to-engine";
@@ -156,21 +155,17 @@ export function validate(
     if (!a.warnings.includes("DEMAND_SPIKE")) fail(`spike ${sku}: engine did not flag DEMAND_SPIKE (d7/d28 = ${(a.demand.d7 / a.demand.d28).toFixed(2)})`);
   }
 
-  // ---- Default plan binds the budget (the real engine) ----
+  // ---- Default plan (the real engine): enough lines, and its projected POs ----
   const ctx = datasetToContext(data);
-  const plan = buildPlan(ctx, "200000.00");
-  const tight = buildPlan(ctx, "100000.00");
+  const plan = buildPlan(ctx);
   const candidates = plan.lines.filter((l) => l.totals);
-  const wanted = sumMoney(candidates.map((l) => l.totals!.lineTotal));
-  const inTight = tight.lines.filter((l) => l.inBasket).length;
+  const largest = plan.supplierTotals[0];
   notes.push(
-    `default plan: ${candidates.length} candidate lines worth ₹${Math.round(wanted.toNumber()).toLocaleString("en-IN")}; ` +
-      `₹2,00,000 buys ${plan.lines.filter((l) => l.inBasket).length} (total ₹${plan.planTotal}); ₹1,00,000 buys ${inTight} (total ₹${tight.planTotal})`,
+    `default plan: ${candidates.length} lines worth ₹${Math.round(Number(plan.planTotal)).toLocaleString("en-IN")} across ${plan.supplierTotals.length} supplier POs; ` +
+      `largest PO ₹${Math.round(Number(largest?.total ?? 0)).toLocaleString("en-IN")}; ${plan.impact.posNeedingApproval} above the ₹4,00,000 approval limit`,
   );
   if (candidates.length < 15) fail(`only ${candidates.length} candidate lines (need ≥ 15)`);
-  if (!wanted.greaterThan(200_000)) fail(`candidate lines total ₹${wanted.toFixed(2)}: does not exceed ₹2,00,000, so the budget would not bind`);
-  if (inTight < 5) fail(`only ${inTight} lines fit in ₹1,00,000 (need ≥ 5)`);
-  if (sumMoney([plan.planTotal]).greaterThan(200_000) || sumMoney([tight.planTotal]).greaterThan(100_000)) fail("a plan exceeds its budget");
+  if (plan.supplierTotals.length < 3) fail(`only ${plan.supplierTotals.length} supplier POs (need ≥ 3)`);
 
   // ---- No-copy checks ----
   const tables = {

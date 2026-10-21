@@ -1,11 +1,13 @@
 // Purchase plans (implementationplan.md §7.2–§7.5): create, read, edit a line (with preview), recalculate.
+// There is no purchase budget: every SKU that needs stock is planned, ranked by priority, and spend is
+// controlled per purchase order by the Owner approval limit (app_state.po_approval_limit).
 // Every mutation runs in one transaction and writes its audit row inside it.
 import type postgres from "postgres";
 import { ServiceError, notFound } from "@/lib/api/errors";
 import { ENGINE_CONFIG } from "@/lib/business-logic/config";
 import { analyseSku, buildPlan } from "@/lib/business-logic/engine";
 import { computeImpact } from "@/lib/business-logic/impact";
-import { budgetRemaining, lineTotals, planTotal } from "@/lib/business-logic/totals";
+import { lineTotals, planTotal, supplierTotals } from "@/lib/business-logic/totals";
 import type {
   HardStopCode,
   ImpactCard,
@@ -18,30 +20,32 @@ import type {
   SkuAnalysis,
   SkuContext,
   SkuStatus,
+  SupplierTotal,
   WarningCode,
 } from "@/lib/business-logic/types";
 import { hardStops } from "@/lib/business-logic/validation";
 import { getSql } from "@/lib/db/client";
-import { dec, sumMoney, toMoneyString } from "@/lib/money";
+import { sumMoney } from "@/lib/money";
 import type { LineChange } from "@/lib/validation/api";
-import { resolvePlanningState } from "./as-of";
+import { type PlanningState, resolvePlanningState } from "./as-of";
 import { type SqlHandle, writeAudit } from "./audit";
 import { loadPlanningContext } from "./context";
 
 export type PlanStatus = "draft" | "partially_approved" | "approved" | "rejected";
 export type Actor = { type: "user" | "agent"; id: string };
 
-const defaultActor = (): Actor => ({
-  type: "user",
-  id: process.env.DEMO_USER ?? "demo.owner",
-});
+const defaultActor = (): Actor => ({ type: "user", id: process.env.DEMO_USER ?? "demo.owner" });
+
+/** A projected purchase order: what one supplier would get if every counted line were approved. */
+export type SupplierPo = SupplierTotal & { supplierCode: string; supplierName: string };
 
 export type PlanSummary = {
   id: string;
   status: PlanStatus;
-  budget: Money;
   proposedTotal: Money;
-  budgetRemaining: Money;
+  /** Current Owner approval limit: a PO above it needs approval before it can be sent. */
+  approvalLimit: Money;
+  supplierPos: SupplierPo[];
   scenarioId: string;
   scenarioName: string;
   asOf: string;
@@ -78,8 +82,9 @@ export type LineView = {
   unitPrice: Money | null;
   totals: LineTotals;
   priority: number;
+  /** False for lines that cannot be bought (no eligible offer, or an edited line that now fails a hard stop). */
   inBasket: boolean;
-  /** In the basket and counted in the plan total (status proposed, edited or approved_for_po). */
+  /** In the plan and counted in its total (status proposed, edited or approved_for_po). */
   counted: boolean;
   status: RecommendationStatus;
   reasons: ReasonCode[];
@@ -103,9 +108,8 @@ const isCounted = (l: { inBasket: boolean; status: RecommendationStatus }) => l.
 type PlanRow = {
   id: string;
   status: PlanStatus;
-  budget: string;
   proposed_total: string;
-  budget_remaining: string;
+  approval_limit: string;
   scenario_id: string;
   scenario_name: string;
   as_of: string;
@@ -121,9 +125,8 @@ async function selectPlan(sql: SqlHandle, planId: string, forUpdate = false): Pr
   const [row] = await sql<PlanRow[]>`
     select
       pp.id, pp.status,
-      pp.budget_limit::text as budget,
       pp.proposed_total::text as proposed_total,
-      pp.budget_remaining::text as budget_remaining,
+      (select po_approval_limit::text from app_state where id = 1) as approval_limit,
       pp.scenario_id, s.name as scenario_name,
       to_char(pp.as_of_date, 'YYYY-MM-DD') as as_of,
       pp.reject_reason,
@@ -139,20 +142,32 @@ async function selectPlan(sql: SqlHandle, planId: string, forUpdate = false): Pr
   return row;
 }
 
-function toSummary(r: PlanRow): PlanSummary {
+/** Projected supplier POs from the lines, against the current approval limit. */
+function projectPos(lines: LineView[], approvalLimit: Money): SupplierPo[] {
+  const names = new Map(lines.filter((l) => l.supplierId).map((l) => [l.supplierId!, { code: l.supplierCode ?? "", name: l.supplierName ?? "" }]));
+  return supplierTotals(
+    lines.map((l) => ({ supplierId: l.supplierId, lineTotal: l.totals.lineTotal, inBasket: l.inBasket, status: l.status })),
+    approvalLimit,
+  ).map((t) => ({ ...t, supplierCode: names.get(t.supplierId)?.code ?? "", supplierName: names.get(t.supplierId)?.name ?? "" }));
+}
+
+/** Summary from the plan row and its lines. PO counts in the Impact Card follow the current approval limit. */
+function summarize(r: PlanRow, lines: LineView[], override?: { total?: Money; impact?: ImpactCard }): PlanSummary {
+  const supplierPos = projectPos(lines, r.approval_limit);
+  const impact = override?.impact ?? r.impact;
   return {
     id: r.id,
     status: r.status,
-    budget: r.budget,
-    proposedTotal: r.proposed_total,
-    budgetRemaining: r.budget_remaining,
+    proposedTotal: override?.total ?? r.proposed_total,
+    approvalLimit: r.approval_limit,
+    supplierPos,
     scenarioId: r.scenario_id,
     scenarioName: r.scenario_name,
     asOf: r.as_of,
     rejectReason: r.reject_reason,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
-    impact: r.impact,
+    impact: { ...impact, poCount: supplierPos.length, posNeedingApproval: supplierPos.filter((p) => p.needsApproval).length },
   };
 }
 
@@ -205,23 +220,14 @@ async function selectLines(sql: SqlHandle, planId: string, opts: { lineId?: stri
 function toLineView(r: LineRow): LineView {
   const { lineSubtotal, lineTax, lineFreight, lineTotal, evidence: _evidence, ...rest } = r;
   void _evidence;
-  return {
-    ...rest,
-    totals: { lineSubtotal, lineTax, lineFreight, lineTotal },
-    counted: isCounted(r),
-  };
+  return { ...rest, totals: { lineSubtotal, lineTax, lineFreight, lineTotal }, counted: isCounted(r) };
 }
 
 export async function getPlan(planId: string, sql: SqlHandle = getSql()): Promise<PlanView> {
-  const [plan, lines] = await Promise.all([selectPlan(sql, planId), selectLines(sql, planId)]);
+  const [plan, rows] = await Promise.all([selectPlan(sql, planId), selectLines(sql, planId)]);
   if (!plan) throw notFound("Plan", planId);
-  return { ...toSummary(plan), lines: lines.map(toLineView) };
-}
-
-export async function getPlanSummary(planId: string, sql: SqlHandle = getSql()): Promise<PlanSummary> {
-  const plan = await selectPlan(sql, planId);
-  if (!plan) throw notFound("Plan", planId);
-  return toSummary(plan);
+  const lines = rows.map(toLineView);
+  return { ...summarize(plan, lines), lines };
 }
 
 /** One line with its full evidence_json (line drawer, explain). */
@@ -258,15 +264,13 @@ type RecRow = {
   evidence_json: Record<string, unknown>;
 };
 
-const ZERO_TOTALS: LineTotals = {
-  lineSubtotal: "0.00",
-  lineTax: "0.00",
-  lineFreight: "0.00",
-  lineTotal: "0.00",
-};
+const ZERO_TOTALS: LineTotals = { lineSubtotal: "0.00", lineTax: "0.00", lineFreight: "0.00", lineTotal: "0.00" };
+
+const rowTotals = (t: LineTotals) => ({ line_subtotal: t.lineSubtotal, line_tax: t.lineTax, line_freight: t.lineFreight, line_total: t.lineTotal });
+
+const lineEvidence = (a: SkuAnalysis) => ({ ...a.evidence, skuStatus: a.status, lossPrevented: a.lossPrevented, expiryAvoidedValue: a.expiryAvoidedValue });
 
 function planLineToRow(l: PlanLine, rank: number): RecRow {
-  const t = l.totals ?? ZERO_TOTALS;
   return {
     product_id: l.productId,
     selected_offer_id: l.offerId,
@@ -274,10 +278,7 @@ function planLineToRow(l: PlanLine, rank: number): RecRow {
     suggested_qty: l.qty,
     free_qty: l.freeQty,
     unit_price: l.unitPrice,
-    line_subtotal: t.lineSubtotal,
-    line_tax: t.lineTax,
-    line_freight: t.lineFreight,
-    line_total: t.lineTotal,
+    ...rowTotals(l.totals ?? ZERO_TOTALS),
     priority_score: l.priority,
     rank,
     in_basket: l.inBasket,
@@ -286,12 +287,7 @@ function planLineToRow(l: PlanLine, rank: number): RecRow {
     status: "proposed",
     defer_reason: null,
     user_note: null,
-    evidence_json: {
-      ...l.evidence,
-      skuStatus: l.status,
-      lossPrevented: l.lossPrevented,
-      expiryAvoidedValue: l.expiryAvoidedValue,
-    },
+    evidence_json: { ...l.evidence, skuStatus: l.status, lossPrevented: l.lossPrevented, expiryAvoidedValue: l.expiryAvoidedValue },
   };
 }
 
@@ -339,7 +335,7 @@ async function upsertRows(sql: SqlHandle, planId: string, rows: RecRow[]) {
 type SkuSummary = { skusAtRisk: number; expiryExposure: Money };
 
 /** Impact Card from the saved lines. SKU-level figures (at risk, exposure) come from the last analysis. */
-function impactFromLines(lines: LineView[], budget: Money, skus: SkuSummary): ImpactCard {
+function impactFromLines(lines: LineView[], approvalLimit: Money, skus: SkuSummary): ImpactCard {
   const impact = computeImpact({
     skus: [],
     lines: lines.map((l) => ({
@@ -350,59 +346,23 @@ function impactFromLines(lines: LineView[], budget: Money, skus: SkuSummary): Im
       reasons: l.reasons,
       expiryAvoidedValue: l.expiryAvoidedValue,
     })),
-    budget,
+    supplierTotals: projectPos(lines, approvalLimit),
   });
-  return {
-    ...impact,
-    skusAtRisk: skus.skusAtRisk,
-    expiryExposure: skus.expiryExposure,
-  };
+  return { ...impact, skusAtRisk: skus.skusAtRisk, expiryExposure: skus.expiryExposure };
 }
 
-const totalOf = (
-  lines: {
-    inBasket: boolean;
-    status: RecommendationStatus;
-    totals: LineTotals;
-  }[],
-) =>
-  planTotal(
-    lines.map((l) => ({
-      lineTotal: l.totals.lineTotal,
-      inBasket: l.inBasket,
-      status: l.status,
-    })),
-  );
+const totalOf = (lines: { inBasket: boolean; status: RecommendationStatus; totals: LineTotals }[]) =>
+  planTotal(lines.map((l) => ({ lineTotal: l.totals.lineTotal, inBasket: l.inBasket, status: l.status })));
 
-async function updatePlanTotals(
-  sql: SqlHandle,
-  planId: string,
-  args: {
-    budget: Money;
-    total: Money;
-    impact: ImpactCard;
-    extra?: postgres.PendingQuery<postgres.Row[]>;
-  },
-) {
+async function updatePlanTotals(sql: SqlHandle, planId: string, args: { total: Money; impact: ImpactCard; extra?: postgres.PendingQuery<postgres.Row[]> }) {
   await sql`
     update purchase_plans set
-      budget_limit = ${args.budget},
       proposed_total = ${args.total},
-      budget_remaining = ${budgetRemaining(args.budget, args.total)},
       impact_json = ${sql.json(args.impact as unknown as postgres.JSONValue)},
       updated_at = now()
       ${args.extra ?? sql``}
     where id = ${planId}
   `;
-}
-
-function overBudget(total: Money, budget: Money): ServiceError {
-  const overBy = toMoneyString(dec(total).minus(budget));
-  return new ServiceError("OVER_BUDGET", 409, `This change takes the plan ₹${overBy} over its ₹${budget} budget.`, {
-    overBy,
-    budget,
-    planTotal: total,
-  });
 }
 
 function hardStopError(codes: HardStopCode[] | string[]): ServiceError {
@@ -430,16 +390,11 @@ function schemeFree(offer: OfferInput, qty: number): number {
 }
 
 /** Fresh context and analysis for one SKU (the active scenario applies, as in a full plan). */
-async function analyseOne(
-  sql: SqlHandle,
-  productId: string,
-  state: { asOf: string; scenarioId: string },
-): Promise<{ sku: SkuContext; analysis: SkuAnalysis; asOf: string }> {
-  const { asOf } = state;
-  const ctx = await loadPlanningContext(sql, asOf, state.scenarioId, productId);
+async function analyseOne(sql: SqlHandle, productId: string, state: PlanningState): Promise<{ sku: SkuContext; analysis: SkuAnalysis }> {
+  const ctx = await loadPlanningContext(sql, state.asOf, state.scenarioId, productId);
   const sku = ctx.skus[0];
   if (!sku) throw new ServiceError("INVALID_SKU", 400, "The product is no longer active.");
-  return { sku, analysis: analyseSku(sku), asOf };
+  return { sku, analysis: analyseSku(sku) };
 }
 
 // ---------------------------------------------------------------------------
@@ -447,59 +402,45 @@ async function analyseOne(
 // ---------------------------------------------------------------------------
 
 export async function createPlan(
-  input: { budget: number | string; priorities?: string },
+  input: { priorities?: string } = {},
   actor: Actor = defaultActor(),
   sql: postgres.Sql = getSql(),
 ): Promise<{ planId: string; durationMs: number }> {
-  const budgetDec = dec(input.budget);
-  if (!budgetDec.isFinite() || !budgetDec.greaterThan(0)) {
-    throw new ServiceError("INVALID_BUDGET", 400, "Budget must be a positive amount in rupees.");
-  }
-  const budget = toMoneyString(budgetDec);
   const t0 = performance.now();
-
-  const { asOf, scenarioId } = await resolvePlanningState(sql);
+  const { asOf, scenarioId, approvalLimit } = await resolvePlanningState(sql);
   const ctx = await loadPlanningContext(sql, asOf, scenarioId);
-  const result = buildPlan(ctx, budget);
+  const result = buildPlan(ctx, { ...ENGINE_CONFIG, poApprovalLimit: approvalLimit });
 
   // The id is generated here so the plan, its lines and the audit row go out in one pipelined round trip.
   const planId = crypto.randomUUID();
   await sql.begin(async (tx) => {
-    const assumptions = {
-      config: ENGINE_CONFIG,
-      asOf,
-      scenarioId,
-      priorities: input.priorities ?? null,
-    };
-    const plan = { id: planId };
+    const assumptions = { config: ENGINE_CONFIG, asOf, scenarioId, approvalLimit, priorities: input.priorities ?? null };
     // Pipelining: a raw query is sent only when awaited, unless .execute() is called; the async helpers send on call.
     // So every raw query below calls .execute(), and the statements reach the database in array order.
     await Promise.all([
       tx`
-        insert into purchase_plans (id, budget_limit, proposed_total, budget_remaining, status, scenario_id, as_of_date, assumptions_json, impact_json)
+        insert into purchase_plans (id, proposed_total, status, scenario_id, as_of_date, assumptions_json, impact_json)
         values (
-          ${planId}, ${budget}, ${result.planTotal}, ${result.budgetRemaining}, 'draft', ${scenarioId}, ${asOf},
+          ${planId}, ${result.planTotal}, 'draft', ${scenarioId}, ${asOf},
           ${tx.json(assumptions as unknown as postgres.JSONValue)},
           ${tx.json(result.impact as unknown as postgres.JSONValue)}
         )
       `.execute(),
-      upsertRows(
-        tx,
-        plan.id,
-        result.lines.map((l, i) => planLineToRow(l, i + 1)),
-      ),
+      upsertRows(tx, planId, result.lines.map((l, i) => planLineToRow(l, i + 1))),
       writeAudit(
         {
           actorType: actor.type,
           actorId: actor.id,
           action: "plan.created",
           entityType: "plan",
-          entityId: plan.id,
+          entityId: planId,
           after: {
-            budget,
             planTotal: result.planTotal,
             lines: result.lines.length,
-            inBasket: result.lines.filter((l) => l.inBasket).length,
+            included: result.lines.filter((l) => l.inBasket).length,
+            pos: result.supplierTotals.length,
+            posNeedingApproval: result.impact.posNeedingApproval,
+            approvalLimit,
             asOf,
             scenarioId,
           },
@@ -511,7 +452,9 @@ export async function createPlan(
   });
 
   const durationMs = Math.round(performance.now() - t0);
-  console.info(`[plans] createPlan ${planId}: ${result.lines.length} lines, ₹${result.planTotal} of ₹${budget} in ${durationMs} ms`);
+  console.info(
+    `[plans] createPlan ${planId}: ${result.lines.length} lines, ₹${result.planTotal}, ${result.supplierTotals.length} POs (${result.impact.posNeedingApproval} above ₹${approvalLimit}) in ${durationMs} ms`,
+  );
   return { planId, durationMs };
 }
 
@@ -519,12 +462,7 @@ export async function createPlan(
 // editLine (§7.3)
 // ---------------------------------------------------------------------------
 
-export type EditResult = {
-  preview: boolean;
-  before: LineView;
-  after: LineView;
-  plan: PlanSummary;
-};
+export type EditResult = { preview: boolean; before: LineView; after: LineView; plan: PlanSummary };
 
 const LOCKED_PLAN: ReadonlySet<PlanStatus> = new Set(["approved", "rejected"]);
 
@@ -564,7 +502,8 @@ export async function editLine(
       action = change.status === "deferred" ? "line.deferred" : "line.rejected";
     } else {
       // qty, offer or restore: re-check against fresh data for this SKU.
-      const { sku, analysis, asOf } = await analyseOne(tx, before.productId, state);
+      const { sku, analysis } = await analyseOne(tx, before.productId, state);
+      const { asOf } = state;
       const supplierOf = (o: OfferInput) => sku.suppliers[o.supplierId];
       const engineOfferId = analysis.chosen?.offerId ?? null;
 
@@ -580,15 +519,7 @@ export async function editLine(
           throw new ServiceError("OFFER_NOT_ELIGIBLE", 400, "That offer cannot be used.", { exclusions: blocking });
         }
         // Keep the current quantity if it is valid for the new offer, else use what the engine would buy from it.
-        const fits =
-          hardStops({
-            product: sku.product,
-            offer,
-            supplier: supplierOf(offer),
-            qty,
-            asOf,
-            batches: sku.batches,
-          }).length === 0;
+        const fits = hardStops({ product: sku.product, offer, supplier: supplierOf(offer), qty, asOf, batches: sku.batches }).length === 0;
         if (!fits) {
           const engineQty = ev?.scheme?.qty ?? 0;
           qty = engineQty > 0 ? engineQty : Math.ceil(Math.max(qty, offer.moq, 1) / offer.packMultiple) * offer.packMultiple;
@@ -599,23 +530,11 @@ export async function editLine(
         if (change.kind === "qty") qty = change.qty;
       }
 
-      const stops = hardStops({
-        product: sku.product,
-        offer,
-        supplier: supplierOf(offer),
-        qty,
-        asOf,
-        batches: sku.batches,
-      });
+      const stops = hardStops({ product: sku.product, offer, supplier: supplierOf(offer), qty, asOf, batches: sku.batches });
       if (stops.length > 0) throw hardStopError(stops);
 
       const supplier = supplierOf(offer)!;
-      const totals = lineTotals({
-        qty,
-        unitPrice: offer.unitPrice!,
-        taxRate: offer.taxRate,
-        freightPerPack: offer.freightPerPack,
-      });
+      const totals = lineTotals({ qty, unitPrice: offer.unitPrice!, taxRate: offer.taxRate, freightPerPack: offer.freightPerPack });
       const warnings = new Set<WarningCode>(before.warnings.filter((w) => w !== "NOT_TOP_SUPPLIER"));
       if (engineOfferId && offer.id !== engineOfferId) warnings.add("NOT_TOP_SUPPLIER");
       after = {
@@ -638,31 +557,14 @@ export async function editLine(
         deferReason: null,
       };
       if (change.kind === "restore") action = "line.restored";
-      else
-        evidencePatch = {
-          userEdit: {
-            qty,
-            offerId: offer.id,
-            engineOfferId,
-            engineQty: analysis.qty,
-            asOf,
-          },
-        };
+      else evidencePatch = { userEdit: { qty, offerId: offer.id, engineOfferId, engineQty: analysis.qty, asOf } };
     }
     after.counted = isCounted(after);
 
     const nextLines = lines.map((l) => (l.id === lineId ? after : l));
     const total = totalOf(nextLines);
-    if (dec(total).greaterThan(plan.budget)) throw overBudget(total, plan.budget);
-
-    const impact = impactFromLines(nextLines, plan.budget, plan.impact);
-    const summary: PlanSummary = {
-      ...toSummary(plan),
-      proposedTotal: total,
-      budgetRemaining: budgetRemaining(plan.budget, total),
-      impact,
-    };
-    if (preview) return { preview: true, before, after, plan: summary };
+    const impact = impactFromLines(nextLines, plan.approval_limit, plan.impact);
+    if (preview) return { preview: true, before, after, plan: summarize(plan, nextLines, { total, impact }) };
 
     const pick = (l: LineView) => ({
       status: l.status,
@@ -696,7 +598,7 @@ export async function editLine(
           updated_at = now()
         where id = ${lineId}
       `.execute(),
-      updatePlanTotals(tx, planId, { budget: plan.budget, total, impact }),
+      updatePlanTotals(tx, planId, { total, impact }),
       writeAudit(
         {
           actorType: actor.type,
@@ -712,7 +614,7 @@ export async function editLine(
       ),
       selectPlan(tx, planId),
     ]);
-    return { preview: false, before, after, plan: toSummary(saved!) };
+    return { preview: false, before, after, plan: summarize(saved!, nextLines) };
   });
 }
 
@@ -720,16 +622,12 @@ export async function editLine(
 // recalculatePlan (§7.5)
 // ---------------------------------------------------------------------------
 
-export async function recalculatePlan(
-  planId: string,
-  opts: { budget?: number | string; actor?: Actor } = {},
-  sql: postgres.Sql = getSql(),
-): Promise<PlanView> {
+export async function recalculatePlan(planId: string, opts: { actor?: Actor } = {}, sql: postgres.Sql = getSql()): Promise<PlanView> {
   const actor = opts.actor ?? defaultActor();
 
   return sql.begin(async (tx) => {
     const t0 = performance.now();
-    const [plan, lineRows, { asOf, scenarioId }] = await Promise.all([
+    const [plan, lineRows, { asOf, scenarioId, approvalLimit }] = await Promise.all([
       selectPlan(tx, planId, true),
       selectLines(tx, planId),
       resolvePlanningState(tx),
@@ -738,36 +636,26 @@ export async function recalculatePlan(
     if (LOCKED_PLAN.has(plan.status)) {
       throw new ServiceError("PLAN_LOCKED", 409, `The plan is ${plan.status} and cannot be recalculated.`);
     }
-    let budget = plan.budget;
-    if (opts.budget !== undefined) {
-      const b = dec(opts.budget);
-      if (!b.isFinite() || !b.greaterThan(0)) throw new ServiceError("INVALID_BUDGET", 400, "Budget must be a positive amount in rupees.");
-      budget = toMoneyString(b);
-    }
 
     const beforeLines = lineRows.map(toLineView);
     const ctx = await loadPlanningContext(tx, asOf, scenarioId);
     const skuById = new Map(ctx.skus.map((s) => [s.product.id, s]));
 
-    // Partition the saved lines (§7.5).
+    // Partition the saved lines (§7.5): approved lines are frozen, rejected and owner-deferred lines stay as they are,
+    // edited lines keep the owner's qty/offer at fresh prices, every other SKU is re-planned by the engine.
     const byRank = [...beforeLines].sort((a, b) => a.rank - b.rank);
     const frozen = byRank.filter((l) => l.status === "approved_for_po");
-    const systemDeferred = (l: LineView) => l.status === "deferred" && l.deferReason === "OVER_BUDGET";
-    const edited = byRank.filter((l) => l.status === "edited" || systemDeferred(l));
-    const kept = byRank.filter((l) => l.status === "rejected" || (l.status === "deferred" && !systemDeferred(l)));
+    const edited = byRank.filter((l) => l.status === "edited");
+    const kept = byRank.filter((l) => l.status === "rejected" || l.status === "deferred");
     const fixedIds = new Set([...frozen, ...edited, ...kept].map((l) => l.productId));
 
-    // 1. Approved lines count first.
-    const frozenTotal = sumMoney(frozen.map((l) => l.totals.lineTotal));
-    if (frozenTotal.greaterThan(budget)) throw overBudget(frozenTotal.toFixed(2), budget);
-    let remaining = dec(budget).minus(frozenTotal);
-
-    // 2. Edited lines keep the owner's qty/offer at fresh prices, placed first if they fit.
     const analyses = new Map<string, SkuAnalysis>();
     for (const l of [...frozen, ...edited, ...kept]) {
       const s = skuById.get(l.productId);
       if (s) analyses.set(l.productId, analyseSku(s));
     }
+
+    // An edited line that now fails a hard stop stays edited but is not counted (in_basket false, reason = the code).
     const editedRows: RecRow[] = edited.map((l) => {
       const s = skuById.get(l.productId);
       const a = analyses.get(l.productId);
@@ -781,75 +669,26 @@ export async function recalculatePlan(
         unit_price: l.unitPrice,
         priority_score: a?.priority ?? l.priority,
         rank: 0,
-        reason_codes: (a?.reasons ?? l.reasons).filter((r) => r !== "BUDGET_DEFERRED"),
+        reason_codes: a?.reasons ?? l.reasons,
         warnings: l.warnings,
+        status: "edited" as const,
         user_note: l.userNote,
-        evidence_json: a
-          ? {
-              ...a.evidence,
-              skuStatus: a.status,
-              lossPrevented: a.lossPrevented,
-              expiryAvoidedValue: a.expiryAvoidedValue,
-            }
-          : {},
+        evidence_json: a ? lineEvidence(a) : {},
       };
-      const stops =
-        s && offer
-          ? hardStops({
-              product: s.product,
-              offer,
-              supplier: s.suppliers[offer.supplierId],
-              qty: l.qty,
-              asOf,
-              batches: s.batches,
-            })
-          : ["INVALID_SKU"];
+      const stops = s && offer ? hardStops({ product: s.product, offer, supplier: s.suppliers[offer.supplierId], qty: l.qty, asOf, batches: s.batches }) : ["INVALID_SKU"];
       if (!s || !offer || stops.length > 0) {
-        return {
-          ...base,
-          ...rowTotals(l.totals),
-          in_basket: false,
-          status: "deferred" as const,
-          defer_reason: stops[0] ?? "OFFER_UNAVAILABLE",
-        };
+        return { ...base, ...rowTotals(l.totals), in_basket: false, defer_reason: stops[0] ?? "OFFER_UNAVAILABLE" };
       }
-      const totals = lineTotals({
-        qty: l.qty,
-        unitPrice: offer.unitPrice!,
-        taxRate: offer.taxRate,
-        freightPerPack: offer.freightPerPack,
-      });
-      const row = {
-        ...base,
-        unit_price: offer.unitPrice,
-        free_qty: schemeFree(offer, l.qty),
-        ...rowTotals(totals),
-      };
-      if (dec(totals.lineTotal).lessThanOrEqualTo(remaining)) {
-        remaining = remaining.minus(totals.lineTotal);
-        return {
-          ...row,
-          in_basket: true,
-          status: "edited" as const,
-          defer_reason: null,
-        };
-      }
-      return {
-        ...row,
-        in_basket: false,
-        status: "deferred" as const,
-        defer_reason: "OVER_BUDGET",
-        reason_codes: [...row.reason_codes, "BUDGET_DEFERRED"],
-      };
+      const totals = lineTotals({ qty: l.qty, unitPrice: offer.unitPrice!, taxRate: offer.taxRate, freightPerPack: offer.freightPerPack });
+      return { ...base, unit_price: offer.unitPrice, free_qty: schemeFree(offer, l.qty), ...rowTotals(totals), in_basket: true, defer_reason: null };
     });
 
-    // 3. Every other SKU is re-planned by the engine with what is left of the budget.
-    const sub = buildPlan({ asOf, skus: ctx.skus.filter((s) => !fixedIds.has(s.product.id)) }, remaining.toFixed(2));
+    const sub = buildPlan({ asOf, skus: ctx.skus.filter((s) => !fixedIds.has(s.product.id)) }, { ...ENGINE_CONFIG, poApprovalLimit: approvalLimit });
 
     // Ranks: approved, edited, engine lines, then rejected / owner-deferred.
     let rank = 0;
     const next = () => ++rank;
-    const rankOnly = [...frozen.map((l) => ({ id: l.id, rank: next() }))];
+    const rankOnly = frozen.map((l) => ({ id: l.id, rank: next() }));
     editedRows.forEach((r) => (r.rank = next()));
     const engineRows = sub.lines.map((l) => planLineToRow(l, next()));
     rankOnly.push(...kept.map((l) => ({ id: l.id, rank: next() })));
@@ -873,42 +712,25 @@ export async function recalculatePlan(
     ]);
     const afterLines = afterRows.map(toLineView);
     const total = totalOf(afterLines);
-    const skuStatuses = [
-      ...sub.skuStatuses,
-      ...[...analyses.values()].map((a) => ({
-        status: a.status,
-        atRiskValue: a.expiry.atRiskValue,
-      })),
-    ];
-    const impact = impactFromLines(afterLines, budget, {
+    const skuStatuses = [...sub.skuStatuses, ...[...analyses.values()].map((a) => ({ status: a.status, atRiskValue: a.expiry.atRiskValue }))];
+    const impact = impactFromLines(afterLines, approvalLimit, {
       skusAtRisk: skuStatuses.filter((s) => s.status === "STOCKOUT_RISK").length,
       expiryExposure: sumMoney(skuStatuses.map((s) => s.atRiskValue)).toFixed(2),
     });
-    const assumptions = {
-      ...plan.assumptions,
-      config: ENGINE_CONFIG,
-      asOf,
-      scenarioId,
-      recalculatedAt: new Date().toISOString(),
-    };
+    const assumptions = { ...plan.assumptions, config: ENGINE_CONFIG, asOf, scenarioId, approvalLimit, recalculatedAt: new Date().toISOString() };
+
     const beforeIn = new Map(beforeLines.map((l) => [l.sku, l.counted]));
     const afterIn = new Map(afterLines.map((l) => [l.sku, l.counted]));
     const changed = [...new Set([...beforeIn.keys(), ...afterIn.keys()])]
       .filter((sku) => beforeIn.get(sku) !== afterIn.get(sku))
       .sort()
-      .map((sku) => ({
-        sku,
-        inBasketBefore: beforeIn.get(sku) ?? null,
-        inBasketAfter: afterIn.get(sku) ?? null,
-      }));
+      .map((sku) => ({ sku, includedBefore: beforeIn.get(sku) ?? null, includedAfter: afterIn.get(sku) ?? null }));
     const [, , saved] = await Promise.all([
       updatePlanTotals(tx, planId, {
-        budget,
         total,
         impact,
         extra: tx`, as_of_date = ${asOf}, scenario_id = ${scenarioId}, assumptions_json = ${tx.json(assumptions as postgres.JSONValue)}`,
       }),
-
       writeAudit(
         {
           actorType: actor.type,
@@ -916,37 +738,17 @@ export async function recalculatePlan(
           action: "plan.recalculated",
           entityType: "plan",
           entityId: planId,
-          before: {
-            budget: plan.budget,
-            planTotal: plan.proposed_total,
-            lines: beforeLines.length,
-          },
-          after: {
-            budget,
-            planTotal: total,
-            lines: afterLines.length,
-            asOf,
-            scenarioId,
-            changed,
-          },
+          before: { planTotal: plan.proposed_total, lines: beforeLines.length, posNeedingApproval: plan.impact.posNeedingApproval },
+          after: { planTotal: total, lines: afterLines.length, posNeedingApproval: impact.posNeedingApproval, asOf, scenarioId, changed },
         },
         tx,
       ),
       selectPlan(tx, planId),
     ]);
     console.info(
-      `[plans] recalculatePlan ${planId}: ₹${total} of ₹${budget}, ${changed.length} lines changed basket in ${Math.round(performance.now() - t0)} ms`,
+      `[plans] recalculatePlan ${planId}: ₹${total}, ${changed.length} lines changed, ${impact.posNeedingApproval} POs above the limit, in ${Math.round(performance.now() - t0)} ms`,
     );
 
-    return { ...toSummary(saved!), lines: afterLines };
+    return { ...summarize(saved!, afterLines), lines: afterLines };
   });
-}
-
-function rowTotals(t: LineTotals) {
-  return {
-    line_subtotal: t.lineSubtotal,
-    line_tax: t.lineTax,
-    line_freight: t.lineFreight,
-    line_total: t.lineTotal,
-  };
 }

@@ -25,8 +25,8 @@ export const ENGINE_CONFIG = {
   paymentTermsCapDays: 45,
   /** w_crit multiplier in loss prevented per rupee. */
   criticalityWeights: { life_saving: 2, chronic: 1.5, acute: 1, otc: 0.7 },
-  /** Default purchase budget in rupees. */
-  defaultBudget: 200000,
+  /** A purchase order whose grand total is ABOVE this (rupees) needs Owner approval before it can be sent. */
+  poApprovalLimit: "400000.00" as string, // a Money string; editable in app_state.po_approval_limit
 } as const;
 
 export type EngineConfig = typeof ENGINE_CONFIG;

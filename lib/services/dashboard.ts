@@ -26,14 +26,18 @@ export type CriticalSku = {
 export type CommandCenter = {
   asOf: string;
   scenario: { id: string; name: string };
-  budget: Money;
-  latestPlan: { id: string; status: PlanStatus; budget: Money; proposedTotal: Money; createdAt: string } | null;
+  /** A purchase order above this needs Owner approval before it can be sent. */
+  approvalLimit: Money;
+  latestPlan: { id: string; status: PlanStatus; proposedTotal: Money; createdAt: string } | null;
   proposedSpend: Money;
   totalSkus: number;
   stockoutRisk: number;
   belowReorderPoint: number;
   expiryExposure: Money;
-  pendingApprovals: number;
+  /** In-plan lines not yet on a purchase order (open plans). */
+  linesAwaitingPo: number;
+  /** Purchase orders waiting for the Owner (above the approval limit). */
+  posAwaitingApproval: number;
   criticalSkus: CriticalSku[];
 };
 
@@ -42,22 +46,24 @@ const SEVERITY: Record<SkuStatus, number> = { STOCKOUT_RISK: 0, BELOW_ROP: 1, EX
 
 export async function getCommandCenter(sql: postgres.Sql = getSql()): Promise<CommandCenter> {
   // Two waves: planning state, settings, latest plan and approvals; then the context and the latest plan's lines.
-  const [{ asOf, scenarioId }, [state], [latest], [pending]] = await Promise.all([
+  const [{ asOf, scenarioId, approvalLimit }, [state], [latest], [pending]] = await Promise.all([
     resolvePlanningState(sql),
-    sql<{ budget: string; scenario_name: string }[]>`
-      select a.default_budget::text as budget, s.name as scenario_name
+    sql<{ scenario_name: string }[]>`
+      select s.name as scenario_name
       from app_state a join scenarios s on s.id = a.active_scenario_id where a.id = 1
     `,
-    sql<{ id: string; status: PlanStatus; budget: string; proposed_total: string; created_at: string }[]>`
-      select id, status, budget_limit::text as budget, proposed_total::text as proposed_total,
+    sql<{ id: string; status: PlanStatus; proposed_total: string; created_at: string }[]>`
+      select id, status, proposed_total::text as proposed_total,
         to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as created_at
       from purchase_plans where status <> 'rejected'
       order by created_at desc limit 1
     `,
-    sql<{ count: number }[]>`
-      select count(*)::int as count
-      from purchase_recommendations r join purchase_plans p on p.id = r.plan_id
-      where r.in_basket and r.status in ('proposed', 'edited') and p.status in ('draft', 'partially_approved')
+    sql<{ lines: number; pos: number }[]>`
+      select
+        (select count(*)::int
+           from purchase_recommendations r join purchase_plans p on p.id = r.plan_id
+          where r.in_basket and r.status in ('proposed', 'edited') and p.status in ('draft', 'partially_approved')) as lines,
+        (select count(*)::int from purchase_orders where status = 'pending_approval') as pos
     `,
   ]);
   const [ctx, planLines] = await Promise.all([
@@ -92,16 +98,15 @@ export async function getCommandCenter(sql: postgres.Sql = getSql()): Promise<Co
   return {
     asOf,
     scenario: { id: scenarioId, name: state?.scenario_name ?? "Baseline" },
-    budget: state?.budget ?? "200000.00",
-    latestPlan: latest
-      ? { id: latest.id, status: latest.status, budget: latest.budget, proposedTotal: latest.proposed_total, createdAt: latest.created_at }
-      : null,
+    approvalLimit,
+    latestPlan: latest ? { id: latest.id, status: latest.status, proposedTotal: latest.proposed_total, createdAt: latest.created_at } : null,
     proposedSpend: latest?.proposed_total ?? "0.00",
     totalSkus: analysed.length,
     stockoutRisk: analysed.filter((x) => x.a.status === "STOCKOUT_RISK").length,
     belowReorderPoint: analysed.filter((x) => x.a.status === "BELOW_ROP").length,
     expiryExposure: sumMoney(analysed.map((x) => x.a.expiry.atRiskValue)).toFixed(2),
-    pendingApprovals: pending?.count ?? 0,
+    linesAwaitingPo: pending?.lines ?? 0,
+    posAwaitingApproval: pending?.pos ?? 0,
     criticalSkus,
   };
 }

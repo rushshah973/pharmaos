@@ -7,7 +7,7 @@
 
 ## 1. Architecture in one paragraph
 
-PharmaOS is a **web-based dashboard**: a single Next.js web application that users open in a desktop browser (no mobile or desktop app). The browser renders the dashboard. Server components and route handlers call a **services layer**, which reads one consistent snapshot of the database, passes it through a **pure decision engine**, and writes results back in transactions. An **AI orchestrator** sits beside the API routes and reaches the same engine only through typed, read-mostly tools. It explains and adjusts plans but can never approve, create or send a purchase order. Postgres is the single source of truth for the plan screens, the PO screens and the 3D warehouse. Every number comes from deterministic, unit-tested code, and every change is written to an append-only audit log.
+PharmaOS is a **web-based dashboard**: a single Next.js web application that users open in a desktop browser (no mobile or desktop app). The browser renders the dashboard. Server components and route handlers call a **services layer**, which reads one consistent snapshot of the database, passes it through a **pure decision engine**, and writes results back in transactions. An **AI orchestrator** sits beside the API routes and reaches the same engine only through typed, read-mostly tools. It explains and adjusts plans but can never approve, create or send a purchase order (sending is simulated anyway). Postgres is the single source of truth for the plan screens, the PO screens and the 3D warehouse. Every number comes from deterministic, unit-tested code, and every change is written to an append-only audit log.
 
 ### 1.1 Quality goals (in priority order)
 
@@ -15,7 +15,7 @@ PharmaOS is a **web-based dashboard**: a single Next.js web application that use
 |---|---|---|---|
 | Q1 | **Correctness** | Quantities, prices, totals and scores are exactly right | Pure engine, decimal money, integer packs, fixture tests F1–F9 |
 | Q2 | **Trust and traceability** | Every recommendation can be explained and audited | `evidence_json`, reason codes, append-only `audit_logs`, provenance labels |
-| Q3 | **Human control** | Nothing is committed without a person | Approval-only PO creation, no LLM write tools for POs, nothing sent externally |
+| Q3 | **Human control** | Nothing is committed without a person | Approval-only PO creation, Owner approval for any PO above ₹4,00,000 before it can be sent, no LLM write tools for POs, sending simulated (nothing leaves the app) |
 | Q4 | **Resilience on demo day** | The demo works if the AI, WebGL or network fails | Deterministic fallback, 2D grid, local Postgres option, backup video |
 | Q5 | **Buildable by one person in 30 hours** | Few moving parts | One app, one database, no queues, no microservices, no agent framework |
 
@@ -57,7 +57,7 @@ flowchart LR
 | Postgres | `DATABASE_URL`, postgres.js pool | Trusted store; constraints are the last line of defence |
 | Gemini API | `GEMINI_API_KEY`, server-side only | Untrusted output: function-call arguments re-validated, text never parsed for numbers |
 | Reference datasets | Read only by the seed scripts | Patterns only; never loaded as rows |
-| Suppliers | None. Draft POs stay inside the app | — |
+| Suppliers | None. "Send to supplier" is simulated; POs never leave the app | — |
 
 ---
 
@@ -140,7 +140,7 @@ flowchart LR
 | Seed | `scripts/seed/*` | Profile references → generate → inject demo cases → validate → write |
 | Money | `lib/money.ts` | `dec`, `roundMoney` (2 dp half-up), `roundUnit` (4 dp), `sumMoney`, `formatINR` |
 | Engine config | `lib/business-logic/config.ts` | Every tunable constant (horizon, R, safety, risk window, weights) |
-| Engine | `lib/business-logic/{dates,types,demand,expiry,inventory,ordering,supplier-scoring,totals,priority,basket,impact,validation,heatmap,putaway,engine}.ts` | Plan §6 |
+| Engine | `lib/business-logic/{dates,types,demand,expiry,inventory,ordering,supplier-scoring,totals,priority,impact,validation,heatmap,putaway,engine}.ts` | Plan §6 |
 | Tool contract | `lib/validation/tool-contract.ts` | `ToolResult<T>`: `{ ok, data | error, warnings, source_timestamp }` |
 | API schemas | `lib/validation/api.ts` | Zod schema per route |
 | Services | `lib/services/{context,as-of,dashboard,plans,approval,purchase-orders,warehouse,scenarios,audit,explain}.ts` | Plan §7 |
@@ -189,7 +189,7 @@ Stand-alone tables: `approvals` (polymorphic `entity_type` + `entity_id`), `audi
 | Operational state | `sales_history`, `batches`, `inventory_balances`, `purchase_orders` (status `open`/`received`/`cancelled`) | Seed only | Engine context, warehouse |
 | Control | `scenarios`, `app_state` | Seed; scenario and settings services | Context loader, top bar |
 | Planning | `purchase_plans`, `purchase_recommendations` | `plans.ts`, `approval.ts` | Plan screens, agent tools |
-| Execution | `purchase_orders` (status `draft`…`exported`), `purchase_order_lines`, `approvals` | `approval.ts`, `purchase-orders.ts` | PO screens |
+| Execution | `purchase_orders` (status `ready` / `pending_approval` / `approved` / `sent` / `rejected`, `sent_at`, `sent_by`), `purchase_order_lines`, `approvals` | `approval.ts`, `purchase-orders.ts` | PO screens |
 | History | `audit_logs`, `warehouse_movements` | `audit.ts`; P2 put-away simulation | Activity screen |
 
 ### 5.3 Invariants and where they are enforced
@@ -198,7 +198,7 @@ Stand-alone tables: `approvals` (polymorphic `entity_type` + `entity_id`), `audi
 |---|---|---|
 | Quantities are whole packs, never negative | Types + validation | `integer` + `check (… >= 0)` / `> 0` |
 | Money is exact | `lib/money.ts` | `numeric(12,4)` unit, `numeric(14,2)` totals |
-| Plan never exceeds budget | Basket guarantee + edit refusal (409) | `check (proposed_total <= budget_limit)`, `budget_remaining >= 0` |
+| No PO above the approval limit is sent without the Owner | `approveLines` sets `pending_approval` when grand total > `po_approval_limit`; `sendPo` refuses it (409 `APPROVAL_REQUIRED`) | PO status check (`002_approval_limit.sql`); `approvals` row per Owner decision |
 | Reserved stock never exceeds on-hand | Seed validation | `check (reserved_qty <= on_hand_qty)` |
 | One balance per batch per bin (incl. unmapped) | Seed | unique index on `(batch_id, coalesce(location_id, nil-uuid))` |
 | A recommendation becomes a PO line once, ever | `approveLines` checks | `purchase_order_lines.recommendation_id unique` |
@@ -241,7 +241,7 @@ flowchart LR
 The engine is a pure function of a **planning context** (plain objects; money as strings) and a **config**:
 
 ```
-buildPlan(context, budget, ENGINE_CONFIG) → PlanResult { lines[], impact, assumptions }
+buildPlan(context, { ...ENGINE_CONFIG, poApprovalLimit }) → PlanResult { lines[], supplierTotals[], planTotal, approvalLimit, impact }
 analyseSku(skuContext, ENGINE_CONFIG)     → SkuAnalysis { status, offers[], chosen, qty, totals, priority, reasons[], warnings[], evidence }
 ```
 
@@ -273,13 +273,13 @@ flowchart TB
 flowchart LR
     all["analyseSku × all active SKUs"] --> c["candidates"]
     c --> sort["sort: priority ↓, cover ↑,<br/>w_crit ↓, sku ↑"]
-    sort --> p1["basket pass 1<br/>greedy fit"]
-    p1 --> p2["basket pass 2<br/>alt offer / partial qty"]
-    p2 --> imp["impact.ts<br/>Plan Impact Card"]
-    imp --> res["PlanResult<br/>ranked lines, in_basket flags, impact"]
+    sort --> all2["every candidate in the plan<br/>+ no-offer lines (never bought)"]
+    all2 --> po["supplier PO projection<br/>total > ₹4,00,000 → Owner approval"]
+    po --> imp["impact.ts<br/>Plan Impact Card"]
+    imp --> res["PlanResult<br/>ranked lines, supplierTotals, impact"]
 ```
 
-Guarantee: Σ in-basket `line_total` ≤ budget. The DB check on `purchase_plans` backs this up. Formulas, codes and fixtures are in the plan (§6, §14, Appendix B).
+There is no purchase budget: priority only orders the lines (most urgent first). Spend control is the per-PO Owner approval limit (₹4,00,000, `app_state.po_approval_limit`), applied when POs are created and enforced when they are sent. Formulas, codes and fixtures are in the plan (§6, §14, Appendix B).
 
 ### 6.4 Evidence
 
@@ -301,15 +301,15 @@ sequenceDiagram
     participant S as scenarios/apply
     participant E as engine.buildPlan
     participant DB as Postgres
-    U->>UI: Create Purchase Plan (₹2,00,000)
-    UI->>API: { budget }
+    U->>UI: Create Purchase Plan
+    UI->>API: { priorities? }
     API->>API: Zod validate
-    API->>P: createPlan(budget)
+    API->>P: createPlan(priorities)
     P->>C: asOf, active scenario
     C->>DB: fixed set of reads
     C->>S: applyScenario(context)
-    P->>E: buildPlan(context, budget)
-    E-->>P: lines + impact
+    P->>E: buildPlan(context, config, approval limit)
+    E-->>P: lines + supplierTotals + impact
     P->>DB: BEGIN, insert plan + recommendations, insert audit plan.created, COMMIT
     P-->>API: planId
     API-->>UI: 201 { planId }
@@ -338,10 +338,8 @@ sequenceDiagram
     P->>E: analyseSku + apply change + validate + totals
     alt invalid (pack multiple, MOQ, availability)
         P-->>D: 400 + codes
-    else plan total > budget
-        P-->>D: 409 OVER_BUDGET { overBy }
     else ok
-        P-->>D: { before, after } (nothing saved)
+        P-->>D: { before, after, plan totals + supplier POs } (nothing saved)
     end
     U->>D: Save
     D->>API: { qty: 60 }
@@ -377,10 +375,10 @@ sequenceDiagram
             A->>DB: ROLLBACK
             A-->>UI: 422 [{ lineId, codes }]
         else valid
-            A->>DB: per supplier: insert PO (draft, nextval po_number_seq)
+            A->>DB: per supplier: insert PO (pending_approval if total > limit, else ready)
             A->>DB: insert PO lines (recommendation_id unique)
             A->>DB: lines → approved_for_po, approvals, plan status
-            A->>DB: audit po.draft_created ×N, plan.lines_approved
+            A->>DB: audit po.created ×N, plan.lines_approved
             A->>DB: COMMIT
             A-->>UI: POs
         end
@@ -388,6 +386,35 @@ sequenceDiagram
 ```
 
 Concurrency: the `FOR UPDATE` lock serialises approvals on one plan. The unique constraints mean a racing duplicate fails instead of duplicating. A double click and a network retry both return the same POs.
+
+### 7.3a Owner approval and sending a PO (simulated)
+
+```mermaid
+sequenceDiagram
+    actor O as Owner
+    participant UI as PO detail
+    participant API as POST /api/purchase-orders/[id]/...
+    participant S as purchase-orders.ts
+    participant DB as Postgres
+    O->>UI: Send to supplier
+    UI->>API: /send
+    API->>S: sendPo(poId)
+    S->>DB: SELECT PO FOR UPDATE
+    alt status pending_approval (grand total above ₹4,00,000)
+        S-->>UI: 409 APPROVAL_REQUIRED
+        O->>UI: Approve (Owner)
+        UI->>API: /approve
+        API->>S: approvePo(poId)
+        S->>DB: status approved, approvals row, audit po.approved
+        O->>UI: Send to supplier
+        UI->>API: /send
+    end
+    S->>DB: status sent, sent_at, sent_by, audit po.sent
+    S-->>UI: PO (sent)
+    UI->>UI: toast "Marked as sent — simulated, nothing was emailed"
+```
+
+Nothing leaves the app: there is no email, API or file transfer to a supplier. A `sent` PO counts as confirmed incoming stock in later plans.
 
 ### 7.4 Ask PharmaOS: agent tool loop
 
@@ -400,7 +427,7 @@ sequenceDiagram
     participant CL as Gemini API
     participant T as tools.ts (allow-list)
     participant SV as services / engine
-    U->>Pn: "Reduce the budget to ₹1,00,000 and tell me what was deferred"
+    U->>Pn: "Which supplier POs will need Owner approval, and why?"
     Pn->>API: { message, planId }
     API->>O: runAgent
     loop up to 8 turns
@@ -444,7 +471,7 @@ sequenceDiagram
     B->>WS: balances, batches, SKU status
 ```
 
-The heatmap is computed from the same engine statuses as the plan, so a red bin and a `STOCKOUT_RISK` line can never disagree. Proposed stock comes from the plan's in-basket lines plus `putaway.ts`.
+The heatmap is computed from the same engine statuses as the plan, so a red bin and a `STOCKOUT_RISK` line can never disagree. Proposed stock comes from the plan's counted lines plus `putaway.ts`.
 
 ### 7.7 Scenario run
 
@@ -486,20 +513,23 @@ stateDiagram-v2
 stateDiagram-v2
     [*] --> draft
     draft --> partially_approved: some lines approved
-    partially_approved --> approved: all in-basket lines approved
-    draft --> approved: all in-basket lines approved
+    partially_approved --> approved: all plan lines approved
+    draft --> approved: all plan lines approved
     draft --> rejected: reject plan (no POs)
-    partially_approved --> rejected: reject plan (existing draft POs remain)
+    partially_approved --> rejected: reject plan (existing POs remain)
 ```
 
 ### 8.3 Purchase order
 
 ```mermaid
 stateDiagram-v2
-    state "PharmaOS drafts" as pd {
-        [*] --> draft
-        draft --> approved_draft
-        approved_draft --> exported: CSV / print generated
+    state "PharmaOS POs" as pd {
+        [*] --> ready: grand total ≤ ₹4,00,000
+        [*] --> pending_approval: grand total > ₹4,00,000
+        pending_approval --> approved: Owner approves
+        pending_approval --> rejected: Owner rejects (reason)
+        ready --> sent: send (simulated)
+        approved --> sent: send (simulated)
     }
     state "Seeded external POs (incoming stock)" as ext {
         [*] --> open
@@ -508,7 +538,7 @@ stateDiagram-v2
     }
 ```
 
-Statuses `sent`, `ordered` and `confirmed` do not exist anywhere in the system.
+Send from `pending_approval` returns 409 `APPROVAL_REQUIRED`. `sent` is simulated (nothing leaves the app) and counts as incoming stock in later plans. Export CSV / Print never change the status. Statuses `ordered` and `confirmed` do not exist anywhere in the system.
 
 ---
 
@@ -524,9 +554,9 @@ flowchart LR
     subgraph trusted["Trusted: server"]
         loop["orchestrator loop<br/>max 8 turns, 15 s timeout"]
         allow["tool allow-list<br/>19 tools, Zod re-validation"]
-        ro["read tools<br/>search, sales, position, forecast, reorder,<br/>batches, exposure, return policy, offers, compare, prices,<br/>budget, plan, preview basket, validate, bins, heatmap, put-away"]
+        ro["read tools<br/>search, sales, position, forecast, reorder,<br/>batches, exposure, return policy, offers, compare, prices,<br/>PO projection, plan, preview plan, validate, bins, heatmap, put-away"]
         rw["one write tool<br/>recalculate_plan (audited, actor agent)"]
-        none["NOT exposed<br/>approve · reject · create/update PO · SQL"]
+        none["NOT exposed<br/>approve · reject · create/update PO<br/>Owner-approve · send · SQL"]
     end
     m <--> loop
     loop --> allow
@@ -605,13 +635,14 @@ Twenty route handlers, grouped by service. Full contracts are in plan §8.
 | Dashboard | `GET /api/dashboard` | `dashboard.ts` |
 | Planning | `POST /api/procurement/analyze`, `GET /api/purchase-plans/[id]`, `PATCH …/lines/[lineId]`, `POST …/recalculate`, `POST …/reject`, `POST …/lines/[lineId]/explain` | `plans.ts`, `explain.ts` |
 | Approval | `POST /api/purchase-plans/[id]/approve` | `approval.ts` |
-| Purchase orders | `GET /api/purchase-orders`, `GET …/[id]`, `POST …/[id]/export` | `purchase-orders.ts` |
+| Purchase orders | `GET /api/purchase-orders`, `GET …/[id]`, `POST …/[id]/approve`, `POST …/[id]/reject`, `POST …/[id]/send` (simulated), `POST …/[id]/export` | `purchase-orders.ts` |
+| Settings | `PATCH /api/settings` (approval limit) | `settings` in `app-state.ts` |
 | Warehouse | `GET /api/warehouse/layout`, `GET …/heatmap`, `GET …/bins/[id]`, `GET /api/products/search` | `warehouse.ts` |
 | Scenarios | `GET /api/scenarios`, `POST …/[id]/run`, `POST …/reset` | `scenarios.ts` |
 | Agent | `POST /api/agent/chat` | `lib/agents/orchestrator.ts` |
 | Audit | `GET /api/audit` | `audit.ts` |
 
-Error envelope: `{ error: { code, message, details? } }`. 400 = validation, 404 = missing, 409 = locked or over budget, 422 = hard stops at approval.
+Error envelope: `{ error: { code, message, details? } }`. 400 = validation, 404 = missing, 409 = locked (`LINE_LOCKED`, `PLAN_LOCKED`, `PO_LOCKED`) or `APPROVAL_REQUIRED`, 422 = hard stops at approval.
 
 ---
 
@@ -638,7 +669,8 @@ Each layer assumes the one before it can fail. The database is the final guard f
 | Create plan | plan + all lines + audit | New rows only |
 | Edit / defer / reject line | line + plan totals + audit | Status checks; last write wins (single demo user) |
 | Recalculate | plan + changed lines + audit | Approved lines frozen |
-| Approve | lock plan → POs → lines → statuses → approvals → audit | `SELECT … FOR UPDATE` + idempotency key + unique constraints |
+| Approve | lock plan → POs (`ready` / `pending_approval`) → lines → statuses → approvals → audit | `SELECT … FOR UPDATE` + idempotency key + unique constraints |
+| Owner approve / reject / send PO | PO status + approvals row + audit | `SELECT … FOR UPDATE` on the PO; status check before change |
 | Seed | entire load | Run offline, before the demo |
 
 ### 12.4 Audit
@@ -662,12 +694,12 @@ All mutations go through `writeAudit({ actorType, actorId, action, entityType, e
 |---|---|
 | `.env.local` | `DATABASE_URL`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `DEMO_AS_OF_DATE`, `DEMO_USER` |
 | `lib/business-logic/config.ts` | All engine constants (copied into each plan's `assumptions_json`) |
-| `app_state` row | Active scenario, default budget, optional as-of date, synthetic seed |
+| `app_state` row | Active scenario, PO approval limit (₹4,00,000), optional as-of date, synthetic seed |
 | `next.config.ts` | `cacheComponents`, `partialPrefetching`, Turbopack CSS rule |
 
-### 12.7 Performance budget
+### 12.7 Performance targets
 
-| Path | Budget | How |
+| Path | Target | How |
 |---|---|---|
 | Create plan (500 SKUs) | < 3 s | Fixed reads, in-memory engine, batched inserts |
 | Edit preview | < 500 ms | Single-SKU analysis |
@@ -690,7 +722,7 @@ Hackathon-level only: the `audit_logs` screen, a `toolCalls` list in agent respo
 | Supabase or Wi-Fi down | No data | Local Postgres seeded identically (`DATABASE_URL` swap) |
 | Reference file missing at seed time | Profile incomplete | Generator defaults; seed still validates |
 | Duplicate approval / race | Duplicate POs | Idempotency key + unique constraints |
-| Edit would exceed budget | Silent overspend | 409 `OVER_BUDGET` with amount |
+| Large PO sent without sign-off | Unapproved spend | PO created `pending_approval`; send refused with 409 `APPROVAL_REQUIRED` until the Owner approves |
 | Stale or expired quote | Wrong supplier | Excluded at eligibility; hard stop at approval |
 | Build-time caching error | Build fails | Suspense + `connection()` pattern; `npm run build` each stage |
 
@@ -750,7 +782,7 @@ flowchart LR
 | 1. Procurement first | One workflow; every module feeds `buildPlan`; no other domains in the schema |
 | 2. Deterministic numbers | Pure engine (§6), tool-only numbers for the AI (§9) |
 | 3. Traceable | `evidence_json`, reason codes, `assumptions_json` config snapshot, audit log |
-| 4. Human in charge | Approval-only PO path (§7.3), no AI write tools for POs, no external sends |
+| 4. Human in charge | Approval-only PO path (§7.3), Owner approval above ₹4,00,000, no AI write tools for POs, simulated sends only |
 | 5. One source of truth | Same context + engine for plan, heatmap and agent; Postgres only |
 | 6. Honest data | `data_source` + `data_sources`, `price_type`, no-copy validation, UI badge |
 | 7. Dashboard, not chatbot | AI behind buttons and a side panel; all workflows work without it |
@@ -763,5 +795,5 @@ These points are named so the current design does not block them. None of them i
 
 - **Customer data (phase D3):** an importer that writes `data_source = 'verified_customer_data'` into the same tables. No schema change is needed.
 - **Authentication:** replace `DEMO_USER` with a session user in services. Audit and approvals already store a user id.
-- **PO export to an ERP:** a new exporter beside the CSV export; status `exported` already exists.
+- **PO export to an ERP / real sending:** replace the simulated `sendPo` with a real email or ERP push; the `sent` status, `sent_at` and `sent_by` already exist.
 - **Scheduled morning plan:** a cron route calling `createPlan`. The engine is already pure and fast.

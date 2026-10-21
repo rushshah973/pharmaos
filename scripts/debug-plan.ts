@@ -1,19 +1,19 @@
 // npm run debug:plan — load the planning context from the database and print the
-// engine's plan at ₹2,00,000 and ₹1,00,000 (implementationplan.md §15 Stage 2).
+// engine's plan with its projected supplier POs (implementationplan.md §15 Stage 2).
 // Read-only: nothing is saved.
 import { config } from "dotenv";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import postgres from "postgres";
+import { ENGINE_CONFIG } from "@/lib/business-logic/config";
 import { buildPlan } from "@/lib/business-logic/engine";
 import type { PlanResult, PlanningContext } from "@/lib/business-logic/types";
-import { resolveAsOfDate } from "@/lib/services/as-of";
+import { resolvePlanningState } from "@/lib/services/as-of";
 import { loadPlanningContext } from "@/lib/services/context";
 
 config({ path: ".env.local", quiet: true });
 config({ quiet: true });
 
-const BUDGETS = ["200000.00", "100000.00"];
 const TOP = 20;
 
 const pad = (v: unknown, n: number, right = false) => {
@@ -23,21 +23,25 @@ const pad = (v: unknown, n: number, right = false) => {
 
 function printPlan(plan: PlanResult, ctx: PlanningContext) {
   const supplierCode = (id: string | null) => (id ? (ctx.skus[0]?.suppliers[id]?.code ?? "?") : "-");
-  const inBasket = plan.lines.filter((l) => l.inBasket);
-  console.log(`\n══ Budget ₹${plan.budget} ═══════════════════════════════════════════════════════════════`);
+  const included = plan.lines.filter((l) => l.inBasket);
+  console.log(`\n══ Plan (PO approval above ₹${plan.approvalLimit}) ══════════════════════════════════════════════`);
   console.log(
-    `${pad("#", 3)} ${pad("SKU", 9)} ${pad("status", 13)} ${pad("cover", 6, true)} ${pad("qty+free", 9, true)} ${pad("supplier", 8)} ${pad("eff/pack", 10, true)} ${pad("line ₹", 11, true)} ${pad("priority", 8, true)}  basket    reasons`,
+    `${pad("#", 3)} ${pad("SKU", 9)} ${pad("status", 13)} ${pad("cover", 6, true)} ${pad("qty+free", 9, true)} ${pad("supplier", 8)} ${pad("eff/pack", 10, true)} ${pad("line ₹", 11, true)} ${pad("priority", 8, true)}  plan      reasons`,
   );
   for (const l of plan.lines.slice(0, TOP)) {
     const offers = (l.evidence as { offers?: { offerId: string; effectiveCost: string | null }[] }).offers ?? [];
     const eff = offers.find((o) => o.offerId === l.offerId)?.effectiveCost ?? "-";
     console.log(
-      `${pad(l.rank, 3)} ${pad(l.sku, 9)} ${pad(l.status, 13)} ${pad(l.cover === null ? "-" : l.cover.toFixed(1), 6, true)} ${pad(`${l.qty}+${l.freeQty}`, 9, true)} ${pad(supplierCode(l.supplierId), 8)} ${pad(eff, 10, true)} ${pad(l.totals?.lineTotal ?? "-", 11, true)} ${pad(l.priority.toFixed(4), 8, true)}  ${pad(l.inBasket ? "IN" : "deferred", 8)}  ${l.reasons.join(", ")}`,
+      `${pad(l.rank, 3)} ${pad(l.sku, 9)} ${pad(l.status, 13)} ${pad(l.cover === null ? "-" : l.cover.toFixed(1), 6, true)} ${pad(`${l.qty}+${l.freeQty}`, 9, true)} ${pad(supplierCode(l.supplierId), 8)} ${pad(eff, 10, true)} ${pad(l.totals?.lineTotal ?? "-", 11, true)} ${pad(l.priority.toFixed(4), 8, true)}  ${pad(l.inBasket ? "IN" : "no offer", 8)}  ${l.reasons.join(", ")}`,
     );
   }
   console.log(
-    `\nLines ${plan.lines.length} · in basket ${inBasket.length} · deferred ${plan.lines.length - inBasket.length} · total ₹${plan.planTotal} · remaining ₹${plan.budgetRemaining}`,
+    `\nLines ${plan.lines.length} · in plan ${included.length} · no eligible offer ${plan.lines.length - included.length} · total ₹${plan.planTotal}`,
   );
+  console.log("Projected POs:");
+  for (const po of plan.supplierTotals) {
+    console.log(`  ${pad(supplierCode(po.supplierId), 8)} ${pad(po.lines, 3, true)} lines  ₹${pad(po.total, 11, true)}  ${po.needsApproval ? "needs Owner approval" : "can be sent"}`);
+  }
   console.log("Impact Card:");
   for (const [k, v] of Object.entries(plan.impact)) console.log(`  ${pad(k, 22)} ${v}`);
 }
@@ -47,20 +51,15 @@ async function main() {
   if (!url) throw new Error("DATABASE_URL is not set (.env.local).");
   const sql = postgres(url, { max: 4, onnotice: () => {} });
   try {
-    const asOf = await resolveAsOfDate(sql);
-    const [state] = await sql<{ active_scenario_id: string }[]>`select active_scenario_id from app_state where id = 1`;
-    const scenario = state?.active_scenario_id ?? "baseline";
+    const { asOf, scenarioId: scenario, approvalLimit } = await resolvePlanningState(sql);
     const t0 = performance.now();
     const ctx = await loadPlanningContext(sql, asOf, scenario);
     const loadMs = Math.round(performance.now() - t0);
     console.log(`As-of ${asOf} · scenario ${scenario} · ${ctx.skus.length} SKUs loaded in ${loadMs} ms`);
 
-    const plans = BUDGETS.map((b) => {
-      const t = performance.now();
-      const plan = buildPlan(ctx, b);
-      console.log(`Plan at ₹${b} built in ${Math.round(performance.now() - t)} ms`);
-      return plan;
-    });
+    const t = performance.now();
+    const plans = [buildPlan(ctx, { ...ENGINE_CONFIG, poApprovalLimit: approvalLimit })];
+    console.log(`Plan built in ${Math.round(performance.now() - t)} ms`);
     plans.forEach((p) => printPlan(p, ctx));
 
     // ---- Checks ----
@@ -70,7 +69,7 @@ async function main() {
       const firstNonUrgent = priced.findIndex((l) => l.priority === 0);
       const urgentAfter = firstNonUrgent >= 0 && priced.slice(firstNonUrgent).some((l) => l.priority > 0);
       console.log(
-        `₹${plan.budget}: urgent first ${urgentAfter ? "✗" : "✓"} · deferred ${plan.lines.some((l) => !l.inBasket) ? "✓" : "✗ none"} · total ≤ budget ${Number(plan.planTotal) <= Number(plan.budget) ? "✓" : "✗"}`,
+        `urgent first ${urgentAfter ? "✗" : "✓"} · every priced line in the plan ${priced.every((l) => l.inBasket) ? "✓" : "✗"} · PO totals add up ${plan.supplierTotals.reduce((n, p) => n + Number(p.total), 0).toFixed(2) === plan.planTotal ? "✓" : "✗"}`,
       );
     }
     const casesFile = path.resolve(process.cwd(), "data/synthetic/demo-cases.json");

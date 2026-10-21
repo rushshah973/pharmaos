@@ -8,10 +8,10 @@ export default function Page() {
   return (
     <ComingSoon
       title="Procurement"
-      description="Budget-capped purchase plans, ranked by loss prevented per rupee."
+      description="Explainable purchase plans, ranked by loss prevented per rupee."
       icon={ClipboardList}
       stage={3}
-      detail="Plans you create from the Command Center will be listed here with their budget, total and status."
+      detail="Plans you create from the Command Center will be listed here with their total, supplier POs and status."
     />
   );
 }

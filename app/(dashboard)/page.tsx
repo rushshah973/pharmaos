@@ -12,7 +12,7 @@ export default function CommandCenterPage() {
     <div className="space-y-6">
       <PageHeader
         title="Command Center"
-        description="Today's stock risk and budget at a glance, and one click to a ranked, budget-capped purchase plan."
+        description="Today's stock and expiry risk at a glance, and one click to a ranked, explainable purchase plan."
         action={
           <Button disabled className="h-9 px-4">
             <Sparkles className="size-4" strokeWidth={1.75} aria-hidden />

@@ -8,15 +8,15 @@
 
 ## 1. One-line problem
 
-Indian pharma stockists lose money every day in two opposite directions — running out of fast movers and writing off expired slow movers — because the daily purchase decision is made by hand from scattered reports and supplier quotes, under a tight cash budget.
+Indian pharma stockists lose money every day in two opposite directions — running out of fast movers and writing off expired slow movers — because the daily purchase decision is made by hand from scattered reports and supplier quotes, with no clear reason recorded for what was bought.
 
 ## 2. One-line solution
 
-PharmaOS is a **web-based dashboard** (opened in a browser, no installation). It turns that 1–2 hour judgement call into a 10-minute reviewed decision: a budget-capped, explainable purchase plan that says what to buy, how much, from which supplier and why, then creates draft purchase orders only after a human approves them. An interactive 3D warehouse shows the same inventory, its risks and the proposed replenishment.
+PharmaOS is a **web-based dashboard** (opened in a browser, no installation). It turns that 1–2 hour judgement call into a 10-minute reviewed decision: a ranked, explainable purchase plan that says what to buy, how much, from which supplier and why, then creates purchase orders only after a human approves them — and any single PO above ₹4,00,000 needs the Owner's sign-off before it can be sent. An interactive 3D warehouse shows the same inventory, its risks and the proposed replenishment.
 
 **Tagline:** Buy what will sell, before it runs out, without buying what will expire.
 
-**Core promise:** every rupee of today's purchase budget goes where it prevents the most loss.
+**Core promise:** every purchase is explained, the most urgent lines come first, and no large order goes out without the Owner's approval.
 
 ---
 
@@ -59,9 +59,9 @@ The Vector Consulting figures come from a trade-press report of a consulting stu
 
 | Persona | Role | What they want | What they fear |
 |---|---|---|---|
-| **Rakesh, owner** | Buyer and final approver | Higher margin, less cash stuck, fewer "why didn't we have it" calls | Software that orders on its own; losing control of supplier relationships |
+| **Rakesh, owner** | Buyer and final approver (signs off every PO above ₹4,00,000) | Higher margin, less cash stuck, fewer "why didn't we have it" calls | Software that orders on its own; losing control of supplier relationships |
 | **Purchase manager / clerk** | Daily user | A ready list each morning instead of building it from three reports | Being blamed for a stockout or an expiry |
-| **Accountant** | Influencer | Purchases that stay inside the cash plan; clean POs | Surprise commitments; scheme claims that never get credited |
+| **Accountant** | Influencer | No large commitment without the owner's sign-off; clean POs | Surprise commitments; scheme claims that never get credited |
 | **Warehouse in-charge** | Secondary user | Knowing where incoming stock goes; FEFO picking | Overflowing bins; old batches buried behind new ones |
 
 ---
@@ -78,10 +78,10 @@ The Vector Consulting figures come from a trade-press report of a consulting stu
 
 1. **Data lives in four places:** ERP stock and sales reports, batch/expiry lists, supplier quotes on WhatsApp/PDF/phone, and the owner's head.
 2. **Supplier offers are unstructured:** schemes like "10+1", "15% on 50 boxes" or "rate valid till Saturday" rarely reach the ERP in structured form.
-3. **Trade-offs are multi-dimensional:** cheapest supplier vs fastest vs most reliable; scheme savings vs expiry risk; today's budget vs tomorrow's stockout.
-4. **ERPs record, they don't decide:** pharma ERPs (e.g. Marg) handle billing, stock ledgers, batch/expiry tracking and schemes; B2B platforms (e.g. Pharmarack) digitise ordering. Neither tells the owner *what* to buy within a budget, or *why*.
+3. **Trade-offs are multi-dimensional:** cheapest supplier vs fastest vs most reliable; scheme savings vs expiry risk; buying more today vs cash stuck in slow stock.
+4. **ERPs record, they don't decide:** pharma ERPs (e.g. Marg) handle billing, stock ledgers, batch/expiry tracking and schemes; B2B platforms (e.g. Pharmarack) digitise ordering. Neither tells the owner *what* to buy, in which order of urgency, or *why*.
 
-**Positioning rule (from the research brief):** do not claim that inventory software does not exist. PharmaOS differentiates through cross-system decision coordination — one explainable, budget-aware purchase decision — and human-approved execution.
+**Positioning rule (from the research brief):** do not claim that inventory software does not exist. PharmaOS differentiates through cross-system decision coordination — one explainable, ranked purchase decision — and human-approved execution with an Owner approval limit for large POs.
 
 ## 6. Why now
 
@@ -93,7 +93,7 @@ The Vector Consulting figures come from a trade-press report of a consulting stu
 
 ## 7. Job to be done
 
-> "Every morning, with ₹X to spend, tell me what to buy, how much, from whom, and why — so nothing important runs out, nothing I buy expires, and I approve it in one sitting."
+> "Every morning, tell me what to buy, how much, from whom, and why — most urgent first — so nothing important runs out, nothing I buy expires, and I approve it in one sitting; anything big comes to me before it goes out."
 
 ## 8. Scope for the hackathon (one problem, gone deep)
 
@@ -105,38 +105,38 @@ Following the mentor's advice, the build covers **one** workflow — intelligent
 2. Demand baseline, stock position, days of cover, reorder point, order quantity with pack/MOQ rounding.
 3. Batch-level expiry assessment that changes the recommendation.
 4. Supplier comparison: eligibility filter, scheme-aware landed cost, transparent weighted score.
-5. Budget basket ranked by **loss prevented per rupee**, with deferred lines and reasons.
+5. Plan lines ranked by **loss prevented per rupee** (most urgent first), with a projected PO per supplier.
 6. Editable plan with server-side recalculation and a **Plan Impact Card**.
-7. Approve / reject / defer, draft POs grouped by supplier, idempotent approval, append-only audit log.
+7. Approve / reject / defer lines, POs grouped by supplier, idempotent approval, an **Owner approval limit**: any PO above ₹4,00,000 must be approved by the Owner before it can be sent (sending is simulated), append-only audit log.
 8. Interactive 3D warehouse on the same records (heatmaps, bin details, focus from a plan line), with a 2D fallback.
 9. AI orchestrator (P1): one LLM calling typed tools, grounded explanations, full deterministic fallback.
-10. Disruption scenarios (P1): demand spike, supplier delay/price change, budget cut, expiry risk.
+10. Disruption scenarios (P1): demand spike, supplier delay/price change, seasonal surge (POs cross the approval limit), expiry risk.
 11. Stretch (P2): ghost incoming cartons, candidate put-away, simple pick path.
 
-**Out of scope:** real ERP or supplier integrations; sending POs, emails or payments; live IoT/RFID/robots; automatic medicine substitution or safety decisions; claims of proven ROI; receivables, cold-chain, routing or recall products; a chatbot-first interface; native mobile or desktop apps (the product is a web dashboard).
+**Out of scope:** real ERP or supplier integrations; actually sending POs (sending is simulated inside the app), emails or payments; live IoT/RFID/robots; automatic medicine substitution or safety decisions; claims of proven ROI; receivables, cold-chain, routing or recall products; a chatbot-first interface; native mobile or desktop apps (the product is a web dashboard).
 
 ## 9. Product principles (non-negotiable)
 
-1. **Procurement first.** Forecasting, inventory, expiry, supplier and budget logic exist only to improve one purchasing decision.
+1. **Procurement first.** Forecasting, inventory, expiry and supplier logic exist only to improve one purchasing decision.
 2. **Deterministic numbers.** Server-side code computes every quantity, price, total and score. The LLM interprets, coordinates tools and explains — it never produces a number.
 3. **Traceable.** Every recommendation links to its source rows, calculation inputs, quote timestamps and rules.
-4. **Human in charge.** Draft POs are not supplier commitments. Nothing is sent externally.
+4. **Human in charge.** A PO is created only from lines a human approved; a PO above ₹4,00,000 needs Owner approval before it can be sent. Nothing ever leaves the app: sending is simulated.
 5. **One source of truth.** The 3D warehouse, dashboards and plan all read the same database records.
-6. **Honest data.** All demo data is labelled synthetic, with its reference sources listed. Supplier prices are never presented as real quotes, and an MRP or NPPA ceiling price is never used as a purchase price. No fabricated metrics, no fake integrations, no "sent / confirmed" without a verified event.
+6. **Honest data.** All demo data is labelled synthetic, with its reference sources listed. Supplier prices are never presented as real quotes, and an MRP or NPPA ceiling price is never used as a purchase price. No fabricated metrics, no fake integrations; a "sent" PO is always labelled "simulated — nothing was emailed".
 7. **Web dashboard, not chatbot.** PharmaOS is a browser-based dashboard. The AI works behind buttons and panels; chat is optional.
 
 ## 10. Success criteria
 
 ### 10.1 Demo success moment
 
-The user runs procurement analysis, sees a ranked and explainable plan, changes the budget or a supplier condition, watches the plan recalculate, approves selected lines, and sees saved draft POs grouped by supplier plus the matching 3D warehouse view — all with an audit trail.
+The user runs procurement analysis, sees a ranked and explainable plan, runs a scenario (a seasonal surge or a supplier delay), watches the plan recalculate, approves selected lines, and sees POs grouped by supplier: the one above ₹4,00,000 is held for Owner approval, cannot be sent until the Owner approves it, then is sent (simulated) — plus the matching 3D warehouse view, all with an audit trail.
 
 ### 10.2 What the build measures (real numbers on the fixed test set)
 
 | Metric | Target |
 |---|---|
 | Calculation correctness vs hand-computed fixtures | 100% of unit tests pass |
-| Budget adherence | Plan total ≤ budget in every run and scenario |
+| Approval control | 0 POs above ₹4,00,000 sent without an Owner approval, in every run and scenario |
 | Supplier validity | 0 selected offers that are stale, unapproved, mismatched or over availability |
 | PO integrity | PO total = Σ line totals; 0 duplicate POs on repeated approval |
 | Time to reviewable plan | Seconds from "Create plan" to rendered plan (report the measured number) |
@@ -169,4 +169,4 @@ At an assumed ₹5,000/month subscription, payback is under one month on these a
 
 ## 13. Pitch-slide version
 
-> Indian pharma stockists lose money every day in two opposite directions — running out of fast movers and writing off expired slow movers — because the daily purchase decision is made by hand from scattered reports and WhatsApp quotes, under a tight cash budget. PharmaOS makes that decision in minutes, explains every rupee, and keeps the human in charge of approval.
+> Indian pharma stockists lose money every day in two opposite directions — running out of fast movers and writing off expired slow movers — because the daily purchase decision is made by hand from scattered reports and WhatsApp quotes. PharmaOS makes that decision in minutes, explains every rupee, and keeps the human in charge: large POs need the Owner's approval before they go out.

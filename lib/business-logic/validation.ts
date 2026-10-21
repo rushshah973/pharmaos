@@ -2,12 +2,9 @@
 import { dec } from "@/lib/money";
 import { ENGINE_CONFIG, type EngineConfig } from "./config";
 import { daysBetween } from "./dates";
-import type { BatchInput, HardStopCode, IsoDate, Money, OfferInput, ProductInput, SupplierInput, WarningCode } from "./types";
+import type { BatchInput, HardStopCode, IsoDate, OfferInput, ProductInput, SupplierInput, WarningCode } from "./types";
 
-/**
- * Every hard stop for one line. Budget checks run only when `budget` is given
- * (the SKU-level analysis has no budget; approval and edits pass it).
- */
+/** Every hard stop for one line (block approval). There is no budget: spend is controlled by the PO approval limit. */
 export function hardStops(
   args: {
     product: ProductInput | undefined;
@@ -15,13 +12,11 @@ export function hardStops(
     supplier: SupplierInput | undefined;
     qty: number;
     asOf: IsoDate;
-    budget?: Money;
-    planTotal?: Money;
     batches: BatchInput[];
   },
   config: EngineConfig = ENGINE_CONFIG,
 ): HardStopCode[] {
-  const { product, offer, supplier, qty, asOf, budget, planTotal, batches } = args;
+  const { product, offer, supplier, qty, asOf, batches } = args;
   const stops = new Set<HardStopCode>();
 
   if (!product || !product.isActive || (offer && offer.productId !== product.id)) stops.add("INVALID_SKU");
@@ -35,10 +30,6 @@ export function hardStops(
     if (qty > offer.availableQty) stops.add("ABOVE_AVAILABILITY");
   }
   if (!Number.isInteger(qty) || qty <= 0) stops.add("NON_POSITIVE_QTY");
-  if (budget !== undefined) {
-    if (!dec(budget).greaterThan(0)) stops.add("INVALID_BUDGET");
-    else if (planTotal !== undefined && dec(planTotal).greaterThan(budget)) stops.add("OVER_BUDGET");
-  }
   if (product && batches.some((b) => b.productId === product.id && b.qualityStatus === "recalled")) stops.add("PRODUCT_RECALLED");
 
   return [...stops];

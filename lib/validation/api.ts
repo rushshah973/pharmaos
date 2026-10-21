@@ -1,12 +1,11 @@
 // Request schemas for the API routes (implementationplan.md §8).
 import { z } from "zod";
 
-const budget = z.number().finite().positive().max(1_000_000_000);
-
-export const analyzeBody = z.object({
-  budget,
-  priorities: z.string().trim().max(500).optional(),
-});
+export const analyzeBody = z
+  .object({
+    priorities: z.string().trim().max(500).optional(),
+  })
+  .strict();
 export type AnalyzeBody = z.infer<typeof analyzeBody>;
 
 /** Route ids. A malformed id is a 404 (no such plan), not a 400. */
@@ -55,5 +54,5 @@ export function toLineChange(b: PatchLineBody): LineChange {
   return { kind: "note", note: b.note! };
 }
 
-export const recalculateBody = z.object({ budget: budget.optional() }).strict();
+export const recalculateBody = z.object({}).strict();
 export type RecalculateBody = z.infer<typeof recalculateBody>;

@@ -2,7 +2,7 @@
 
 A plain-English companion to `prompts.md`. For every prompt: **what it does**, **what it creates or changes**, **what you will see when it is done**, and **why it matters** for the product or the demo. The prompts themselves (the text you paste) stay in `prompts.md`.
 
-**Status** — ✅ done (commit) · ⏭ next · ⬜ not started. Last updated after P11.
+**Status** — ✅ done (commit) · ⏭ next · ⬜ not started. Last updated after P13.
 
 | # | Prompt | Status |
 |---|---|---|
@@ -19,9 +19,11 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P10 | Basket, impact, validation, engine | ✅ `c3600d1` |
 | P11 | Context loader and debug plan | ✅ `2b2b280` |
 | P12 | Theme and shell | ✅ `6a1bb63` |
-| P13 | Plan services and API | ✅ |
+| P13 | Plan services and API | ✅ `2296530` |
 | P14 | Command Center | ⏭ |
 | P15–P28 | … | ⬜ |
+
+> Budget cap removed; ₹4,00,000 per-PO Owner approval added (after P13).
 
 ---
 
@@ -31,7 +33,7 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 Stage 1  Data         P01 → P06   database, skeleton, reference patterns, 500 synthetic SKUs, demo cases
 Stage 2  Engine       P07 → P11   tests first, then the maths that decides what to buy
 Stage 3  Screens      P12 → P16   the dashboard: Command Center, plan, line details, edits
-Stage 4  Approval     P17 → P18   human approval → draft POs, audit trail
+Stage 4  Approval     P17 → P18   human approval → POs, Owner sign-off above ₹4L, simulated send, audit trail
 Stage 5  Warehouse    P19 → P21   heatmaps, 2D grid, 3D scene
 Stage 6  AI           P22 → P23   Gemini explains and adjusts plans (never approves)
 Stage 7  Scenarios    P24 → P25   disruptions, ROI model, polish
@@ -47,7 +49,7 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 - **What it does:** Makes the AI assistant read the four project documents, check git to see which stages are finished, and tell you where things stand before it touches any code.
 - **Creates or changes:** Nothing.
 - **You will see:** A short report: last completed stage, next prompt, any uncommitted changes.
-- **Why it matters:** A new chat session remembers nothing. P00 loads the rules (no new features, numbers only from the engine, nothing sent to suppliers) so the assistant does not drift from the plan.
+- **Why it matters:** A new chat session remembers nothing. P00 loads the rules (no new features, numbers only from the engine, nothing ever leaves the app) so the assistant does not drift from the plan.
 - **When:** At the start of every new chat session.
 
 ---
@@ -58,8 +60,8 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 
 - **What it does:** Creates all the database tables in your Supabase project from the ready-made schema, then checks they are really there.
 - **Creates or changes:** Tables in Supabase only (17 tables + a migrations tracker). No project files.
-- **You will see:** A list of the tables, the 5 demo scenarios (baseline, budget cut, demand spike, supplier delay, expiry risk), and the settings row.
-- **Why it matters:** Everything else stores and reads data here. The schema also enforces safety rules itself, e.g. a plan can never be saved above its budget and the audit log can never be edited.
+- **You will see:** A list of the tables, the 5 demo scenarios (baseline, demand spike, supplier delay, expiry risk, and budget cut — later replaced by seasonal surge), and the settings row.
+- **Why it matters:** Everything else stores and reads data here. The schema also enforces safety rules itself, e.g. a recommendation can become a PO line only once, and the audit log can never be edited.
 
 ### P02 — Dashboard skeleton ✅
 
@@ -123,14 +125,14 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 
 ### P10 — Basket, impact, validation, engine ✅
 
-- **What it does:** Fits the best lines into the budget (and tries a cheaper supplier or a smaller quantity for lines that just miss), computes the Plan Impact Card, the approval hard stops, and wires everything into two main functions: analyse one SKU, and build a whole plan.
+- **What it does:** (Historical: it fitted lines into a budget; that budget logic was removed after P13 — plans now include every SKU that needs stock.) It computes the Plan Impact Card, the approval hard stops, and wires everything into two main functions: analyse one SKU, and build a whole plan.
 - **Creates or changes:** `basket.ts`, `impact.ts`, `validation.ts`, `engine.ts`; removes the temporary `_stub.ts`.
-- **You will see:** All engine tests F1–F9 green, plus a check that the plan never exceeds the budget across 200 random baskets.
+- **You will see:** All engine tests F1–F9 green (the budget-basket tests were later replaced by plan-assembly and approval-limit tests).
 - **Why it matters:** This is the whole decision engine. Every screen, the warehouse heatmap and the AI all call these same functions.
 
 ### P11 — Context loader and debug plan (STOP) ✅
 
-- **What it does:** Connects the engine to the real database, switches the seed checks from their temporary formulas to the real engine, and prints a sample plan at ₹2,00,000 and ₹1,00,000 in the terminal.
+- **What it does:** Connects the engine to the real database, switches the seed checks from their temporary formulas to the real engine, and prints a sample plan in the terminal (at that time at ₹2,00,000 and ₹1,00,000; the budget was removed after P13).
 - **Creates or changes:** `lib/db/queries/*`, `lib/services/context.ts`, `lib/scenarios/apply.ts` (empty for now), `scripts/debug-plan.ts`; updates `inject-demo-cases.ts` and `validate.ts`; re-seeds.
 - **You will see:** The top 20 recommended purchases with reasons. It stops so you can judge whether the ranking makes sense to an owner.
 - **Why it matters:** The first time you see PharmaOS actually deciding what to buy — before any screen exists, so mistakes are cheap to fix.
@@ -141,29 +143,29 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 
 ### P12 — Theme and shell ✅
 
-- **What it does:** Gives the dashboard its premium look (plan §10.1: layered dark surfaces, one teal accent, refined type and spacing, logo mark): dark navy and teal, the left sidebar with six sections, the top bar with the "Synthetic demo data" badge, budget and date, and placeholder pages for every section.
+- **What it does:** Gives the dashboard its premium look (plan §10.1: layered dark surfaces, one teal accent, refined type and spacing, logo mark): dark navy and teal, the left sidebar with six sections, the top bar with the "Synthetic demo data" badge, date and (after P13) the ₹4,00,000 approval limit, and placeholder pages for every section.
 - **Creates or changes:** `app/globals.css`, `app/layout.tsx`, `components/layout/*`, placeholder pages.
 - **You will see:** A professional web dashboard where every sidebar link works; the sidebar shrinks to icons at tablet width.
 - **Why it matters:** First impression for judges, and the frame every later screen sits in.
 
 ### P13 — Plan services and API ✅
 
-- **What it does:** Builds the server side of planning: create a plan, read it, edit a line (with a preview before saving), refuse edits that would go over budget, recalculate with a new budget, and the calculated "Why?" explanation.
+- **What it does:** Builds the server side of planning: create a plan (every SKU that needs stock, most urgent first, no budget), read it, edit a line (with a preview before saving that shows the new total and each supplier's PO total), recalculate with fresh data, and the calculated "Why?" explanation. It also projects one PO per supplier and flags any above ₹4,00,000 as needing Owner approval.
 - **Creates or changes:** `lib/validation/api.ts`, `lib/services/plans.ts`, `dashboard.ts`, `explain.ts`, and the matching `app/api/...` routes.
 - **You will see:** The assistant testing each route and showing you the responses.
 - **Why it matters:** Totals are always recomputed on the server; the browser is never trusted with money.
 
 ### P14 — Command Center and plan list ⏭
 
-- **What it does:** Builds the home screen: budget, proposed spend, SKUs at stockout risk, rupees at expiry risk, pending approvals, the most critical SKUs, and the **Create Purchase Plan** button. Also the list of past plans.
+- **What it does:** Builds the home screen: proposed spend, SKUs at stockout risk, rupees at expiry risk, lines waiting for a PO, POs waiting for the Owner's approval, the most critical SKUs, and the **Create Purchase Plan** button (no budget to enter). Also the list of past plans.
 - **Creates or changes:** `app/(dashboard)/page.tsx`, `components/dashboard/*`, `app/(dashboard)/procurement/page.tsx`.
 - **You will see:** Real numbers from the database and a working Create Purchase Plan dialog.
 - **Why it matters:** The opening of the demo ("this is what a stockist sees every morning").
 
 ### P15 — Plan screen ⬜
 
-- **What it does:** Builds the main working screen: the Plan Impact Card, the ranked table of what to buy, flags and reasons, defer/reject actions, deferred lines with their risk, and recalculation with a new budget.
-- **Creates or changes:** `app/(dashboard)/procurement/[planId]/page.tsx`, `ImpactCard`, `PlanTable`, `DeferredList`.
+- **What it does:** Builds the main working screen: the Plan Impact Card, a strip showing each supplier's PO total (amber "Owner approval" badge above ₹4,00,000), the ranked table of what to buy, flags and reasons, defer/reject actions, a "Not in this plan" list with each line's risk, and a Recalculate button.
+- **Creates or changes:** `app/(dashboard)/procurement/[planId]/page.tsx`, `ImpactCard`, `SupplierPoStrip`, `PlanTable`, the "Not in this plan" list.
 - **You will see:** A full plan you can read, sort through and adjust.
 - **Why it matters:** The heart of the product — where the owner makes today's buying decision.
 
@@ -171,7 +173,7 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 
 - **What it does:** Opens one recommendation in a side panel: demand chart, stock breakdown, batches and expiry, every supplier compared (including why some were excluded), the formulas with real numbers filled in, and an edit control that shows the new total before saving.
 - **Creates or changes:** `LineDrawer`, `DemandChart`, `SupplierComparison`, `FormulaPanel`, edit controls.
-- **You will see:** Complete evidence for any line; edits preview and save; over-budget edits are refused with the amount.
+- **You will see:** Complete evidence for any line; edits preview and save, and the preview warns when a supplier's PO would cross ₹4,00,000; invalid quantities (below MOQ, wrong pack multiple) are refused with the reason.
 - **Why it matters:** "Explain every rupee" — the trust moment for judges and owners.
 
 ---
@@ -180,17 +182,17 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 
 ### P17 — Approval service ⬜
 
-- **What it does:** Builds the only code allowed to create purchase orders: re-checks every rule with fresh data, groups approved lines by supplier, creates **draft** POs inside one database transaction, and makes a double click or retry harmless. Adds Approve and Reject plan to the screen.
-- **Creates or changes:** `lib/services/approval.ts`, approve/reject routes, approval dialog, an optional integration test.
-- **You will see:** Approving 5 lines across 3 suppliers creates 3 draft POs; repeating the request creates nothing extra.
-- **Why it matters:** Human control: nothing is ordered without a person, nothing is sent to a supplier, and money can never be committed twice.
+- **What it does:** Builds the only code allowed to create purchase orders: re-checks every rule with fresh data, groups approved lines by supplier and creates one PO per supplier inside one database transaction (a PO above ₹4,00,000 is held as "Awaiting Owner approval"), and makes a double click or retry harmless. Also adds the Owner's Approve / Reject for held POs and a simulated "Send to supplier" that refuses held POs. Adds Approve and Reject plan to the screen.
+- **Creates or changes:** `lib/services/approval.ts`, PO approve/reject/send in `purchase-orders.ts`, their routes, approval dialog, an optional integration test.
+- **You will see:** Approving 5 lines across 3 suppliers creates 3 POs; repeating the request creates nothing extra; a PO above the limit cannot be sent until the Owner approves it.
+- **Why it matters:** Human control: nothing is ordered without a person, large orders need the Owner's sign-off, nothing actually leaves the app (sending is simulated), and money can never be committed twice.
 
 ### P18 — Purchase orders and Activity ⬜
 
-- **What it does:** Builds the PO list and a printable PO document (watermarked "DRAFT — not sent to supplier") with CSV export, and the Activity log showing every action.
+- **What it does:** Builds the PO list and a printable PO document (watermarked "NOT SENT" until sent, then "SENT (simulated)") with Approve / Reject for the Owner, Send (simulated), CSV export and Print, and the Activity log showing every action.
 - **Creates or changes:** `lib/services/purchase-orders.ts`, PO and audit routes, `/purchase-orders`, `/activity`.
-- **You will see:** Printable draft POs and a complete history of who changed what.
-- **Why it matters:** Accountability and the clean ending of the demo ("a human approved every rupee").
+- **You will see:** Printable POs with their status, the Owner approval step for large ones, and a complete history of who changed what.
+- **Why it matters:** Accountability and the clean ending of the demo ("a human approved every line, the Owner signed off the big PO, nothing left the app").
 
 ---
 
@@ -241,9 +243,9 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 
 ### P24 — Scenarios and ROI model ⬜
 
-- **What it does:** Makes the five disruption scenarios work (budget cut, supplier delay, demand spike, expiry risk, baseline) without changing the stored data, and builds the Data & Scenarios page: data summary, list of reference sources, scenario cards, budget setting, and an editable ROI model.
+- **What it does:** Makes the five disruption scenarios work (seasonal surge, supplier delay, demand spike, expiry risk, baseline) without changing the stored data, and builds the Data & Scenarios page: data summary, list of reference sources, scenario cards, the Owner approval limit setting, and an editable ROI model.
 - **Creates or changes:** `lib/scenarios/apply.ts`, `lib/services/scenarios.ts`, scenario routes, `/data` page, `RoiModel`, scenario chip in the top bar.
-- **You will see:** Running "Budget cut" and recalculating drops the plan under ₹1,00,000 with deferral reasons; Reset restores everything.
+- **You will see:** Running "Seasonal surge" and recalculating pushes at least one supplier's PO above ₹4,00,000, so it shows the Owner approval badge; Reset restores everything.
 - **Why it matters:** The live disruption moment in the pitch, and an honest business case.
 
 ### P25 — Polish pass ⬜
@@ -273,7 +275,7 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 
 ### P28 — Demo notes ⬜
 
-- **What it does:** Writes the exact click path for the 3–4 minute demo: which SKU to open, which bin to click, which scenario to run, the numbers you will see, a fallback for each step, and honest answers to likely judge questions.
+- **What it does:** Writes the exact click path for the 3–4 minute demo: which SKU to open, which bin to click, which scenario to run, the Owner approval moment for the large PO, the numbers you will see, a fallback for each step, and honest answers to likely judge questions.
 - **Creates or changes:** `docs/demo-notes.md`.
 - **You will see:** A script you can rehearse from.
 - **Why it matters:** A calm, rehearsed demo. Afterwards: rehearse 3 times and record a backup video.
