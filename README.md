@@ -10,7 +10,7 @@ Budget-capped, explainable purchase plans for Indian pharma stockists, with huma
 ## Quick start
 
 ```bash
-cp .env.example .env.local   # set DATABASE_URL (and optionally ANTHROPIC_API_KEY)
+cp .env.example .env.local   # set DATABASE_URL (and optionally GEMINI_API_KEY)
 npm install
 npm run db:migrate
 npm run seed                 # available after stage 1

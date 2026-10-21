@@ -1,7 +1,7 @@
 # PharmaOS — Architecture
 
 > How the system is put together and why. Companion to `problemstatement.md` (what and why) and `implementationplan.md` (build steps, formulas, fixtures). When this file and the plan disagree, the plan wins and this file is fixed in the same commit.
-> Version 1.0 · 21 Oct 2026 · Next.js 16.4 · Postgres (Supabase) · Claude
+> Version 1.0 · 21 Oct 2026 · Next.js 16.4 · Postgres (Supabase) · Gemini
 
 ---
 
@@ -24,7 +24,7 @@ PharmaOS is a single Next.js application. The browser renders a dashboard. Serve
 - One builder, 30 hours, a hackathon demo (problemstatement §8).
 - One workflow only: intelligent procurement. No other modules (mentor feedback).
 - All data is synthetic demo data shaped by reference datasets. No reference row is copied (plan §5).
-- No authentication and no external integrations. Nothing leaves the system except calls to the Claude API.
+- No authentication and no external integrations. Nothing leaves the system except calls to the Gemini API.
 
 ---
 
@@ -38,14 +38,14 @@ flowchart LR
         app["Dashboard + API + engine + agent"]
     end
     db[("Postgres<br/>Supabase or local")]
-    claude["Claude API<br/>(optional)"]
+    gemini["Gemini API<br/>(optional)"]
     refs["Reference datasets<br/>data/reference/<br/>(build time only)"]
     suppliers["Suppliers"]
 
     owner -- "plans, edits, approvals" --> app
     wh -- "warehouse view" --> app
     app -- "SQL over TLS" --> db
-    app -- "HTTPS, tool use" --> claude
+    app -- "HTTPS, function calling" --> gemini
     refs -. "profile → seed (npm run seed)" .-> db
     app -. "never contacted" .-x suppliers
 ```
@@ -54,7 +54,7 @@ flowchart LR
 |---|---|---|
 | Browser user | HTTP to the Next.js app | Untrusted input; every body validated with Zod |
 | Postgres | `DATABASE_URL`, postgres.js pool | Trusted store; constraints are the last line of defence |
-| Claude API | `ANTHROPIC_API_KEY`, server-side only | Untrusted output: tool inputs re-validated, text never parsed for numbers |
+| Gemini API | `GEMINI_API_KEY`, server-side only | Untrusted output: function-call arguments re-validated, text never parsed for numbers |
 | Reference datasets | Read only by the seed scripts | Patterns only; never loaded as rows |
 | Suppliers | None. Draft POs stay inside the app | — |
 
@@ -79,7 +79,7 @@ flowchart TB
     end
 
     pg[("Postgres: 17 tables<br/>db/migrations/001_init.sql")]
-    cl["Claude API"]
+    cl["Gemini API"]
 
     ui -- "fetch (mutations)" --> api
     ui -- "RSC payload (reads)" --> rsc
@@ -87,7 +87,7 @@ flowchart TB
     api --> svc
     api --> agent
     agent -- "typed tools" --> svc
-    agent -- "messages.create" --> cl
+    agent -- "models.generateContent" --> cl
     svc --> scen
     svc --> engine
     svc --> dbc
@@ -98,7 +98,7 @@ flowchart TB
 
 | Layer | Folder | Does | Must not |
 |---|---|---|---|
-| UI (client) | `components/**` | Render, collect input, call routes, `router.refresh()` | Compute totals, talk to DB or Claude |
+| UI (client) | `components/**` | Render, collect input, call routes, `router.refresh()` | Compute totals, talk to DB or Gemini |
 | Pages (server) | `app/(dashboard)/**` | Read via services inside `<Suspense>`, pass props to client components | Mutate data |
 | API | `app/api/**/route.ts` | Parse and validate, call one service, map errors to HTTP | Contain business logic |
 | Agent | `lib/agents/` | Run the tool loop, enforce tool allow-list, fall back | Approve, reject or create POs; run SQL; state numbers not returned by tools |
@@ -313,7 +313,7 @@ sequenceDiagram
     P-->>API: planId
     API-->>UI: 201 { planId }
     UI->>UI: navigate /procurement/[planId]
-    opt ANTHROPIC_API_KEY set
+    opt GEMINI_API_KEY set
         UI->>API: summary via agent (non-blocking)
     end
 ```
@@ -396,23 +396,23 @@ sequenceDiagram
     participant Pn as Ask panel
     participant API as POST /api/agent/chat
     participant O as orchestrator.runAgent
-    participant CL as Claude API
+    participant CL as Gemini API
     participant T as tools.ts (allow-list)
     participant SV as services / engine
     U->>Pn: "Reduce the budget to ₹1,00,000 and tell me what was deferred"
     Pn->>API: { message, planId }
     API->>O: runAgent
     loop up to 8 turns
-        O->>CL: messages.create(system, tools, messages, tool_choice auto)
-        CL-->>O: tool_use blocks or end_turn
-        O->>T: for each tool_use: Zod-validate input
+        O->>CL: generateContent(systemInstruction, functionDeclarations, contents, mode AUTO)
+        CL-->>O: functionCalls or final text (finishReason STOP)
+        O->>T: for each functionCall: allow-list + Zod-validate args
         T->>SV: handler (read, or recalculate_plan: audited, actor agent)
         SV-->>T: ToolResult
-        T-->>O: tool_result (all in ONE user message)
+        T-->>O: functionResponse parts (all in ONE user turn)
     end
     O-->>API: reply + toolCalls + references (source: agent)
     API-->>Pn: render reply, links to SKUs / lines
-    Note over O,CL: refusal, max_tokens, error, timeout (15 s), no key, 8 turns<br/>→ deterministic answer (source: deterministic)
+    Note over O,CL: non-STOP finish (safety, max tokens, malformed call), API error, timeout (15 s), no key, 8 turns<br/>→ deterministic answer (source: deterministic)
 ```
 
 ### 7.5 Why? (explanation with fallback)
@@ -518,7 +518,7 @@ Statuses `sent`, `ordered` and `confirmed` do not exist anywhere in the system.
 ```mermaid
 flowchart LR
     subgraph llm["Untrusted: model"]
-        m["Claude<br/>(ANTHROPIC_MODEL, default claude-sonnet-5-5)"]
+        m["Gemini<br/>(GEMINI_MODEL, default gemini-flash-latest)"]
     end
     subgraph trusted["Trusted: server"]
         loop["orchestrator loop<br/>max 8 turns, 15 s timeout"]
@@ -540,12 +540,12 @@ flowchart LR
 |---|---|
 | Model never produces numbers | System prompt plus architecture: all numbers come from tool results, and the UI renders figures from data, not from model text |
 | No PO creation or approval by AI | Those tools do not exist; only `approval.ts` writes POs, and only through the HTTP approve route |
-| Valid tool inputs | `strict: true` JSON Schema from Zod, plus a second Zod parse before the handler; failures go back as `is_error` tool results |
+| Valid tool inputs | JSON Schema from Zod as `parametersJsonSchema`, automatic function calling disabled, plus a Zod parse of every `functionCall.args` before the handler; failures go back as `ToolResult` errors in the `functionResponse` |
 | No product substitution, no safety calls | System prompt; no tool can change product identity |
 | Ambiguous products | `search_products` returns exact identity fields; the prompt requires asking the user |
 | Failures never block the user | Every AI entry point has a deterministic path (`explain.ts`, plan summary optional) |
-| Prompt-cache friendly | Byte-stable system prompt and tool list; per-request facts (plan id, as-of) go in the user message |
-| API rules for current models | `tool_choice: auto` only; no `thinking: disabled` / `budget_tokens`; `output_config.effort: "medium"` |
+| Stable instructions | Fixed `systemInstruction` and tool list; per-request facts (plan id, as-of) go in the user message |
+| Gemini API rules | Function-calling mode `AUTO` (never `ANY`); model turn appended exactly as returned (keeps `thoughtSignature` parts); no hard-coded thinking config |
 
 ### 9.3 Where the AI appears
 
@@ -648,7 +648,7 @@ All mutations go through `writeAudit({ actorType, actorId, action, entityType, e
 
 | Concern | Measure |
 |---|---|
-| Secrets | `DATABASE_URL`, `ANTHROPIC_API_KEY` only in server env; never imported by client files; `.env*` git-ignored (except `.env.example`) |
+| Secrets | `DATABASE_URL`, `GEMINI_API_KEY` only in server env; never imported by client files; `.env*` git-ignored (except `.env.example`) |
 | SQL injection | postgres.js tagged templates only; `sql.unsafe` reserved for migration files |
 | Untrusted model output | Validated tool inputs, read-mostly tools, no free-form writes |
 | Input size | Zod limits (e.g. chat message 1–2,000 chars, line arrays ≥ 1) |
@@ -659,7 +659,7 @@ All mutations go through `writeAudit({ actorType, actorId, action, entityType, e
 
 | Source | Holds |
 |---|---|
-| `.env.local` | `DATABASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `DEMO_AS_OF_DATE`, `DEMO_USER` |
+| `.env.local` | `DATABASE_URL`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `DEMO_AS_OF_DATE`, `DEMO_USER` |
 | `lib/business-logic/config.ts` | All engine constants (copied into each plan's `assumptions_json`) |
 | `app_state` row | Active scenario, default budget, optional as-of date, synthetic seed |
 | `next.config.ts` | `cacheComponents`, `partialPrefetching`, Turbopack CSS rule |
@@ -684,7 +684,7 @@ Hackathon-level only: the `audit_logs` screen, a `toolCalls` list in agent respo
 
 | Failure | Effect without a fallback | Fallback |
 |---|---|---|
-| No `ANTHROPIC_API_KEY` / API error / refusal / timeout | No explanations or chat | `explain.ts` deterministic text; UI note "AI unavailable" |
+| No `GEMINI_API_KEY` / API error / safety block / timeout | No explanations or chat | `explain.ts` deterministic text; UI note "AI unavailable" |
 | WebGL missing or scene crash | No warehouse | Error boundary → `Grid2D`; table view |
 | Supabase or Wi-Fi down | No data | Local Postgres seeded identically (`DATABASE_URL` swap) |
 | Reference file missing at seed time | Profile incomplete | Generator defaults; seed still validates |
@@ -710,8 +710,8 @@ flowchart LR
     dev --> supa
     dev -.-> lpg
     vercel --> supa
-    dev --> claude["Claude API"]
-    vercel --> claude
+    dev --> gemini["Gemini API"]
+    vercel --> gemini
 ```
 
 | Environment | Database | Notes |
@@ -733,7 +733,7 @@ flowchart LR
 | AD-5 | Decimal money + integer packs | JS numbers | No float drift in totals |
 | AD-6 | Server-recalculated totals, preview endpoint | Client-side totals | Browser is never the source of truth |
 | AD-7 | Approval-only PO creation with idempotency | Agent-created POs, client-side de-dupe | Human control; safe retries |
-| AD-8 | Manual tool loop with an allow-list | Agent framework, tool runner | Full control over allowed tools, timeouts and fallback; no beta dependency |
+| AD-8 | Gemini (`@google/genai`) with a manual function-calling loop and an allow-list | Agent framework, SDK automatic function calling | Team's LLM choice; full control over allowed tools, validation, timeouts and fallback |
 | AD-9 | Scenarios applied in memory | Mutating seed tables | Instant reset; seed integrity |
 | AD-10 | Synthetic-only data from reference profiles | Loading public or team rows | Licence, provenance and honesty rules in the data acquisition plan |
 | AD-11 | Instanced 3D + 2D fallback on the same API | Separate 3D data model, heavy assets | One source of truth; performance; resilience |

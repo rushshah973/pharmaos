@@ -16,8 +16,8 @@
     "check": "npm run typecheck && npm run lint && npm run test"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.137.0",
     "@base-ui/react": "^1.9.0",
+    "@google/genai": "^2.30.0",
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.2",
     "class-variance-authority": "^0.7.1",

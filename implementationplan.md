@@ -1,6 +1,6 @@
 # PharmaOS — Implementation Plan
 
-> Solo builder · 30 hours · Next.js 16 + Supabase Postgres + Claude
+> Solo builder · 30 hours · Next.js 16 + Supabase Postgres + Gemini
 > Read `problemstatement.md` first. This file is the build source of truth: follow it stage by stage, in order. Do not add modules that are not in it.
 
 ---
@@ -25,8 +25,8 @@
 | R6 | Nothing is sent to suppliers. Statuses "sent", "ordered" or "confirmed" never appear. |
 | R7 | Every mutation writes an `audit_logs` row (section 13). |
 | R8 | Every screen shows the data-source badge ("Synthetic demo data"), and detail views show each record's `data_source` label. Never call generated data real, and never present a supplier price as a real quote. |
-| R9 | The app must work fully with `ANTHROPIC_API_KEY` empty: only chat/explanations switch to the deterministic text. |
-| R10 | No secrets in client code. DB and Anthropic clients are imported only from server files (`lib/db`, `lib/services`, `lib/agents`, `app/api`). |
+| R9 | The app must work fully with `GEMINI_API_KEY` empty: only chat/explanations switch to the deterministic text. |
+| R10 | No secrets in client code. DB and Gemini clients are imported only from server files (`lib/db`, `lib/services`, `lib/agents`, `app/api`). |
 
 ---
 
@@ -43,7 +43,7 @@
 | Migrations | Plain SQL in `db/migrations/`, applied by `npm run db:migrate` | Already written: `001_init.sql` |
 | Validation | Zod 4 | API inputs, tool inputs, seed rows |
 | Money | decimal.js via `lib/money.ts` | Already written and tested |
-| AI | `@anthropic-ai/sdk` (TypeScript), model from `ANTHROPIC_MODEL`, default `claude-sonnet-5-5` (spec: latest Sonnet-class). Manual tool-use loop, `tool_choice: auto` | Explicit workflow; no agent framework |
+| AI | Google Gemini via `@google/genai` 2.30 (TypeScript), model from `GEMINI_MODEL`, default `gemini-flash-latest`. Manual function-calling loop, mode `AUTO`, automatic function calling disabled | Team choice; explicit workflow; no agent framework |
 | Tests | Vitest 5 (`tests/**/*.test.ts`) | Already configured: `vitest.config.mts` |
 | Scripts | tsx for seed and migration scripts | Installed |
 | Synthetic data | `@faker-js/faker` with a fixed seed (42) + a seeded PRNG for demand | Reproducible demo |
@@ -182,7 +182,7 @@ pharmaos/
 ### 3.1 Already done (stage 0)
 
 - [x] `create-next-app` (TypeScript, Tailwind, ESLint, App Router, Turbopack, `@/*` alias).
-- [x] Dependencies installed: `@anthropic-ai/sdk zod postgres decimal.js three @react-three/fiber @react-three/drei recharts lucide-react clsx tailwind-merge class-variance-authority`; dev: `vitest tsx @types/three @types/node@24 dotenv @faker-js/faker csv-parse`.
+- [x] Dependencies installed: `@google/genai zod postgres decimal.js three @react-three/fiber @react-three/drei recharts lucide-react clsx tailwind-merge class-variance-authority`; dev: `vitest tsx @types/three @types/node@24 dotenv @faker-js/faker csv-parse`.
 - [x] npm install scripts approved for `esbuild` and `unrs-resolver` (needed by tsx/vitest).
 - [x] shadcn initialised (`components.json`, `lib/utils.ts`) and 20 components added.
 - [x] Folder tree, schema, migration runner, DB client, money helpers, engine config, tool contract, Vitest config, `.env.example`.
@@ -193,7 +193,7 @@ pharmaos/
 1. Create a Supabase project (free tier). Region: Mumbai (`ap-south-1`) for latency.
 2. Project Settings → Database → Connection string → **Transaction pooler** (port 6543). Copy it.
 3. `cp .env.example .env.local` and set `DATABASE_URL` (replace `[YOUR-PASSWORD]`).
-4. Set `ANTHROPIC_API_KEY` if you have one (optional until stage 6).
+4. Set `GEMINI_API_KEY` if you have one (from Google AI Studio, aistudio.google.com/apikey; optional until stage 6).
 5. `npm run db:migrate` → expect `Applied 001_init.sql` and `Migrations up to date.`
 6. Supabase → Table editor: confirm the tables exist and `scenarios` has 5 rows.
 
@@ -648,7 +648,7 @@ UI reads go through server components calling services directly; UI mutations ca
 
 ### 9.2 Tools exposed to the model
 
-All tools return the `ToolResult` contract (`lib/validation/tool-contract.ts`). Input schemas in Zod, converted to JSON Schema with `z.toJSONSchema()`; set `strict: true` and `additionalProperties: false`. Validate every input with Zod again before running the handler.
+All tools return the `ToolResult` contract (`lib/validation/tool-contract.ts`). Input schemas in Zod, converted to JSON Schema with `z.toJSONSchema()` and passed to Gemini as `parametersJsonSchema` on each `FunctionDeclaration`. Validate every `functionCall.args` with Zod again before running the handler.
 
 | Tool | Input | Returns |
 |---|---|---|
@@ -695,44 +695,56 @@ Rules:
   returned by the tools, mention SKU names and supplier codes.
 - All data is synthetic demo data shaped by public reference datasets; say so if asked whether it is live or real.
 ```
-Keep this text byte-stable (prompt caching). Put the plan id / as-of date in the user message, not in the system prompt.
+Pass it as `config.systemInstruction`. Keep the text stable across requests; put the plan id / as-of date in the user message, not in the system prompt.
 
-### 9.4 Loop (`orchestrator.ts`)
+### 9.4 Loop (`orchestrator.ts`) — Gemini via `@google/genai`
 
 ```ts
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI, ApiError, FinishReason, FunctionCallingConfigMode,
+         type Content, type FunctionDeclaration, type Part } from "@google/genai";
 
-const client = new Anthropic();               // reads ANTHROPIC_API_KEY
-const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5";
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });   // server only
+const MODEL = process.env.GEMINI_MODEL ?? "gemini-flash-latest";
 
-// messages: Anthropic.MessageParam[] — start with the user's message (+ plan context line)
+// contents: Content[] — start with [{ role: "user", parts: [{ text: userMessage + "\n\nContext: planId=…, asOf=…" }] }]
 for (let turn = 0; turn < 8; turn++) {
-  const response = await client.messages.create({
+  const response = await ai.models.generateContent({
     model: MODEL,
-    max_tokens: 16000,
-    system: SYSTEM_PROMPT,
-    tools: TOOL_DEFINITIONS,                   // Anthropic.Tool[]
-    tool_choice: { type: "auto" },
-    output_config: { effort: "medium" },
-    messages,
+    contents,
+    config: {
+      systemInstruction: SYSTEM_PROMPT,
+      tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],      // FunctionDeclaration[] (parametersJsonSchema)
+      toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
+      automaticFunctionCalling: { disable: true },                   // WE run tools: allow-list + Zod
+      maxOutputTokens: 8192,
+      httpOptions: { timeout: 15000 },                               // ms
+    },
   });
-  if (response.stop_reason === "refusal" || response.stop_reason === "max_tokens") → fallback
-  if (response.stop_reason === "end_turn") → return text blocks joined
-  messages.push({ role: "assistant", content: response.content });
-  const toolResults: Anthropic.ToolResultBlockParam[] = [];
-  for (const block of response.content) if (block.type === "tool_use") {
-    // validate block.input with the tool's Zod schema; on failure return is_error: true
-    toolResults.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify(result), is_error: !result.ok });
+  const candidate = response.candidates?.[0];
+  const finish = candidate?.finishReason;
+  if (!candidate?.content || (finish && finish !== FinishReason.STOP)) → fallback
+      // MAX_TOKENS, SAFETY, PROHIBITED_CONTENT, MALFORMED_FUNCTION_CALL, UNEXPECTED_TOOL_CALL, TOO_MANY_TOOL_CALLS, …
+  const calls = response.functionCalls ?? [];
+  if (calls.length === 0) → return response.text ?? fallback
+  contents.push(candidate.content);              // append the model turn EXACTLY as returned (keeps thoughtSignature parts)
+  const parts: Part[] = [];
+  for (const call of calls) {
+    // look up call.name in the allow-list; validate call.args with the tool's Zod schema;
+    // unknown tool or invalid args → result = toolError("INVALID_TOOL_INPUT", …)
+    parts.push({ functionResponse: { id: call.id, name: call.name, response: result } });  // result = ToolResult
   }
-  messages.push({ role: "user", content: toolResults });   // all results in ONE user message
+  contents.push({ role: "user", parts });        // ALL function responses in ONE user turn, same order as the calls
 }
 → after 8 turns: fallback
 ```
 Notes:
-- Do not send `thinking: { type: "disabled" }` or `budget_tokens` — both return 400 on current models. Do not use `tool_choice` `any`/`tool` (400 on current models).
-- Wrap the call in try/catch for `Anthropic.APIError` subclasses (rate limit, connection, 5xx). Any failure, missing key, refusal or timeout (15 s, `{ timeout: 15000 }` request option) → deterministic fallback (`explain.ts`) with `source: 'deterministic'`. The UI shows a small "AI unavailable — showing calculated explanation" note.
+- Tool declarations: `{ name, description, parametersJsonSchema: z.toJSONSchema(schema) }`. Keep schemas simple (object, string, number, integer, boolean, enum, array; no `oneOf`/recursion) so Gemini accepts them. Zod re-validates every `call.args` before the handler runs, because the model's arguments are untrusted.
+- **Automatic function calling is disabled** so no tool ever runs outside our allow-list and validation.
+- **Never rebuild the model turn** from `response.text` / `functionCalls`: push `candidate.content` unchanged, or Gemini loses its thought signatures and multi-step tool use degrades.
+- Do not set `toolConfig` mode `ANY` (forces a call every turn) and do not hard-code `thinkingConfig`; model defaults are fine. Pin `GEMINI_MODEL` to a specific model name on demo day if `gemini-flash-latest` changes behaviour.
+- Errors: catch `ApiError` (has `status`: 429 rate limit, 5xx) and network/timeout errors. Any failure, missing `GEMINI_API_KEY`, a non-`STOP` finish reason or a timeout → deterministic fallback (`explain.ts`) with `source: 'deterministic'`. The UI shows a small "AI unavailable — showing calculated explanation" note.
 - Log each tool call (name, ok, ms) to `audit_logs` with actor `agent` only for mutating tools (`recalculate_plan`); read-only calls go to the response's `toolCalls` list for display.
-- Optional, when using the Claude API directly: server-side refusal fallback (`betas: ["server-side-fallback-2026-07-01"]`, `fallbacks: "default"` on `client.beta.messages.create`). Add it only if the installed SDK types accept it; the deterministic fallback already covers refusals.
+- Exact type names come from `node_modules/@google/genai/dist/genai.d.ts` (installed version 2.30.0); check there rather than guessing.
 
 ---
 
@@ -883,7 +895,7 @@ Seed a tiny fixture DB → create plan → edit qty → approve twice with the s
 - [ ] Approve creates POs grouped by supplier; double-click creates nothing extra.
 - [ ] 3D: click bin shows the right batches; heatmap modes change colours; `?sku=` focuses; 2D toggle works.
 - [ ] Each scenario run + recalculate changes the numbers; Reset restores them.
-- [ ] With `ANTHROPIC_API_KEY` removed, Why? and Ask still respond (deterministic).
+- [ ] With `GEMINI_API_KEY` removed, Why? and Ask still respond (deterministic).
 - [ ] `npm run build` passes.
 
 ---

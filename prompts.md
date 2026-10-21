@@ -51,7 +51,7 @@ Rules for this whole session:
 
 1. Create a Supabase project (region Mumbai).
 2. Copy the **Transaction pooler** connection string (port 6543).
-3. Run `cp .env.example .env.local` and paste the string into `DATABASE_URL`. Add `ANTHROPIC_API_KEY` if you have one.
+3. Run `cp .env.example .env.local` and paste the string into `DATABASE_URL`. Add `GEMINI_API_KEY` if you have one (from aistudio.google.com/apikey).
 
 ### P01 — Database
 
@@ -384,10 +384,10 @@ Stage 5, step 3: the 3D scene. Follow implementationplan.md §11 exactly.
 ```text
 Stage 6, step 1: the AI orchestrator. Follow implementationplan.md §9.2, §9.3 and §9.4 exactly, plus architecture.md §9.
 
-1. lib/agents/tools.ts: exactly the 19 tools in the §9.2 table. Each has a name, a description, a Zod input schema converted with z.toJSONSchema() (strict: true, additionalProperties: false) and a handler that calls services and returns a ToolResult (lib/validation/tool-contract.ts). Re-validate every input with Zod before running. recalculate_plan is the only write tool and audits with actor_type 'agent'. Do NOT add tools for approve, reject, PO creation or SQL.
-2. lib/agents/prompts.ts: the §9.3 system prompt, byte for byte.
-3. lib/agents/orchestrator.ts: runAgent({ message, planId }) with the §9.4 manual loop using @anthropic-ai/sdk: model from ANTHROPIC_MODEL (default claude-sonnet-5-5), max_tokens 16000, tool_choice auto, output_config { effort: "medium" }, max 8 turns, 15 s timeout, all tool results in ONE user message, is_error on failures. No `thinking: disabled`, no `budget_tokens`, no tool_choice any/tool. Catch Anthropic.APIError subclasses. Any failure, missing key, refusal or max_tokens → deterministic fallback with source 'deterministic'.
-   Check the installed SDK's types in node_modules/@anthropic-ai/sdk for exact type names. Do not guess.
+1. lib/agents/tools.ts: exactly the 19 tools in the §9.2 table. Each has a name, a description, a Zod input schema converted with z.toJSONSchema() and passed as parametersJsonSchema (keep schemas simple: no oneOf, no recursion) and a handler that calls services and returns a ToolResult (lib/validation/tool-contract.ts). Re-validate every input with Zod before running. recalculate_plan is the only write tool and audits with actor_type 'agent'. Do NOT add tools for approve, reject, PO creation or SQL.
+2. lib/agents/prompts.ts: the §9.3 system prompt, byte for byte (sent as config.systemInstruction).
+3. lib/agents/orchestrator.ts: runAgent({ message, planId }) with the §9.4 manual function-calling loop using @google/genai: model from GEMINI_MODEL (default gemini-flash-latest), systemInstruction, tools: [{ functionDeclarations }], functionCallingConfig mode AUTO, automaticFunctionCalling { disable: true }, maxOutputTokens 8192, httpOptions { timeout: 15000 }, max 8 turns. Append candidate.content EXACTLY as returned (keeps thoughtSignature parts), then all functionResponse parts in ONE user turn, in call order, with matching id and name. Catch ApiError and network/timeout errors. Missing GEMINI_API_KEY, any non-STOP finishReason, or any failure → deterministic fallback with source 'deterministic'.
+   Check exact type names in node_modules/@google/genai/dist/genai.d.ts. Do not guess.
 4. POST /api/agent/chat (Zod: message 1–2000 chars, optional planId), returning { reply, toolCalls, references, source }. Update /explain to try the agent first, then fall back to explain.ts.
 5. Test 3 prompts from Appendix A with curl, once with the API key and once with it unset. Show me both.
 6. `npm run check` and `npm run build`. Commit: "stage 6: agent tools and orchestrator".
@@ -402,7 +402,7 @@ Stage 6, step 2: AI in the dashboard. Follow implementationplan.md §9.1 and §1
 2. The Why? popover shows the source tag too.
 3. After createPlan, if the key is set, generate a 3–5 sentence plan summary through the agent (non-blocking), store it in assumptions_json.summary and show it above the Impact Card.
 4. Run all 7 Appendix A prompts in the UI. Prompt 3 must recalculate the saved plan and list deferred lines. Prompts 6 and 7 must explain that the user edits and approves (the agent cannot). Prompt 2's numbers must match the drawer.
-5. Remove the API key and confirm every button still works.
+5. Remove GEMINI_API_KEY and confirm every button still works.
 6. `npm run check` and `npm run build`. Commit: "stage 6: ask panel, why and summary".
 ```
 **You check:** stage 6 Verify in plan §15.
