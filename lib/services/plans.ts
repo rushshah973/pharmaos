@@ -80,6 +80,8 @@ export type LineView = {
   qty: number;
   freeQty: number;
   unitPrice: Money | null;
+  /** Landed cost per pack (GST, freight, scheme) for the selected offer, as the engine evaluated it. */
+  effectiveCost: Money | null;
   totals: LineTotals;
   priority: number;
   /** False for lines that cannot be bought (no eligible offer, or an edited line that now fails a hard stop). */
@@ -197,6 +199,8 @@ async function selectLines(sql: SqlHandle, planId: string, opts: { lineId?: stri
       o.pack_multiple as "packMultiple", o.moq, o.available_qty as "availableQty",
       r.suggested_qty as qty, r.free_qty as "freeQty",
       r.unit_price::text as "unitPrice",
+      (select e->>'effectiveCost' from jsonb_array_elements(r.evidence_json->'offers') e
+        where e->>'offerId' = r.selected_offer_id::text limit 1) as "effectiveCost",
       r.line_subtotal::text as "lineSubtotal",
       r.line_tax::text as "lineTax",
       r.line_freight::text as "lineFreight",

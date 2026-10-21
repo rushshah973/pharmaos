@@ -64,7 +64,7 @@ export function explainLine(evidenceJson: Record<string, unknown>, current?: Cur
     cover === null
       ? "there is no recent demand to cover"
       : reasons.has("STOCKOUT_BEFORE_DELIVERY")
-        ? `stock covers only ${days(cover)} and no supplier can deliver sooner than ${chosen.supplierCode}'s ${days(chosen.leadTimeDays)}`
+        ? `${cover <= 0 ? "stock has already run out" : `stock covers only ${days(cover)}`} and no supplier can deliver sooner than ${chosen.supplierCode}'s ${days(chosen.leadTimeDays)}`
         : `stock covers ${days(cover)} and ${chosen.supplierCode} delivers in ${days(chosen.leadTimeDays)}`;
   out.push(`Ordering ${packs(qty)}${free} from ${chosen.supplierCode} because ${why}.`);
 

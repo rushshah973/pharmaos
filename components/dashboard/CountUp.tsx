@@ -1,33 +1,57 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { cn } from "cn";
 import { formatINR } from "@/lib/money";
 
 const DURATION_MS = 600;
 
-function format(n: number, kind: "inr" | "int") {
-  return kind === "inr" ? formatINR(Math.round(n), { paise: false }) : Math.round(n).toLocaleString("en-IN");
+function format(n: number, kind: "inr" | "int" | "inr-paise") {
+  if (kind === "inr") return formatINR(Math.round(n), { paise: false });
+  if (kind === "inr-paise") return formatINR(n.toFixed(2));
+  return Math.round(n).toLocaleString("en-IN");
 }
 
-/** Counts up once to `value` on first load (≤ 600 ms, ease-out); static when reduced motion is on (§10.1). */
-export function CountUp({ value, kind = "int" }: { value: number; kind?: "inr" | "int" }) {
-  const [shown, setShown] = useState(value);
+/**
+ * Counts up once on first load (≤ 600 ms, ease-out). When the value changes later (an edit, a recalculation)
+ * it moves from the old value to the new one and flashes once, so the eye sees what changed (§10.1 Motion).
+ * Static when reduced motion is on.
+ */
+export function CountUp({ value, kind = "int" }: { value: number; kind?: "inr" | "int" | "inr-paise" }) {
+  // `frame` is the in-between value while animating; null shows `value` itself.
+  const [frame, setFrame] = useState<number | null>(null);
+  const [flash, setFlash] = useState(0);
+  const from = useRef(0);
+  const first = useRef(true);
+
   useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const start = from.current;
+    from.current = value;
+    const changed = !first.current;
+    first.current = false;
+    if (start === value || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     let raf = 0;
-    const start = performance.now();
+    const t0 = performance.now();
     const tick = (t: number) => {
-      const p = Math.min(1, (t - start) / DURATION_MS);
-      setShown(value * (1 - Math.pow(1 - p, 3)));
+      const p = Math.min(1, (t - t0) / DURATION_MS);
+      setFrame(p < 1 ? start + (value - start) * (1 - Math.pow(1 - p, 3)) : null);
       if (p < 1) raf = requestAnimationFrame(tick);
     };
-    raf = requestAnimationFrame(tick);
+    raf = requestAnimationFrame((t) => {
+      if (changed) setFlash((n) => n + 1);
+      tick(t);
+    });
     // Animation frames pause in background tabs; always land on the real value.
-    const done = setTimeout(() => setShown(value), DURATION_MS + 100);
+    const done = setTimeout(() => setFrame(null), DURATION_MS + 100);
     return () => {
       cancelAnimationFrame(raf);
       clearTimeout(done);
     };
   }, [value]);
-  return <span className="num">{format(shown, kind)}</span>;
+
+  return (
+    <span key={flash} className={cn("num rounded-sm", flash > 0 && "flash-change")}>
+      {format(frame ?? value, kind)}
+    </span>
+  );
 }

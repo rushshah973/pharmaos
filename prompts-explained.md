@@ -20,9 +20,10 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P11 | Context loader and debug plan | ✅ `2b2b280` |
 | P12 | Theme and shell | ✅ `6a1bb63` |
 | P13 | Plan services and API | ✅ `2296530` |
-| P14 | Command Center and plan list | ✅ |
-| P15 | Plan screen | ⏭ |
-| P16–P28 | … | ⬜ |
+| P14 | Command Center and plan list | ✅ `90d5ce4` |
+| P15 | Plan screen | ✅ |
+| P16 | Line drawer and edit preview | ⏭ |
+| P17–P28 | … | ⬜ |
 
 > Budget cap removed; ₹4,00,000 per-PO Owner approval added (after P13).
 
@@ -163,14 +164,14 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 - **You will see:** Real numbers from the database and a working Create Purchase Plan dialog.
 - **Why it matters:** The opening of the demo ("this is what a stockist sees every morning").
 
-### P15 — Plan screen ⏭
+### P15 — Plan screen ✅
 
 - **What it does:** Builds the main working screen: the Plan Impact Card, a strip showing each supplier's PO total (amber "Owner approval" badge above ₹4,00,000), the ranked table of what to buy, flags and reasons, defer/reject actions, a "Not in this plan" list with each line's risk, and a Recalculate button.
 - **Creates or changes:** `app/(dashboard)/procurement/[planId]/page.tsx`, `ImpactCard`, `SupplierPoStrip`, `PlanTable`, the "Not in this plan" list.
 - **You will see:** A full plan you can read, sort through and adjust.
 - **Why it matters:** The heart of the product — where the owner makes today's buying decision.
 
-### P16 — Line drawer and edit preview ⬜
+### P16 — Line drawer and edit preview ⏭
 
 - **What it does:** Opens one recommendation in a side panel: demand chart, stock breakdown, batches and expiry, every supplier compared (including why some were excluded), the formulas with real numbers filled in, and an edit control that shows the new total before saving.
 - **Creates or changes:** `LineDrawer`, `DemandChart`, `SupplierComparison`, `FormulaPanel`, edit controls.

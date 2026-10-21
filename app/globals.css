@@ -237,3 +237,27 @@
     color: #000;
   }
 }
+
+/* Icon-only row action (plan tables): 28 px, quiet until hovered. */
+@layer components {
+  .row-action {
+    display: inline-flex;
+    width: 28px;
+    height: 28px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    color: var(--text-2);
+    transition:
+      background-color 150ms ease-out,
+      color 150ms ease-out;
+  }
+  .row-action:hover:not(:disabled) {
+    background: var(--surface-2);
+    color: var(--text-1);
+  }
+  .row-action:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+}
