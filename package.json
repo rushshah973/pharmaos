@@ -13,7 +13,8 @@
     "db:migrate": "tsx scripts/db/migrate.ts",
     "db:reset": "tsx scripts/db/migrate.ts --reset",
     "seed": "tsx scripts/seed/index.ts",
-    "check": "npm run typecheck && npm run lint && npm run test"
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "profile": "tsx scripts/seed/profile-reference.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

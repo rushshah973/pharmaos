@@ -1,0 +1,242 @@
+{
+  "note": "Aggregate statistics only. No names, IDs or rows from any reference file.",
+  "sources": [
+    {
+      "id": "indian_pharmacy_catalogue",
+      "source_type": "public_reference",
+      "retrieved_at": "2026-10-21",
+      "present": true
+    },
+    {
+      "id": "pharma_sales_github",
+      "source_type": "unverified_sample",
+      "retrieved_at": "2026-10-21",
+      "present": true
+    }
+  ],
+  "assumptions": {
+    "ptrFromListedFactor": 0.8,
+    "ptrNote": "PTR estimate = catalogue listed price x factor (approximate 20% retailer margin). Not a supplier quote.",
+    "categoryNote": "Category derived from composition with CATEGORY_KEYWORDS (scripts/seed/catalog.ts); unmatched = other.",
+    "formNote": "Dosage form derived from pack_size_label."
+  },
+  "dosageFormShare": {
+    "tablet": 0.6007,
+    "injection": 0.1297,
+    "syrup": 0.1096,
+    "capsule": 0.0871,
+    "ointment": 0.0372,
+    "drops": 0.0208,
+    "other": 0.0149
+  },
+  "packSizePatterns": {
+    "strip of N tablets": 0.522,
+    "vial of N injection": 0.0696,
+    "strip of N capsules": 0.0574,
+    "bottle of N ml syrup": 0.0508,
+    "vial of N ml injection": 0.0393,
+    "bottle of N ml oral suspension": 0.0249,
+    "strip of N tablet sr": 0.0222,
+    "strip of N capsule sr": 0.0221,
+    "tube of N gm cream": 0.0196,
+    "strip of N tablet dt": 0.0183,
+    "bottle of N ml dry syrup": 0.0151,
+    "bottle of N ml suspension": 0.0101,
+    "strip of N tablet er": 0.0085,
+    "bottle of N ml eye drop": 0.0074,
+    "strip of N tablet md": 0.0072,
+    "strip of N tablet": 0.0068,
+    "ampoule of N ml injection": 0.0063,
+    "tube of N gm ointment": 0.0057,
+    "tube of N gm gel": 0.0052,
+    "vial of N powder for injection": 0.0051
+  },
+  "packQuantityShareByForm": {
+    "tablet": {
+      "1": 0.0118,
+      "3": 0.0121,
+      "4": 0.0114,
+      "5": 0.0068,
+      "6": 0.0391,
+      "10": 0.8648,
+      "15": 0.0285,
+      "30": 0.0055
+    },
+    "syrup": {
+      "5": 0.0191,
+      "10": 0.0283,
+      "15": 0.0288,
+      "30": 0.3186,
+      "60": 0.2567,
+      "100": 0.2324,
+      "170": 0.027,
+      "200": 0.0638
+    },
+    "ointment": {
+      "5": 0.0707,
+      "10": 0.1726,
+      "15": 0.2916,
+      "20": 0.1448,
+      "30": 0.1927,
+      "50": 0.0341,
+      "60": 0.0234,
+      "100": 0.0221
+    },
+    "capsule": {
+      "1": 0.0041,
+      "4": 0.064,
+      "5": 0.0075,
+      "6": 0.0071,
+      "7": 0.0069,
+      "10": 0.8478,
+      "15": 0.0376,
+      "30": 0.0089
+    },
+    "other": {
+      "1": 0.1178,
+      "5": 0.0601,
+      "10": 0.0628,
+      "30": 0.0528,
+      "60": 0.0517,
+      "75": 0.1532,
+      "100": 0.1902,
+      "120": 0.0482
+    },
+    "injection": {
+      "1": 0.7079,
+      "2": 0.1471,
+      "3": 0.0139,
+      "4": 0.0075,
+      "5": 0.0407,
+      "10": 0.0317,
+      "20": 0.0081,
+      "100": 0.0195
+    },
+    "drops": {
+      "1": 0.0032,
+      "2": 0.0006,
+      "3": 0.0223,
+      "5": 0.4501,
+      "10": 0.3248,
+      "15": 0.1316,
+      "20": 0.0019,
+      "30": 0.0632
+    }
+  },
+  "categoryShare": {
+    "other": 0.2643,
+    "antibiotic": 0.2376,
+    "analgesic": 0.1228,
+    "gastro": 0.1048,
+    "respiratory": 0.0796,
+    "cardiac": 0.0724,
+    "dermatology": 0.0514,
+    "antidiabetic": 0.0451,
+    "vitamins": 0.022
+  },
+  "categoryMatch": {
+    "matchedShare": 0.7357,
+    "otherShare": 0.2643
+  },
+  "priceQuantilesByCategory": {
+    "analgesic": {
+      "p10": 15.84,
+      "p50": 45.6,
+      "p90": 135.56
+    },
+    "antibiotic": {
+      "p10": 27.92,
+      "p50": 67.2,
+      "p90": 215.2
+    },
+    "antidiabetic": {
+      "p10": 26.4,
+      "p50": 65.6,
+      "p90": 136.8
+    },
+    "cardiac": {
+      "p10": 24,
+      "p50": 63.92,
+      "p90": 151.2
+    },
+    "gastro": {
+      "p10": 23,
+      "p50": 52.8,
+      "p90": 125.6
+    },
+    "respiratory": {
+      "p10": 22.86,
+      "p50": 54.56,
+      "p90": 108.8
+    },
+    "vitamins": {
+      "p10": 28,
+      "p50": 80,
+      "p90": 198.4
+    },
+    "dermatology": {
+      "p10": 22.4,
+      "p50": 96,
+      "p90": 224
+    },
+    "other": {
+      "p10": 19.2,
+      "p50": 76,
+      "p90": 440
+    }
+  },
+  "priceQuantilesOverall": {
+    "p10": 21.6,
+    "p25": 38.4,
+    "p50": 63.2,
+    "p75": 112,
+    "p90": 200
+  },
+  "manufacturersPerCategory": {
+    "analgesic": 4582,
+    "antibiotic": 4688,
+    "antidiabetic": 1670,
+    "cardiac": 2064,
+    "gastro": 4910,
+    "respiratory": 3854,
+    "vitamins": 2495,
+    "dermatology": 2559,
+    "other": 5076
+  },
+  "compositionCountShare": {
+    "single": 0.5583,
+    "combination": 0.4417
+  },
+  "dailyDemandQuantiles": {
+    "p10": 77.3,
+    "p25": 168.8,
+    "p50": 313,
+    "p75": 458,
+    "p90": 640.4
+  },
+  "zeroDayShare": 0.4064,
+  "salesSampleMeta": {
+    "spanDays": 500,
+    "drugsCount": 5,
+    "quantityUnit": "unknown (source does not say whether quantity is packs or units)"
+  },
+  "expiryDaysLeftQuantiles": {
+    "p10": 23,
+    "p25": 81,
+    "p50": 194,
+    "p75": 294,
+    "p90": 358
+  },
+  "expiredShare": 0.041,
+  "weekdayFactors": {
+    "missing": true
+  },
+  "monthlyFactors": {
+    "missing": true
+  },
+  "rowsRead": {
+    "catalogue": 253973,
+    "sales": 2000
+  },
+  "priceRowsExcluded": 7909
+}
