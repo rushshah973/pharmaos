@@ -2,7 +2,7 @@
 
 A plain-English companion to `prompts.md`. For every prompt: **what it does**, **what it creates or changes**, **what you will see when it is done**, and **why it matters** for the product or the demo. The prompts themselves (the text you paste) stay in `prompts.md`.
 
-**Status** — ✅ done (commit) · ⏭ next · ⬜ not started. Last updated after P09.
+**Status** — ✅ done (commit) · ⏭ next · ⬜ not started. Last updated after P10.
 
 | # | Prompt | Status |
 |---|---|---|
@@ -16,8 +16,9 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P07 | Engine tests first | ✅ `698bd9c` |
 | P08 | Demand, expiry, inventory | ✅ `5ef2952` |
 | P09 | Ordering, suppliers, totals, priority | ✅ `afa8ee2` |
-| P10 | Basket, impact, validation, engine | ⏭ |
-| P11–P28 | … | ⬜ |
+| P10 | Basket, impact, validation, engine | ✅ `c3600d1` |
+| P11 | Context loader and debug plan | ⏭ |
+| P12–P28 | … | ⬜ |
 
 ---
 
@@ -117,14 +118,14 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 - **You will see:** F1, F2, F3, F5, F7 and matching F8 tests green.
 - **Why it matters:** This is the "why Supplier B and not A?" logic and the money maths that must be exact to the paisa.
 
-### P10 — Basket, impact, validation, engine ⏭
+### P10 — Basket, impact, validation, engine ✅
 
 - **What it does:** Fits the best lines into the budget (and tries a cheaper supplier or a smaller quantity for lines that just miss), computes the Plan Impact Card, the approval hard stops, and wires everything into two main functions: analyse one SKU, and build a whole plan.
 - **Creates or changes:** `basket.ts`, `impact.ts`, `validation.ts`, `engine.ts`; removes the temporary `_stub.ts`.
 - **You will see:** All engine tests F1–F9 green, plus a check that the plan never exceeds the budget across 200 random baskets.
 - **Why it matters:** This is the whole decision engine. Every screen, the warehouse heatmap and the AI all call these same functions.
 
-### P11 — Context loader and debug plan (STOP) ⬜
+### P11 — Context loader and debug plan (STOP) ⏭
 
 - **What it does:** Connects the engine to the real database, switches the seed checks from their temporary formulas to the real engine, and prints a sample plan at ₹2,00,000 and ₹1,00,000 in the terminal.
 - **Creates or changes:** `lib/db/queries/*`, `lib/services/context.ts`, `lib/scenarios/apply.ts` (empty for now), `scripts/debug-plan.ts`; updates `inject-demo-cases.ts` and `validate.ts`; re-seeds.
