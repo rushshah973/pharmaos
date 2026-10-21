@@ -73,7 +73,7 @@ export function SkuSearch({ selected, onPick, onClear }: { selected: ProductSear
   }
 
   return (
-    <div ref={box} className="relative w-full sm:w-[300px]">
+    <div ref={box} className="relative w-full sm:w-[260px]">
       <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-fg-3" aria-hidden />
       <input
         type="search"

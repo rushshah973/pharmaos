@@ -28,8 +28,9 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P18 | Purchase orders and Activity | ✅ |
 | P19 | Heatmap, put-away and warehouse API | ✅ |
 | P20 | 2D grid and panels | ✅ |
-| P21 | 3D scene | ⏭ |
-| P22–P28 | … (plus P22B, P23B after P23) | ⬜ |
+| P21 | 3D scene | ✅ |
+| P22 | Tools and orchestrator | ⏭ |
+| P23–P28 | … (plus P22B, P23B after P23) | ⬜ |
 
 > Budget cap removed; ₹4,00,000 per-PO Owner approval added (after P13).
 >
@@ -231,7 +232,7 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 - **You will see:** A working warehouse map you can click through.
 - **Why it matters:** A reliable fallback if 3D fails on the demo laptop, and the data layer the 3D scene reuses.
 
-### P21 — 3D scene ⏭
+### P21 — 3D scene ✅
 
 - **What it does:** Adds the interactive 3D warehouse: rotate, zoom, click a bin, switch heatmaps, fly to a searched SKU, and see proposed stock as see-through "ghost" cartons. Falls back to 2D automatically if 3D is not supported.
 - **Creates or changes:** `Scene3D` and its loading in `WarehouseView`.
@@ -242,7 +243,7 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 
 ## Stage 6 — AI (Gemini)
 
-### P22 — Tools and orchestrator ⬜
+### P22 — Tools and orchestrator ⏭
 
 - **What it does:** Connects Gemini. Gives it 19 safe, typed tools (look up sales, stock, batches, suppliers, plan…; one tool to recalculate a plan) and a strict system prompt. It runs Gemini's tool loop with a timeout, and falls back to the calculated explanation if anything fails.
 - **Creates or changes:** `lib/agents/tools.ts`, `prompts.ts`, `orchestrator.ts`, `/api/agent/chat`; `/explain` tries the AI first.

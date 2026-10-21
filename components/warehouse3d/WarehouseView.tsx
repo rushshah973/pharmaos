@@ -3,10 +3,12 @@
 // Warehouse view (§11): state for mode, selected bin and SKU search, mirrored in the URL (?mode, ?bin, ?sku, ?view).
 // The four status heatmaps arrive with the page, computed from one planning context; Proposed Replenishment
 // is fetched from /api/warehouse/heatmap when it is first picked (it needs the plan's put-away).
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// 3D is the default view; without WebGL2, or if the scene throws, it falls back to the 2D grid.
+import { Component, type ReactNode, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import dynamic from "next/dynamic";
 import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Grid3x3, Loader2, PackageX, Rows3, TriangleAlert } from "lucide-react";
+import { Box, Grid3x3, Loader2, PackageX, Rows3, TriangleAlert } from "lucide-react";
 import { cn } from "cn";
 import { HEATMAP_MODES, type HeatmapMode } from "@/lib/business-logic/heatmap";
 import type { HeatmapView, ProductSearchHit, WarehouseLayout } from "@/lib/services/warehouse";
@@ -18,7 +20,48 @@ import { Legend, ModeSelect } from "./Legend";
 import { MODE_BY_ID } from "./modes";
 import { SkuSearch } from "./SkuSearch";
 
-type View = "grid" | "table";
+const Scene3D = dynamic(() => import("./Scene3D"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[620px] items-center justify-center rounded-lg border border-border bg-[#080d19] max-xl:h-[520px]">
+      <span className="shimmer inline-flex items-center gap-2 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[12.5px] text-fg-2">
+        <Loader2 className="size-3.5 animate-spin" aria-hidden /> Loading the 3D scene…
+      </span>
+    </div>
+  ),
+});
+
+type View = "3d" | "grid" | "table";
+const VIEWS: View[] = ["3d", "grid", "table"];
+
+/** WebGL2 support, checked once in the browser (the server assumes yes; the client corrects it on hydration). */
+let webgl2: boolean | undefined;
+function hasWebGL2(): boolean {
+  if (webgl2 === undefined) {
+    try {
+      webgl2 = !!document.createElement("canvas").getContext("webgl2");
+    } catch {
+      webgl2 = false;
+    }
+  }
+  return webgl2;
+}
+const noSubscribe = () => () => {};
+
+/** If the 3D scene throws, report it and render nothing; the parent switches to the 2D grid. */
+class SceneBoundary extends Component<{ onError: (err: Error) => void; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(err: Error) {
+    console.error("[warehouse 3d]", err);
+    this.props.onError(err);
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 type Heatmaps = Partial<Record<HeatmapMode, HeatmapView>>;
 
 const isMode = (v: string | null): v is HeatmapMode => !!v && (HEATMAP_MODES as readonly string[]).includes(v);
@@ -30,7 +73,13 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
   const urlSku = params.get("sku");
 
   const [mode, setMode] = useState<HeatmapMode>(isMode(urlMode) && (urlMode !== "proposed" || planId) ? urlMode : "stockout");
-  const [view, setView] = useState<View>(params.get("view") === "table" ? "table" : "grid");
+  const urlView = params.get("view");
+  const [view, setView] = useState<View>(VIEWS.includes(urlView as View) ? (urlView as View) : "3d");
+  const webgl = useSyncExternalStore(noSubscribe, hasWebGL2, () => true);
+  const [sceneFailed, setSceneFailed] = useState(false);
+  const can3d = webgl && !sceneFailed;
+  const shown: View = view === "3d" && !can3d ? "grid" : view;
+  const [focus, setFocus] = useState<{ binId: string; nonce: number } | null>(null);
   const [selectedBinId, setSelectedBinId] = useState<string | null>(params.get("bin"));
   const [search, setSearch] = useState<ProductSearchHit | null>(null);
   const [heatmaps, setHeatmaps] = useState<Heatmaps>(initial);
@@ -78,7 +127,10 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
       .then((j: { results?: ProductSearchHit[] }) => {
         const hit = j.results?.find((h) => h.sku.toUpperCase() === urlSku.toUpperCase()) ?? null;
         setSearch(hit);
-        if (hit?.bins[0]) setSelectedBinId((cur) => cur ?? hit.bins[0].binId);
+        if (hit?.bins[0]) {
+          setSelectedBinId((cur) => cur ?? hit.bins[0].binId);
+          setFocus({ binId: hit.bins[0].binId, nonce: Date.now() });
+        }
       })
       .catch(() => {});
     return () => ctrl.abort();
@@ -106,6 +158,7 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
     setSearch(hit);
     setUrl({ sku: hit.sku, bin: hit.bins[0]?.binId ?? null });
     setSelectedBinId(hit.bins[0]?.binId ?? null);
+    if (hit.bins[0]) setFocus({ binId: hit.bins[0].binId, nonce: Date.now() });
   };
   const clearSku = () => {
     setSearch(null);
@@ -113,7 +166,7 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
   };
   const changeView = (v: View) => {
     setView(v);
-    setUrl({ view: v === "grid" ? null : v });
+    setUrl({ view: v === "3d" ? null : v });
   };
 
   const meta = MODE_BY_ID[mode];
@@ -139,18 +192,21 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
           <SkuSearch selected={search} onPick={pickSku} onClear={clearSku} />
           <div role="radiogroup" aria-label="View" className="flex h-8 rounded-lg border border-border bg-surface-1 p-0.5">
             {([
-              ["grid", "Grid", Grid3x3],
+              ["3d", "3D", Box],
+              ["grid", "2D", Grid3x3],
               ["table", "Table", Rows3],
             ] as const).map(([v, label, Icon]) => (
               <button
                 key={v}
                 type="button"
                 role="radio"
-                aria-checked={view === v}
+                aria-checked={shown === v}
+                disabled={v === "3d" && !can3d}
+                title={v === "3d" && !can3d ? (webgl ? "The 3D scene failed; showing the 2D grid" : "3D needs WebGL2, which this browser does not offer") : undefined}
                 onClick={() => changeView(v)}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium transition-colors",
-                  view === v ? "bg-surface-3 text-fg-1" : "text-fg-3 hover:text-fg-1",
+                  "inline-flex items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                  shown === v ? "bg-surface-3 text-fg-1" : "text-fg-3 hover:text-fg-1",
                 )}
               >
                 <Icon className="size-3.5" strokeWidth={1.75} aria-hidden />
@@ -184,6 +240,11 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
           <div className="mb-5">
             <Legend mode={meta} counts={counts} />
           </div>
+          {view === "3d" && shown === "grid" && (
+            <p role="status" className="mb-4 rounded-lg border border-border bg-surface-2 px-3 py-2 text-[12.5px] text-fg-2">
+              {sceneFailed ? "The 3D scene hit an error, so the 2D grid is shown instead." : "This browser has no WebGL2, so the 2D grid is shown instead of 3D."}
+            </p>
+          )}
 
           {mode === "proposed" && proposedState === "error" ? (
             <div role="alert" className="flex flex-col items-center py-16 text-center">
@@ -202,7 +263,20 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
                   </span>
                 </div>
               )}
-              {view === "grid" ? (
+              {shown === "3d" ? (
+                <SceneBoundary onError={() => setSceneFailed(true)}>
+                  <Scene3D
+                    layout={layout}
+                    heat={heat}
+                    mode={mode}
+                    selectedBinId={selectedBinId}
+                    matchBinIds={matchBinIds}
+                    focus={focus}
+                    placements={mode === "proposed" ? (current?.placements ?? []) : []}
+                    onSelect={select}
+                  />
+                </SceneBoundary>
+              ) : shown === "grid" ? (
                 <Grid2D bins={layout.bins} heat={heat} mode={meta} selectedBinId={selectedBinId} matchBinIds={matchBinIds} onSelect={select} />
               ) : (
                 <BinTable bins={layout.bins} heat={heat} mode={meta} selectedBinId={selectedBinId} matchBinIds={matchBinIds} skusByBin={skusByBin} onSelect={select} />
