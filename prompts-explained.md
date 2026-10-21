@@ -2,7 +2,7 @@
 
 A plain-English companion to `prompts.md`. For every prompt: **what it does**, **what it creates or changes**, **what you will see when it is done**, and **why it matters** for the product or the demo. The prompts themselves (the text you paste) stay in `prompts.md`.
 
-**Status** — ✅ done (commit) · ⏭ next · ⬜ not started. Last updated after P10.
+**Status** — ✅ done (commit) · ⏭ next · ⬜ not started. Last updated after P11.
 
 | # | Prompt | Status |
 |---|---|---|
@@ -17,8 +17,9 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P08 | Demand, expiry, inventory | ✅ `5ef2952` |
 | P09 | Ordering, suppliers, totals, priority | ✅ `afa8ee2` |
 | P10 | Basket, impact, validation, engine | ✅ `c3600d1` |
-| P11 | Context loader and debug plan | ⏭ |
-| P12–P28 | … | ⬜ |
+| P11 | Context loader and debug plan | ✅ `2b2b280` |
+| P12 | Theme and shell | ⏭ |
+| P13–P28 | … | ⬜ |
 
 ---
 
@@ -125,7 +126,7 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 - **You will see:** All engine tests F1–F9 green, plus a check that the plan never exceeds the budget across 200 random baskets.
 - **Why it matters:** This is the whole decision engine. Every screen, the warehouse heatmap and the AI all call these same functions.
 
-### P11 — Context loader and debug plan (STOP) ⏭
+### P11 — Context loader and debug plan (STOP) ✅
 
 - **What it does:** Connects the engine to the real database, switches the seed checks from their temporary formulas to the real engine, and prints a sample plan at ₹2,00,000 and ₹1,00,000 in the terminal.
 - **Creates or changes:** `lib/db/queries/*`, `lib/services/context.ts`, `lib/scenarios/apply.ts` (empty for now), `scripts/debug-plan.ts`; updates `inject-demo-cases.ts` and `validate.ts`; re-seeds.
@@ -136,7 +137,7 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 
 ## Stage 3 — Procurement UI
 
-### P12 — Theme and shell ⬜
+### P12 — Theme and shell ⏭
 
 - **What it does:** Gives the dashboard its look: dark navy and teal, the left sidebar with six sections, the top bar with the "Synthetic demo data" badge, budget and date, and placeholder pages for every section.
 - **Creates or changes:** `app/globals.css`, `app/layout.tsx`, `components/layout/*`, placeholder pages.
