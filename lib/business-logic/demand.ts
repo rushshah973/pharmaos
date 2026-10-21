@@ -1,8 +1,10 @@
-// §6.2 — demand baseline d̄ = 0.6·d7 + 0.4·d28, plus NO_DEMAND / LOW_HISTORY / DEMAND_SPIKE flags.
+// §6.2 — demand: baseline 0.6·d7 + 0.4·d28, the ML forecast (§6.2a) when it won the backtest, and the
+// NO_DEMAND / LOW_HISTORY / DEMAND_SPIKE flags.
 import { dec } from "@/lib/money";
 import { ENGINE_CONFIG, type EngineConfig } from "./config";
 import { addDays, daysBetween } from "./dates";
-import type { DemandResult, IsoDate, SalesPoint, WarningCode } from "./types";
+import { methodReason as mlMethodReason } from "@/lib/ml/backtest";
+import type { DemandMethod, DemandResult, IsoDate, SalesPoint, SkuForecast, WarningCode } from "./types";
 
 const SHORT_WINDOW = 7;
 const LONG_WINDOW = 28;
@@ -12,6 +14,7 @@ export function computeDemand(
   asOf: IsoDate,
   firstSaleDate: IsoDate | null,
   config: EngineConfig = ENGINE_CONFIG,
+  forecast?: SkuForecast,
 ): DemandResult {
   // Packs sold per day (several points for one day are added; a missing day = 0).
   const byDate = new Map<IsoDate, number>();
@@ -30,7 +33,21 @@ export function computeDemand(
 
   const d7 = sum7.dividedBy(SHORT_WINDOW);
   const d28 = sum28.dividedBy(LONG_WINDOW);
-  const avg = d7.times(config.demandWeight7).plus(d28.times(config.demandWeight28));
+  const baseline = d7.times(config.demandWeight7).plus(d28.times(config.demandWeight28));
+
+  // §6.2a: d̄ is the chosen method's value — the Demand Agent's decision, else the default rule, else the baseline.
+  const historyDays = firstSaleDate === null ? 0 : daysBetween(firstSaleDate, asOf) + 1;
+  let method: DemandMethod = "baseline";
+  let methodChosenBy: DemandResult["methodChosenBy"] = "no-model";
+  let methodReason = "No demand model trained yet → using the average";
+  if (forecast) {
+    method = forecast.override?.method ?? forecast.defaultMethod;
+    methodChosenBy = forecast.override ? "demand-agent" : "default";
+    methodReason = forecast.override
+      ? forecast.override.reason
+      : mlMethodReason({ method, mlWape: forecast.mlWape, baselineWape: forecast.baselineWape, historyDays });
+  }
+  const avg = method === "ml" && forecast ? dec(forecast.mlDaily) : baseline;
 
   const flags: WarningCode[] = [];
   if (avg.isZero()) flags.push("NO_DEMAND");
@@ -40,6 +57,15 @@ export function computeDemand(
   return {
     d7: d7.toNumber(),
     d28: d28.toNumber(),
+    baseline: baseline.toNumber(),
+    ml: forecast ? forecast.mlDaily : null,
+    method,
+    methodReason,
+    methodChosenBy,
+    mlWape: forecast?.mlWape ?? null,
+    baselineWape: forecast?.baselineWape ?? null,
+    forecast14: forecast ? forecast.series14.map((units, i) => ({ date: addDays(asOf, i + 1), units })) : [],
+    mlExplain: forecast?.explain ?? null,
     avgDailyDemand: avg.toNumber(),
     windowDays: { short: SHORT_WINDOW, long: LONG_WINDOW },
     flags,

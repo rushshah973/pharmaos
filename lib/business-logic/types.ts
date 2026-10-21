@@ -143,6 +143,21 @@ export type IncomingInput = {
 
 export type SalesPoint = { date: IsoDate; units: number }; // packs sold that day; a missing day = 0
 
+export type DemandMethod = "ml" | "baseline";
+
+/** The ML demand model's view of one SKU (§6.2a), computed live by the context loader. */
+export type SkuForecast = {
+  mlDaily: number; // mean of the 14-day recursive forecast, never below 0
+  series14: number[]; // the forecast, day by day from asOf + 1
+  mlWape: number | null; // holdout backtest
+  baselineWape: number | null;
+  defaultMethod: DemandMethod;
+  /** Largest feature contributions to the first forecast day (for the formula panel). */
+  explain: { intercept: number; top: { name: string; value: number; contribution: number }[] };
+  /** A Demand Agent decision for this SKU (§9.5); absent = the default rule. */
+  override?: { method: DemandMethod; reason: string };
+};
+
 export type SkuContext = {
   asOf: IsoDate;
   product: ProductInput;
@@ -153,6 +168,8 @@ export type SkuContext = {
   incoming: IncomingInput[];
   sales: SalesPoint[];
   firstSaleDate: IsoDate | null;
+  /** Absent before the first model is trained: every SKU then uses the baseline. */
+  forecast?: SkuForecast;
 };
 
 export type PlanningContext = {
@@ -167,7 +184,16 @@ export type PlanningContext = {
 export type DemandResult = {
   d7: number;
   d28: number;
-  avgDailyDemand: number; // d̄
+  baseline: number; // 0.6 × d7 + 0.4 × d28
+  ml: number | null; // ML forecast mean (null without a model)
+  method: DemandMethod;
+  methodReason: string;
+  methodChosenBy: "default" | "demand-agent" | "no-model";
+  mlWape: number | null;
+  baselineWape: number | null;
+  forecast14: SalesPoint[]; // ML forecast for asOf + 1 … asOf + 14 (empty without a model)
+  mlExplain: SkuForecast["explain"] | null;
+  avgDailyDemand: number; // d̄ = the chosen method's value
   windowDays: { short: 7; long: 28 };
   flags: WarningCode[]; // NO_DEMAND, LOW_HISTORY, DEMAND_SPIKE
   dailySeries: SalesPoint[]; // last 28 days, oldest first, zeros filled

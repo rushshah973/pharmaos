@@ -18,13 +18,33 @@ const REFS = [
  * Last 28 days of packs sold (§10.1 Charts): one teal series with a fading area, faint horizontal grid,
  * dashed reference lines for d7, d28 and d̄, labelled directly; crosshair tooltip on hover.
  */
-export function DemandChart({ series, d7, d28, dbar }: { series: SalesPoint[]; d7: number; d28: number; dbar: number }) {
-  const max = Math.max(1, ...series.map((s) => s.units), d7, d28, dbar);
+export function DemandChart({
+  series,
+  forecast = [],
+  d7,
+  d28,
+  dbar,
+}: {
+  series: SalesPoint[];
+  /** ML forecast for the next 14 days, drawn as a dashed continuation. */
+  forecast?: SalesPoint[];
+  d7: number;
+  d28: number;
+  dbar: number;
+}) {
+  const max = Math.max(1, ...series.map((s) => s.units), ...forecast.map((f) => f.units), d7, d28, dbar);
+  // One row per day: actual sales, then the forecast (the last actual day is repeated so the dashed line joins).
+  const last = series[series.length - 1];
+  const data = [
+    ...series.map((s) => ({ date: s.date, units: s.units as number | null, forecast: null as number | null })),
+    ...forecast.map((f) => ({ date: f.date, units: null as number | null, forecast: Math.round(f.units * 10) / 10 })),
+  ];
+  if (last && forecast.length > 0) data[series.length - 1].forecast = last.units;
   return (
     <figure className="m-0">
       <div className="h-[168px] w-full" role="img" aria-label={`Daily packs sold over 28 days; d̄ ${fmt(dbar)}, d7 ${fmt(d7)}, d28 ${fmt(d28)}`}>
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+          <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
             <defs>
               <linearGradient id="demand-fill" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="var(--brand)" stopOpacity={0.2} />
@@ -58,11 +78,29 @@ export function DemandChart({ series, d7, d28, dbar }: { series: SalesPoint[]; d
                 active && payload?.[0] ? (
                   <div className="rounded-md border border-border-strong bg-surface-2 px-2.5 py-1.5 text-[12px] shadow-(--shadow-pop)">
                     <div className="text-fg-3">{formatDisplayDate(String(payload[0].payload.date))}</div>
-                    <div className="num font-medium text-fg-1">{payload[0].value} packs sold</div>
+                    {payload[0].payload.units !== null ? (
+                      <div className="num font-medium text-fg-1">{payload[0].payload.units} packs sold</div>
+                    ) : (
+                      <div className="num font-medium text-brand">{payload[0].payload.forecast} packs forecast (ML)</div>
+                    )}
                   </div>
                 ) : null
               }
             />
+            {forecast.length > 0 && (
+              <Area
+                type="linear"
+                dataKey="forecast"
+                stroke="var(--brand)"
+                strokeWidth={2}
+                strokeDasharray="5 4"
+                fill="none"
+                dot={false}
+                activeDot={{ r: 4, stroke: "var(--surface-2)", strokeWidth: 2, fill: "var(--brand)" }}
+                isAnimationActive={false}
+                connectNulls={false}
+              />
+            )}
             <Area type="linear" dataKey="units" stroke="var(--brand)" strokeWidth={2} fill="url(#demand-fill)" dot={false} activeDot={{ r: 4, stroke: "var(--surface-2)", strokeWidth: 2, fill: "var(--brand)" }} isAnimationActive={false} />
           </AreaChart>
         </ResponsiveContainer>
@@ -72,6 +110,14 @@ export function DemandChart({ series, d7, d28, dbar }: { series: SalesPoint[]; d
         <span className="inline-flex items-center gap-1.5">
           <span className="h-0.5 w-4 rounded bg-brand" aria-hidden /> Packs sold / day
         </span>
+        {forecast.length > 0 && (
+          <span className="inline-flex items-center gap-1.5">
+            <svg width="16" height="2" aria-hidden>
+              <line x1="0" y1="1" x2="16" y2="1" stroke="var(--brand)" strokeWidth={2} strokeDasharray="5 4" />
+            </svg>
+            ML forecast, next 14 days
+          </span>
+        )}
         {REFS.map((r) => (
           <span key={r.key} className="inline-flex items-center gap-1.5">
             <svg width="16" height="2" aria-hidden>
@@ -83,6 +129,7 @@ export function DemandChart({ series, d7, d28, dbar }: { series: SalesPoint[]; d
       </div>
       <figcaption className="sr-only">
         Daily sales: {series.map((s) => `${s.date} ${s.units}`).join(", ")}
+        {forecast.length > 0 && `. ML forecast: ${forecast.map((f) => `${f.date} ${f.units.toFixed(1)}`).join(", ")}`}
       </figcaption>
     </figure>
   );

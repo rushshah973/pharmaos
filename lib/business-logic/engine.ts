@@ -37,7 +37,7 @@ export function analyseSku(sku: SkuContext, config: EngineConfig = ENGINE_CONFIG
   const { asOf, product } = sku;
 
   // 1. Demand, expiry, stock position.
-  const demand = computeDemand(sku.sales, asOf, sku.firstSaleDate, config);
+  const demand = computeDemand(sku.sales, asOf, sku.firstSaleDate, config, sku.forecast);
   const dbar = demand.avgDailyDemand;
   const expiry = projectExpiry({ batches: sku.batches, balances: sku.balances, avgDailyDemand: dbar, asOf }, config);
   const incomingQty = confirmedIncoming(sku.incoming, asOf, config);

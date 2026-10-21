@@ -125,10 +125,11 @@ function DrawerBody({ planId, detail, planTotal, supplierPos, locked }: { planId
           <EditPanel key={`${line.id}:${line.qty}:${line.offerId}`} planId={planId} detail={detail} planTotal={planTotal} supplierPos={supplierPos} locked={locked} />
         </Section>
 
-        <Section title="Demand · last 28 days" aside={`d̄ = 0.6 × d7 + 0.4 × d28`}>
+        <Section title={demand.forecast14?.length ? "Demand · last 28 days and the next 14" : "Demand · last 28 days"} aside={demand.method === "ml" ? "d̄ = ML forecast" : "d̄ = 0.6 × d7 + 0.4 × d28"}>
           <div className="rounded-lg border border-border bg-surface-1 px-3 pt-3 pb-1">
-            <DemandChart series={demand.dailySeries} d7={demand.d7} d28={demand.d28} dbar={demand.avgDailyDemand} />
+            <DemandChart series={demand.dailySeries} forecast={demand.forecast14} d7={demand.d7} d28={demand.d28} dbar={demand.avgDailyDemand} />
           </div>
+          <MethodLine demand={demand} />
           {demand.flags.length > 0 && (
             <ul className="flex flex-wrap gap-2">
               {demand.flags.map((f) => (
@@ -148,6 +149,26 @@ function DrawerBody({ planId, detail, planTotal, supplierPos, locked }: { planId
         <p className="text-[11.5px] text-fg-3">Evidence captured when the plan was built or last recalculated (as of {detail.asOf}). Edits are re-checked against fresh data.</p>
       </div>
     </>
+  );
+}
+
+/** The honest accuracy line: both backtest errors, the method in use and who chose it (§6.2a). */
+function MethodLine({ demand }: { demand: LineDetail["demand"] }) {
+  if (!demand.method) {
+    return <p className="text-[12px] text-fg-3">This plan was built before the demand model existed; recalculate it to see the ML forecast.</p>;
+  }
+  const by = demand.methodChosenBy === "demand-agent" ? "chosen by the Demand Agent" : demand.methodChosenBy === "default" ? "chosen by the default rule" : "no model trained yet";
+  const ml = demand.method === "ml";
+  return (
+    <div className="flex items-start gap-2.5 rounded-lg border border-border bg-surface-1 px-3 py-2.5">
+      <span className={`mt-0.5 shrink-0 rounded-full px-2 text-[11px] leading-5 font-semibold ${ml ? "bg-brand-glow text-brand" : "bg-neutral-bg text-neutral"}`}>
+        {ml ? "ML" : "Average"}
+      </span>
+      <p className="text-[12.5px] leading-[18px] text-fg-2">
+        <span className="text-fg-1">{demand.methodReason}</span>
+        <span className="text-fg-3"> · {by} · model trained on synthetic demo data</span>
+      </p>
+    </div>
   );
 }
 

@@ -50,7 +50,23 @@ type EvidenceOffer = {
 type Evidence = {
   asOf: string;
   product: ProductInput;
-  demand: { d7: number; d28: number; avgDailyDemand: number; flags: WarningCode[]; dailySeries: SalesPoint[] };
+  demand: {
+    d7: number;
+    d28: number;
+    avgDailyDemand: number;
+    flags: WarningCode[];
+    dailySeries: SalesPoint[];
+    // ML fields (§6.2a); absent on plans built before the demand model existed.
+    baseline?: number;
+    ml?: number | null;
+    method?: "ml" | "baseline";
+    methodReason?: string;
+    methodChosenBy?: "default" | "demand-agent" | "no-model";
+    mlWape?: number | null;
+    baselineWape?: number | null;
+    forecast14?: SalesPoint[];
+    mlExplain?: { intercept: number; top: { name: string; value: number; contribution: number }[] } | null;
+  };
   expiry: { batches: BatchProjection[]; eligibleAvailable: number; atRiskQty: number; atRiskValue: Money; ineligible: IneligibleBatch[] };
   incoming: { lines: { poId: string; status: string; expectedDeliveryDate: string; quantityPacks: number; freeQty: number }[]; confirmedQty: number; horizonDays: number };
   stock: { eligibleAvailable: number; onHand?: number; reserved?: number; incoming: number; stockPosition: number; cover: number | null };
@@ -110,6 +126,20 @@ export type LineDetail = {
   formulas: Formula[];
   engine: { qty: number; freeQty: number; offerId: string | null; lineTotal: Money | null };
 };
+
+const FEATURE_LABEL: Record<string, string> = {
+  lag1: "yesterday",
+  lag7: "same day last week",
+  mean7: "7-day mean",
+  mean28: "28-day mean",
+  std28: "28-day spread",
+  zeroShare28: "share of zero days",
+  trend28: "28-day trend",
+};
+
+const DOW_LABEL: Record<string, string> = { dow_tue: "Tue", dow_wed: "Wed", dow_thu: "Thu", dow_fri: "Fri", dow_sat: "Sat", dow_sun: "Sun" };
+const featureLabel = (name: string) =>
+  FEATURE_LABEL[name] ?? (DOW_LABEL[name] ? `is ${DOW_LABEL[name]}` : name.startsWith("cat_") ? `is ${name.slice(4)}` : name);
 
 const n2 = (x: number) => (Number.isInteger(x) ? String(x) : x.toFixed(2));
 const n1 = (x: number) => x.toFixed(1);
@@ -189,13 +219,42 @@ function buildFormulas(ev: Evidence): Formula[] {
   const { d7, d28, avgDailyDemand: d } = ev.demand;
   const s = ev.stock;
   const chosen = ev.offers.find((o) => o.offerId === ev.chosenOfferId);
+  const dem = ev.demand;
+  const baseline = dem.baseline ?? c.demandWeight7 * d7 + c.demandWeight28 * d28;
   const out: Formula[] = [
     {
-      label: "Demand",
-      expr: `d̄ = ${c.demandWeight7} × d7 + ${c.demandWeight28} × d28`,
+      label: dem.method === "ml" ? "Average (not used)" : "Demand (average)",
+      expr: `average = ${c.demandWeight7} × d7 + ${c.demandWeight28} × d28`,
       subst: `${c.demandWeight7} × ${n2(d7)} + ${c.demandWeight28} × ${n2(d28)}`,
+      result: `${n2(baseline)} packs/day`,
+    },
+  ];
+  if (dem.mlExplain && dem.forecast14 && dem.forecast14.length > 0) {
+    const top = dem.mlExplain.top.slice(0, 3);
+    out.push(
+      {
+        label: "ML prediction, first day",
+        expr: "ŷ(t) = intercept + Σ wⱼ × zⱼ   (zⱼ = standardised feature; largest terms shown)",
+        subst: `${n2(dem.mlExplain.intercept)} ${top.map((t) => `${t.contribution >= 0 ? "+" : "−"} ${Math.abs(t.contribution).toFixed(2)} (${featureLabel(t.name)} ${n2(t.value)})`).join(" ")} + other terms`,
+        result: `${n2(dem.forecast14[0].units)} packs`,
+      },
+      {
+        label: dem.method === "ml" ? "Demand (ML)" : "ML forecast (not used)",
+        expr: "ML = mean of the 14-day recursive forecast",
+        subst: `(${dem.forecast14.map((p) => n1(p.units)).join(" + ")}) ÷ 14`,
+        result: `${n2(dem.ml ?? 0)} packs/day`,
+      },
+    );
+  }
+  out.push(
+    {
+      label: "d̄ used",
+      expr: "d̄ = the chosen method's value",
+      subst: dem.method === "ml" ? `ML ${n2(dem.ml ?? d)} (better on the backtest)` : `average ${n2(baseline)}${dem.method ? "" : " (no demand model yet)"}`,
       result: `${n2(d)} packs/day`,
     },
+  );
+  out.push(
     {
       label: "Stock position",
       expr: "position = eligible available + confirmed incoming",
@@ -220,7 +279,7 @@ function buildFormulas(ev: Evidence): Formula[] {
       subst: `${n2(d)} × ${ev.policy.leadFastest} + ${n2(ev.policy.safetyStock)}`,
       result: `${n2(ev.policy.reorderPoint)} packs`,
     },
-  ];
+  );
   if (!chosen) return out;
 
   const L = chosen.leadTimeDays;

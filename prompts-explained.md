@@ -23,8 +23,8 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P14 | Command Center and plan list | ✅ `90d5ce4` |
 | P15 | Plan screen | ✅ `8d364b0` |
 | P16 | Line drawer and edit preview | ✅ `9d4d4bd` |
-| P16B | ML demand model | ⏭ next |
-| P17 | Approval service | ⬜ after P16B |
+| P16B | ML demand model | ✅ |
+| P17 | Approval service | ⏭ |
 | P18–P28 | … (plus P22B, P23B after P23) | ⬜ |
 
 > Budget cap removed; ₹4,00,000 per-PO Owner approval added (after P13).
@@ -182,7 +182,7 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 - **You will see:** Complete evidence for any line; edits preview and save, and the preview warns when a supplier's PO would cross ₹4,00,000; invalid quantities (below MOQ, wrong pack multiple) are refused with the reason.
 - **Why it matters:** "Explain every rupee" — the trust moment for judges and owners.
 
-### P16B — ML demand model ⏭ next
+### P16B — ML demand model ✅
 
 - **What it does:** Replaces "a weighted average of the last 7 and 28 days" with a real machine-learning forecast where — and only where — it is measurably better. One ridge-regression model learns from every SKU's sales at once: recent days, rolling averages, how steady or patchy sales are, the trend, the day of the week and the product category. It is trained on all but the last 14 days, then tested on those 14 days it never saw. For each SKU, PharmaOS uses the ML forecast only if its error on that test was clearly lower than the average's; otherwise it keeps the average and says so.
 - **Creates or changes:** `lib/ml/` (features, ridge solver, forecaster, backtest), `npm run train:forecast` (also run by the seed), the `003_ml_and_agents.sql` migration, the forecast inside the planning context, the drawer's dashed 14-day forecast and accuracy line, and a "Demand model" card on the Data page. Tests for every piece.
@@ -193,7 +193,7 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 
 ## Stage 4 — Approval and audit
 
-### P17 — Approval service ⬜ after P16B
+### P17 — Approval service ⏭
 
 - **What it does:** Builds the only code allowed to create purchase orders: re-checks every rule with fresh data, groups approved lines by supplier and creates one PO per supplier inside one database transaction (a PO above ₹4,00,000 is held as "Awaiting Owner approval"), and makes a double click or retry harmless. Also adds the Owner's Approve / Reject for held POs and a simulated "Send to supplier" that refuses held POs. Adds Approve and Reject plan to the screen.
 - **Creates or changes:** `lib/services/approval.ts`, PO approve/reject/send in `purchase-orders.ts`, their routes, approval dialog, an optional integration test.

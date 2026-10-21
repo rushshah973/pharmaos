@@ -5,6 +5,7 @@ import { parse } from "csv-parse/sync";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import postgres from "postgres";
+import { trainForecast } from "../ml/train-forecast";
 import { generate, type Profile } from "./generate-synthetic";
 import { injectDemoCases } from "./inject-demo-cases";
 import { validate } from "./validate";
@@ -74,6 +75,13 @@ async function main() {
     console.log(`Snapshots and demo-cases.json written to ${path.relative(process.cwd(), OUT_DIR)}/`);
   } finally {
     await sql.end();
+  }
+  // Train the ML demand model on the fresh sales (its own pool: prepared statements, a few connections).
+  const trainSql = postgres(url, { max: 4, onnotice: () => {} });
+  try {
+    await trainForecast(trainSql);
+  } finally {
+    await trainSql.end();
   }
 }
 
