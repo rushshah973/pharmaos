@@ -25,8 +25,9 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P16 | Line drawer and edit preview | ✅ `9d4d4bd` |
 | P16B | ML demand model | ✅ |
 | P17 | Approval service | ✅ |
-| P18 | Purchase orders and Activity | ⏭ |
-| P19–P28 | … (plus P22B, P23B after P23) | ⬜ |
+| P18 | Purchase orders and Activity | ✅ |
+| P19 | Heatmap, put-away and warehouse API | ⏭ |
+| P20–P28 | … (plus P22B, P23B after P23) | ⬜ |
 
 > Budget cap removed; ₹4,00,000 per-PO Owner approval added (after P13).
 >
@@ -203,7 +204,7 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 - **You will see:** Approving 5 lines across 3 suppliers creates 3 POs; repeating the request creates nothing extra; a PO above the limit cannot be sent until the Owner approves it.
 - **Why it matters:** Human control: nothing is ordered without a person, large orders need the Owner's sign-off, nothing actually leaves the app (sending is simulated), and money can never be committed twice.
 
-### P18 — Purchase orders and Activity ⏭
+### P18 — Purchase orders and Activity ✅
 
 - **What it does:** Builds the PO list and a printable PO document (watermarked "NOT SENT" until sent, then "SENT (simulated)") with Approve / Reject for the Owner, Send (simulated), CSV export and Print, and the Activity log showing every action.
 - **Creates or changes:** `lib/services/purchase-orders.ts`, PO and audit routes, `/purchase-orders`, `/activity`.
@@ -214,7 +215,7 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 
 ## Stage 5 — Warehouse
 
-### P19 — Heatmap, put-away and warehouse API ⬜
+### P19 — Heatmap, put-away and warehouse API ⏭
 
 - **What it does:** Works out, for every bin, whether it holds stock at stockout risk, expiry risk or excess, and where newly ordered stock could go. Builds the server routes for the layout, heatmaps, bin details and product search.
 - **Creates or changes:** `heatmap.ts`, `putaway.ts` (+ tests), `lib/warehouse/geometry.ts`, `lib/services/warehouse.ts`, warehouse routes.

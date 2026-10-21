@@ -257,7 +257,7 @@ function buildFormulas(ev: Evidence): Formula[] {
   out.push(
     {
       label: "Stock position",
-      expr: "position = eligible available + confirmed incoming",
+      expr: "position = eligible available + incoming (open or sent POs due within 14 days)",
       subst: `${s.eligibleAvailable} + ${s.incoming}`,
       result: `${n2(s.stockPosition)} packs`,
     },

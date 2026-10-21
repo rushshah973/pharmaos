@@ -53,13 +53,25 @@ export async function writeAudit(entry: AuditEntry, sql: SqlHandle = getSql()): 
   `;
 }
 
-/** Newest first. `before` = an audit id; returns rows older than it (for "Load more"). */
+/**
+ * Newest first. `before` = an audit id; returns rows older than it (for "Load more").
+ * `action` filters by exact action or a prefix ending in "." (e.g. "po."); `entity` by entity_type.
+ */
 export async function listAudit(
-  { limit = 50, before }: { limit?: number; before?: string } = {},
+  { limit = 50, before, action, entity }: { limit?: number; before?: string; action?: string; entity?: string } = {},
   sql: SqlHandle = getSql(),
 ): Promise<AuditRow[]> {
   const size = Math.min(Math.max(Math.trunc(limit), 1), 200);
-  return before
-    ? sql<AuditRow[]>`select * from audit_logs where id < ${before} order by id desc limit ${size}`
-    : sql<AuditRow[]>`select * from audit_logs order by id desc limit ${size}`;
+  const conds = [
+    before ? sql`id < ${before}` : sql`true`,
+    action ? (action.endsWith(".") ? sql`action like ${action + "%"}` : sql`action = ${action}`) : sql`true`,
+    entity ? sql`entity_type = ${entity}` : sql`true`,
+  ];
+  return sql<AuditRow[]>`
+    select id::text, created_at, actor_type, actor_id, action, entity_type, entity_id, before_json, after_json, reason
+    from audit_logs
+    where ${conds[0]} and ${conds[1]} and ${conds[2]}
+    order by audit_logs.id desc -- the numeric column, not the text alias
+    limit ${size}
+  `;
 }

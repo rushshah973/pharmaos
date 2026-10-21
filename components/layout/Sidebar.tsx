@@ -62,7 +62,7 @@ export function Sidebar({ demoUser }: { demoUser: string }) {
   return (
     <aside
       data-collapsed={userCollapsed}
-      className="group/sb sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-border bg-surface-1 transition-[width] duration-200 ease-out data-[collapsed=true]:w-16 max-lg:w-16"
+      className="group/sb sticky top-0 flex h-screen print:hidden w-60 shrink-0 flex-col border-r border-border bg-surface-1 transition-[width] duration-200 ease-out data-[collapsed=true]:w-16 max-lg:w-16"
     >
       <div className="flex h-14 items-center justify-between border-b border-border px-4 group-data-[collapsed=true]/sb:justify-center group-data-[collapsed=true]/sb:px-0 max-lg:justify-center max-lg:px-0">
         <Link href="/" aria-label="PharmaOS home" className="rounded-md">

@@ -22,6 +22,10 @@ export function getSql(): Sql {
     // Prepared statements stay on (the session pooler supports them): without them every parameterised
     // query costs an extra round trip and stops pipelining, which is ~10× slower to a far-away database.
     prepare: true,
+    // Close idle connections after 20 s and give up connecting after 15 s: the pooler / network drops idle
+    // sockets, and a dead pooled connection otherwise hangs a request until the OS read timeout.
+    idle_timeout: 20,
+    connect_timeout: 15,
   });
 
   globalForDb.pharmaosSql = sql;

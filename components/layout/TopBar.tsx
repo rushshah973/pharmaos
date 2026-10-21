@@ -9,7 +9,7 @@ import { TopBarTitle } from "./TopBarTitle";
 /** Sticky, blurred top bar (§10.1 Layout). The right-hand facts are read server-side. */
 export function TopBar() {
   return (
-    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-bg/80 px-8 backdrop-blur-md max-lg:px-6">
+    <header className="sticky top-0 z-30 flex h-14 print:hidden shrink-0 items-center justify-between gap-4 border-b border-border bg-bg/80 px-8 backdrop-blur-md max-lg:px-6">
       <Suspense fallback={<span className="h-5 w-40" aria-hidden />}>
         <TopBarTitle />
       </Suspense>

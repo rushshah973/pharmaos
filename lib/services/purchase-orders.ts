@@ -4,7 +4,9 @@
 import type postgres from "postgres";
 import { ServiceError } from "@/lib/api/errors";
 import { getSql } from "@/lib/db/client";
-import { writeAudit } from "./audit";
+import { type SqlHandle, writeAudit } from "./audit";
+
+type SqlRead = SqlHandle;
 
 export type PoStatus = "open" | "received" | "cancelled" | "ready" | "pending_approval" | "approved" | "sent" | "rejected";
 
@@ -101,4 +103,156 @@ export async function sendPo(poId: string, who: Who = owner(), sql: postgres.Sql
     ]);
     return { ...po, status: "sent", sentAt: row.sent_at, sentBy: who.id };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Reads and CSV export (§10.3, §7.7)
+// ---------------------------------------------------------------------------
+
+export type PoFilter = "all" | "awaiting" | "ready" | "sent" | "external";
+
+export type PoListItem = {
+  id: string;
+  poNumber: string;
+  status: PoStatus;
+  supplierCode: string;
+  supplierName: string;
+  lines: number;
+  grandTotal: string;
+  sourcePlanId: string | null;
+  createdAt: string;
+  expectedDeliveryDate: string | null;
+  /** PharmaOS-created (from a plan) or seeded history from the stockist's earlier process. */
+  origin: "pharmaos" | "external";
+};
+
+const PHARMAOS_STATUSES = ["ready", "pending_approval", "approved", "sent", "rejected"];
+
+/** Newest first. "external" = the seeded purchase history (open / received / cancelled). */
+export async function listPurchaseOrders(filter: PoFilter = "all", limit = 100, sql: SqlRead = getSql()): Promise<PoListItem[]> {
+  const where =
+    filter === "awaiting"
+      ? sql`po.status = 'pending_approval'`
+      : filter === "ready"
+        ? sql`po.status in ('ready', 'approved')`
+        : filter === "sent"
+          ? sql`po.status = 'sent'`
+          : filter === "external"
+            ? sql`po.source_plan_id is null`
+            : sql`true`;
+  return sql<PoListItem[]>`
+    select po.id, po.po_number as "poNumber", po.status, s.supplier_code as "supplierCode", s.name as "supplierName",
+      (select count(*)::int from purchase_order_lines l where l.po_id = po.id) as lines,
+      po.grand_total::text as "grandTotal", po.source_plan_id as "sourcePlanId",
+      to_char(po.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as "createdAt",
+      to_char(po.expected_delivery_date, 'YYYY-MM-DD') as "expectedDeliveryDate",
+      case when po.source_plan_id is null then 'external' else 'pharmaos' end as origin
+    from purchase_orders po join suppliers s on s.id = po.supplier_id
+    where ${where}
+    order by (po.status = any(${PHARMAOS_STATUSES})) desc, po.created_at desc, po.po_number desc
+    limit ${Math.min(Math.max(Math.trunc(limit), 1), 500)}
+  `;
+}
+
+export async function countAwaitingApproval(sql: SqlRead = getSql()): Promise<number> {
+  const [r] = await sql<{ n: number }[]>`select count(*)::int as n from purchase_orders where status = 'pending_approval'`;
+  return r?.n ?? 0;
+}
+
+export type PoLine = {
+  id: string;
+  sku: string;
+  brandName: string;
+  genericName: string;
+  strength: string;
+  dosageForm: string;
+  packSize: number;
+  manufacturer: string;
+  qty: number;
+  freeQty: number;
+  unitPrice: string;
+  taxRate: string;
+  lineSubtotal: string;
+  lineTax: string;
+  lineFreight: string;
+  lineTotal: string;
+};
+
+export type PoDetail = PoListItem & {
+  subtotal: string;
+  taxTotal: string;
+  freightTotal: string;
+  supplierPaymentTermsDays: number | null;
+  approvedBy: string | null; // who approved the plan lines into this PO
+  approvedAt: string | null;
+  ownerDecision: { decision: "approved" | "rejected"; by: string; at: string; note: string | null } | null;
+  sentAt: string | null;
+  sentBy: string | null;
+  needsOwnerApproval: boolean; // created above the limit (pending_approval, or approved / rejected / sent after a decision)
+  lineItems: PoLine[];
+};
+
+export async function getPurchaseOrder(poId: string, sql: SqlRead = getSql()): Promise<PoDetail> {
+  const [head] = await sql<(Omit<PoDetail, "lineItems" | "ownerDecision" | "needsOwnerApproval"> & { lines: number })[]>`
+    select po.id, po.po_number as "poNumber", po.status, s.supplier_code as "supplierCode", s.name as "supplierName",
+      s.payment_terms_days as "supplierPaymentTermsDays",
+      (select count(*)::int from purchase_order_lines l where l.po_id = po.id) as lines,
+      po.subtotal::text as subtotal, po.tax_total::text as "taxTotal", po.freight_total::text as "freightTotal",
+      po.grand_total::text as "grandTotal", po.source_plan_id as "sourcePlanId",
+      to_char(po.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as "createdAt",
+      to_char(po.expected_delivery_date, 'YYYY-MM-DD') as "expectedDeliveryDate",
+      case when po.source_plan_id is null then 'external' else 'pharmaos' end as origin,
+      po.approved_by as "approvedBy",
+      to_char(po.approved_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as "approvedAt",
+      to_char(po.sent_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as "sentAt", po.sent_by as "sentBy"
+    from purchase_orders po join suppliers s on s.id = po.supplier_id
+    where po.id = ${poId}
+  `;
+  if (!head) throw new ServiceError("PO_NOT_FOUND", 404, `Purchase order ${poId} was not found.`);
+  const [lineItems, decisions] = await Promise.all([
+    sql<PoLine[]>`
+      select l.id, p.sku, p.brand_name as "brandName", p.generic_name as "genericName", p.strength, p.dosage_form as "dosageForm",
+        p.pack_size as "packSize", p.manufacturer, l.quantity_packs as qty, l.free_qty as "freeQty",
+        l.unit_price::text as "unitPrice", l.tax_rate::text as "taxRate", l.line_subtotal::text as "lineSubtotal",
+        l.line_tax::text as "lineTax", l.line_freight::text as "lineFreight", l.line_total::text as "lineTotal"
+      from purchase_order_lines l join products p on p.id = l.product_id
+      where l.po_id = ${poId}
+      order by p.sku
+    `,
+    sql<{ decision: "approved" | "rejected"; user_id: string; at: string; note: string | null }[]>`
+      select decision, user_id, to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as at, note
+      from approvals where entity_type = 'purchase_order' and entity_id = ${poId} order by created_at desc limit 1
+    `,
+  ]);
+  const d = decisions[0];
+  return {
+    ...head,
+    lineItems,
+    ownerDecision: d ? { decision: d.decision, by: d.user_id, at: d.at, note: d.note } : null,
+    needsOwnerApproval: head.status === "pending_approval" || !!d,
+  };
+}
+
+/** RFC 4180 field: quote when needed, double inner quotes. */
+const csvField = (v: string | number | null) => {
+  const s = v === null ? "" : String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+
+/** CSV of a PO in any status. The status does not change; audit po.exported. */
+export async function exportPo(poId: string, who: Who = owner(), sql: postgres.Sql = getSql()): Promise<{ filename: string; csv: string }> {
+  const po = await getPurchaseOrder(poId, sql);
+  const header = ["po_number", "status", "supplier_code", "supplier_name", "sku", "brand", "strength", "dosage_form", "manufacturer", "pack_size", "qty_packs", "free_qty", "unit_price", "gst_rate", "line_subtotal", "line_gst", "line_freight", "line_total"];
+  const rows = po.lineItems.map((l) =>
+    [po.poNumber, po.status, po.supplierCode, po.supplierName, l.sku, l.brandName, l.strength, l.dosageForm, l.manufacturer, l.packSize, l.qty, l.freeQty, l.unitPrice, l.taxRate, l.lineSubtotal, l.lineTax, l.lineFreight, l.lineTotal].map(csvField).join(","),
+  );
+  const totals = [
+    ["", "", "", "", "", "", "", "", "", "", "", "", "", "TOTAL", po.subtotal, po.taxTotal, po.freightTotal, po.grandTotal].map(csvField).join(","),
+    csvField(po.status === "sent" ? `Marked as sent ${po.sentAt ?? ""} (simulated: nothing was emailed)` : "NOT SENT — synthetic demo data"),
+  ];
+  await writeAudit(
+    { actorType: "user", actorId: who.id, action: "po.exported", entityType: "purchase_order", entityId: poId, after: { format: "csv", status: po.status, lines: po.lineItems.length } },
+    sql,
+  );
+  return { filename: `${po.poNumber}.csv`, csv: [header.join(","), ...rows, ...totals].join("\r\n") + "\r\n" };
 }
