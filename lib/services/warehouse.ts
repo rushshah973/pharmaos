@@ -84,11 +84,21 @@ export type HeatmapView = HeatmapResult & {
 };
 
 export async function getHeatmap(mode: HeatmapMode, planId?: string, sql: SqlHandle = getSql()): Promise<HeatmapView> {
-  if (mode === "proposed" && !planId) throw new ServiceError("VALIDATION_ERROR", 400, "Proposed mode needs a planId.");
+  return (await getHeatmaps([mode], planId, sql))[mode]!;
+}
+
+/**
+ * Several modes from ONE planning context (the context load dominates: ~2–5 s against the remote database;
+ * the engine itself takes ~50 ms for 500 SKUs). The warehouse page renders the four status modes this way,
+ * so switching between them needs no request.
+ */
+export async function getHeatmaps(modes: HeatmapMode[], planId?: string, sql: SqlHandle = getSql()): Promise<Partial<Record<HeatmapMode, HeatmapView>>> {
+  const proposed = modes.includes("proposed");
+  if (proposed && !planId) throw new ServiceError("VALIDATION_ERROR", 400, "Proposed mode needs a planId.");
   const [state, bins, plan] = await Promise.all([
     resolvePlanningState(sql),
     selectBins(sql),
-    mode === "proposed" ? getPlan(planId!, sql) : Promise.resolve(null),
+    proposed ? getPlan(planId!, sql) : Promise.resolve(null),
   ]);
   const ctx = await loadPlanningContext(sql, state.asOf, state.scenarioId);
   const facts = new Map<string, SkuHeatFacts>();
@@ -109,8 +119,22 @@ export async function getHeatmap(mode: HeatmapMode, planId?: string, sql: SqlHan
     placements = results.map((r, i) => ({ ...r, sku: lines[i].sku, lineId: lines[i].id }));
   }
 
-  const result = computeHeatmap({ mode, bins, balances, facts, placements });
-  return { ...result, asOf: state.asOf, scenarioId: state.scenarioId, planId: plan?.id ?? null, placements };
+  const out: Partial<Record<HeatmapMode, HeatmapView>> = {};
+  for (const mode of modes) {
+    const result = computeHeatmap({ mode, bins, balances, facts, placements: mode === "proposed" ? placements : [] });
+    out[mode] = { ...result, asOf: state.asOf, scenarioId: state.scenarioId, planId: plan?.id ?? null, placements: mode === "proposed" ? placements : [] };
+  }
+  return out;
+}
+
+/** The plan whose lines "Proposed replenishment" shows: the newest plan that can still be approved. */
+export async function getLatestOpenPlan(sql: SqlHandle = getSql()): Promise<{ id: string; createdAt: string } | null> {
+  const [row] = await sql<{ id: string; createdAt: string }[]>`
+    select id, to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as "createdAt"
+    from purchase_plans where status in ('draft', 'partially_approved')
+    order by created_at desc limit 1
+  `;
+  return row ?? null;
 }
 
 export type BinDetails = LayoutBin & {
@@ -135,6 +159,7 @@ export type BinDetails = LayoutBin & {
       reserved: number;
       /** At-risk packs of this batch overall (FEFO projection), not only in this bin. */
       atRiskQty: number;
+      dataSource: string;
     }[];
   }[];
 };
@@ -156,11 +181,13 @@ export async function getBinDetails(id: string, sql: SqlHandle = getSql()): Prom
         qualityStatus: string;
         onHand: number;
         reserved: number;
+        dataSource: string;
       }[]
     >`
       select p.id as "productId", p.sku, p.brand_name as "brandName", p.strength, p.dosage_form as "dosageForm", p.pack_size as "packSize",
         bt.id as "batchId", bt.batch_number as "batchNumber", to_char(bt.expiry_date, 'YYYY-MM-DD') as "expiryDate",
-        bt.quality_status as "qualityStatus", b.on_hand_qty as "onHand", b.reserved_qty as "reserved"
+        bt.quality_status as "qualityStatus", b.on_hand_qty as "onHand", b.reserved_qty as "reserved",
+        b.data_source as "dataSource"
       from inventory_balances b
       join batches bt on bt.id = b.batch_id
       join products p on p.id = b.product_id
@@ -186,7 +213,7 @@ export async function getBinDetails(id: string, sql: SqlHandle = getSql()): Prom
     p.packs += r.onHand;
     p.reserved += r.reserved;
     const atRiskQty = analyses.get(r.productId)?.expiry.batches.find((b) => b.batchId === r.batchId)?.atRiskQty ?? 0;
-    p.batches.push({ batchId: r.batchId, batchNumber: r.batchNumber, expiryDate: r.expiryDate, qualityStatus: r.qualityStatus, onHand: r.onHand, reserved: r.reserved, atRiskQty });
+    p.batches.push({ batchId: r.batchId, batchNumber: r.batchNumber, expiryDate: r.expiryDate, qualityStatus: r.qualityStatus, onHand: r.onHand, reserved: r.reserved, atRiskQty, dataSource: r.dataSource });
   }
   const a = parseBinCode(bin.binCode);
   return { ...bin, side: a?.side ?? "L", rackNumber: a?.rack ?? 0, free: bin.capacityUnits - bin.used, products: [...products.values()] };

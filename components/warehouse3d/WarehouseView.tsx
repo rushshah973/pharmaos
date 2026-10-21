@@ -1,0 +1,272 @@
+"use client";
+
+// Warehouse view (§11): state for mode, selected bin and SKU search, mirrored in the URL (?mode, ?bin, ?sku, ?view).
+// The four status heatmaps arrive with the page, computed from one planning context; Proposed Replenishment
+// is fetched from /api/warehouse/heatmap when it is first picked (it needs the plan's put-away).
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { Grid3x3, Loader2, PackageX, Rows3, TriangleAlert } from "lucide-react";
+import { cn } from "cn";
+import { HEATMAP_MODES, type HeatmapMode } from "@/lib/business-logic/heatmap";
+import type { HeatmapView, ProductSearchHit, WarehouseLayout } from "@/lib/services/warehouse";
+import { formatDisplayDate } from "@/lib/format/date";
+import { BinPanel, BinPanelEmpty } from "./BinPanel";
+import { BinTable } from "./BinTable";
+import { Grid2D } from "./Grid2D";
+import { Legend, ModeSelect } from "./Legend";
+import { MODE_BY_ID } from "./modes";
+import { SkuSearch } from "./SkuSearch";
+
+type View = "grid" | "table";
+type Heatmaps = Partial<Record<HeatmapMode, HeatmapView>>;
+
+const isMode = (v: string | null): v is HeatmapMode => !!v && (HEATMAP_MODES as readonly string[]).includes(v);
+
+export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLayout; initial: Heatmaps; planId: string | null }) {
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const urlMode = params.get("mode");
+  const urlSku = params.get("sku");
+
+  const [mode, setMode] = useState<HeatmapMode>(isMode(urlMode) && (urlMode !== "proposed" || planId) ? urlMode : "stockout");
+  const [view, setView] = useState<View>(params.get("view") === "table" ? "table" : "grid");
+  const [selectedBinId, setSelectedBinId] = useState<string | null>(params.get("bin"));
+  const [search, setSearch] = useState<ProductSearchHit | null>(null);
+  const [heatmaps, setHeatmaps] = useState<Heatmaps>(initial);
+  const [proposedState, setProposedState] = useState<"idle" | "loading" | "error">(mode === "proposed" && !initial.proposed ? "loading" : "idle");
+
+  /** Mirrors state into the URL without a server round trip. */
+  const setUrl = useCallback(
+    (changes: Record<string, string | null>) => {
+      const next = new URLSearchParams(window.location.search);
+      for (const [k, v] of Object.entries(changes)) {
+        if (v === null) next.delete(k);
+        else next.set(k, v);
+      }
+      const q = next.toString();
+      window.history.replaceState(null, "", q ? `${pathname}?${q}` : pathname);
+    },
+    [pathname],
+  );
+
+  /** Fetches the proposed heatmap; the caller sets the loading state. */
+  const fetchProposed = useCallback(() => {
+    if (!planId) return;
+    fetch(`/api/warehouse/heatmap?mode=proposed&planId=${planId}`)
+      .then(async (r) => {
+        const j = await r.json();
+        if (!r.ok) throw new Error(j?.error?.message);
+        setHeatmaps((h) => ({ ...h, proposed: j as HeatmapView }));
+        setProposedState("idle");
+      })
+      .catch(() => setProposedState("error"));
+  }, [planId]);
+
+  // Opened with ?mode=proposed: fetch it once.
+  useEffect(() => {
+    if (mode === "proposed" && !initial.proposed) fetchProposed();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- first render only
+  }, []);
+
+  // ?sku= (from a Locate link): resolve the SKU and highlight its bins; select the first unless ?bin is set.
+  useEffect(() => {
+    if (!urlSku) return;
+    const ctrl = new AbortController();
+    fetch(`/api/products/search?q=${encodeURIComponent(urlSku)}`, { signal: ctrl.signal })
+      .then((r) => r.json())
+      .then((j: { results?: ProductSearchHit[] }) => {
+        const hit = j.results?.find((h) => h.sku.toUpperCase() === urlSku.toUpperCase()) ?? null;
+        setSearch(hit);
+        if (hit?.bins[0]) setSelectedBinId((cur) => cur ?? hit.bins[0].binId);
+      })
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [urlSku]);
+
+  const loadProposed = () => {
+    setProposedState("loading");
+    fetchProposed();
+  };
+  const changeMode = (m: HeatmapMode) => {
+    setMode(m);
+    setUrl({ mode: m === "stockout" ? null : m });
+    if (m === "proposed" && !heatmaps.proposed && proposedState !== "loading") loadProposed();
+  };
+  const panelRef = useRef<HTMLDivElement>(null);
+  const select = (binId: string | null) => {
+    setSelectedBinId(binId);
+    setUrl({ bin: binId });
+    // Below xl the panel sits under the map: bring it into view.
+    if (binId && !window.matchMedia("(min-width: 1280px)").matches) {
+      requestAnimationFrame(() => panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    }
+  };
+  const pickSku = (hit: ProductSearchHit) => {
+    setSearch(hit);
+    setUrl({ sku: hit.sku, bin: hit.bins[0]?.binId ?? null });
+    setSelectedBinId(hit.bins[0]?.binId ?? null);
+  };
+  const clearSku = () => {
+    setSearch(null);
+    setUrl({ sku: null });
+  };
+  const changeView = (v: View) => {
+    setView(v);
+    setUrl({ view: v === "grid" ? null : v });
+  };
+
+  const meta = MODE_BY_ID[mode];
+  const current = heatmaps[mode];
+  const heat = useMemo(() => new Map((current?.bins ?? []).map((b) => [b.binId, b])), [current]);
+  const skusByBin = useMemo(() => new Map((heatmaps.normal?.bins ?? []).map((b) => [b.binId, b.skus])), [heatmaps.normal]);
+  const matchBinIds = useMemo(() => new Set(search?.bins.map((b) => b.binId) ?? []), [search]);
+  const counts = useMemo(() => {
+    const c = [0, 0, 0, 0];
+    for (const b of layout.bins) if (b.status === "active") c[heat.get(b.id)?.severity ?? 0]++;
+    return c;
+  }, [heat, layout.bins]);
+  const highlighted = counts[1] + counts[2] + counts[3];
+  const unmapped = heatmaps.normal?.unmapped ?? [];
+  const asOf = (current ?? heatmaps.normal)?.asOf ?? "";
+  const selected = selectedBinId ? layout.bins.find((b) => b.id === selectedBinId) : undefined;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <ModeSelect value={mode} onChange={changeMode} proposedAvailable={!!planId} />
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <SkuSearch selected={search} onPick={pickSku} onClear={clearSku} />
+          <div role="radiogroup" aria-label="View" className="flex h-8 rounded-lg border border-border bg-surface-1 p-0.5">
+            {([
+              ["grid", "Grid", Grid3x3],
+              ["table", "Table", Rows3],
+            ] as const).map(([v, label, Icon]) => (
+              <button
+                key={v}
+                type="button"
+                role="radio"
+                aria-checked={view === v}
+                onClick={() => changeView(v)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium transition-colors",
+                  view === v ? "bg-surface-3 text-fg-1" : "text-fg-3 hover:text-fg-1",
+                )}
+              >
+                <Icon className="size-3.5" strokeWidth={1.75} aria-hidden />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {search && (
+        <p className="text-[12.5px] text-fg-2" aria-live="polite">
+          <span className="font-mono text-fg-1">{search.sku}</span>{" "}
+          {search.bins.length > 0
+            ? `is in ${search.bins.length} bin${search.bins.length === 1 ? "" : "s"}: ${search.bins.map((b) => `${b.binCode} (${b.packs} packs)`).join(", ")}.`
+            : "is not in any bin."}
+          {search.unmappedPacks > 0 && <span className="text-expiry"> {search.unmappedPacks} packs are unmapped (no bin recorded).</span>}
+        </p>
+      )}
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section className="surface min-w-0 p-5" aria-label="Warehouse map">
+          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <h2 className="text-[15px] leading-[22px] font-semibold text-fg-1">
+              WH-01 · {meta.label}
+            </h2>
+            <span className="num text-[12px] text-fg-3">
+              {highlighted} of {counts.reduce((a, b) => a + b, 0)} active bins highlighted{asOf ? ` · as of ${formatDisplayDate(asOf)}` : ""}
+            </span>
+          </div>
+          <div className="mb-5">
+            <Legend mode={meta} counts={counts} />
+          </div>
+
+          {mode === "proposed" && proposedState === "error" ? (
+            <div role="alert" className="flex flex-col items-center py-16 text-center">
+              <TriangleAlert className="size-5 text-stockout" aria-hidden />
+              <p className="mt-3 text-fg-1">Proposed stock could not load.</p>
+              <button type="button" onClick={loadProposed} className="mt-3 text-[12.5px] font-medium text-brand hover:underline">
+                Retry
+              </button>
+            </div>
+          ) : (
+            <div className="relative">
+              {mode === "proposed" && !current && (
+                <div className="absolute inset-0 z-20 flex items-start justify-center bg-surface-1/70 pt-24 backdrop-blur-[1px]">
+                  <span className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[12.5px] text-fg-2">
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden /> Placing proposed stock into bins…
+                  </span>
+                </div>
+              )}
+              {view === "grid" ? (
+                <Grid2D bins={layout.bins} heat={heat} mode={meta} selectedBinId={selectedBinId} matchBinIds={matchBinIds} onSelect={select} />
+              ) : (
+                <BinTable bins={layout.bins} heat={heat} mode={meta} selectedBinId={selectedBinId} matchBinIds={matchBinIds} skusByBin={skusByBin} onSelect={select} />
+              )}
+            </div>
+          )}
+        </section>
+
+        <aside className="min-w-0 space-y-4 self-start xl:sticky xl:top-[72px]">
+          <div ref={panelRef} className="surface scroll-mt-[72px] overflow-hidden">
+            {selected ? (
+              <BinPanel key={selected.id} binId={selected.id} heat={heat.get(selected.id)} mode={meta} asOf={asOf} placements={mode === "proposed" ? (current?.placements ?? []) : []} onClose={() => select(null)} />
+            ) : (
+              <BinPanelEmpty mode={meta} highlighted={highlighted} />
+            )}
+          </div>
+
+          {mode === "proposed" && current && current.capacityReview.length > 0 && (
+            <div className="surface px-5 py-4">
+              <h3 className="micro-label text-expiry">Needs capacity review</h3>
+              <p className="mt-1 text-[12px] text-fg-3">No bin of the right storage class has room. No location is invented.</p>
+              <ul className="mt-2.5 space-y-1.5">
+                {current.capacityReview.map((c) => (
+                  <li key={c.productId} className="flex justify-between gap-3 text-[12.5px]">
+                    <span className="font-mono text-fg-1">{c.sku}</span>
+                    <span className="num text-fg-2">{c.packs.toLocaleString("en-IN")} packs</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {mode === "proposed" && planId && (
+            <p className="px-1 text-[12px] text-fg-3">
+              Proposed stock comes from the counted lines of the{" "}
+              <Link href={`/procurement/${planId}`} className="text-brand hover:underline">
+                latest open plan
+              </Link>
+              . It is not received until the POs are delivered.
+            </p>
+          )}
+
+          <div className="surface px-5 py-4">
+            <div className="flex items-baseline justify-between gap-3">
+              <h3 className="micro-label">Unmapped stock</h3>
+              <span className="num text-[12px] text-fg-3">{unmapped.length} SKU{unmapped.length === 1 ? "" : "s"}</span>
+            </div>
+            <p className="mt-1 text-[12px] text-fg-3">Stock with no bin recorded. Shown here, never placed on the map.</p>
+            {unmapped.length === 0 ? (
+              <p className="mt-2.5 flex items-center gap-2 text-[12.5px] text-fg-2">
+                <PackageX className="size-3.5 text-fg-3" aria-hidden /> Every pack has a bin.
+              </p>
+            ) : (
+              <ul className="mt-2.5 space-y-1.5">
+                {unmapped.map((u) => (
+                  <li key={u.productId} className="flex justify-between gap-3 text-[12.5px]">
+                    <span className="font-mono text-fg-1">{u.sku}</span>
+                    <span className="num text-fg-2">{u.packs.toLocaleString("en-IN")} packs</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}

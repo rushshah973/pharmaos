@@ -27,8 +27,9 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P17 | Approval service | ✅ |
 | P18 | Purchase orders and Activity | ✅ |
 | P19 | Heatmap, put-away and warehouse API | ✅ |
-| P20 | 2D grid and panels | ⏭ |
-| P21–P28 | … (plus P22B, P23B after P23) | ⬜ |
+| P20 | 2D grid and panels | ✅ |
+| P21 | 3D scene | ⏭ |
+| P22–P28 | … (plus P22B, P23B after P23) | ⬜ |
 
 > Budget cap removed; ₹4,00,000 per-PO Owner approval added (after P13).
 >
@@ -223,14 +224,14 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 - **You will see:** Spot checks showing that a stockout SKU's bin really is marked stockout.
 - **Why it matters:** The warehouse view uses the same engine as the plan, so a red bin and a stockout line can never disagree.
 
-### P20 — 2D grid and panels ⏭
+### P20 — 2D grid and panels ✅
 
 - **What it does:** Builds the warehouse page as a 2D grid first (aisles, racks, shelves), with heatmap modes, a bin detail panel, a legend, product search and "Locate" links from the plan.
 - **Creates or changes:** `WarehouseView`, `Grid2D`, `BinPanel`, `Legend`, `ModeSelect`.
 - **You will see:** A working warehouse map you can click through.
 - **Why it matters:** A reliable fallback if 3D fails on the demo laptop, and the data layer the 3D scene reuses.
 
-### P21 — 3D scene ⬜
+### P21 — 3D scene ⏭
 
 - **What it does:** Adds the interactive 3D warehouse: rotate, zoom, click a bin, switch heatmaps, fly to a searched SKU, and see proposed stock as see-through "ghost" cartons. Falls back to 2D automatically if 3D is not supported.
 - **Creates or changes:** `Scene3D` and its loading in `WarehouseView`.
