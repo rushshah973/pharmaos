@@ -3,7 +3,8 @@
 import type { OfferInput, ProductInput, SupplierInput } from "@/lib/business-logic/types";
 import type { SqlHandle } from "@/lib/services/audit";
 
-export async function listActiveProducts(sql: SqlHandle): Promise<ProductInput[]> {
+/** All active products, or just one when `productId` is given (line edits re-analyse one SKU). */
+export async function listActiveProducts(sql: SqlHandle, productId?: string): Promise<ProductInput[]> {
   return sql<ProductInput[]>`
     select
       id, sku,
@@ -20,7 +21,7 @@ export async function listActiveProducts(sql: SqlHandle): Promise<ProductInput[]
       gst_rate::text as "gstRate",
       is_active as "isActive"
     from products
-    where is_active
+    where is_active ${productId ? sql`and id = ${productId}` : sql``}
     order by sku
   `;
 }
@@ -40,7 +41,7 @@ export async function listSuppliers(sql: SqlHandle): Promise<SupplierInput[]> {
   `;
 }
 
-export async function listOffers(sql: SqlHandle): Promise<OfferInput[]> {
+export async function listOffers(sql: SqlHandle, productId?: string): Promise<OfferInput[]> {
   return sql<OfferInput[]>`
     select
       o.id,
@@ -59,7 +60,7 @@ export async function listOffers(sql: SqlHandle): Promise<OfferInput[]> {
       to_char(o.valid_until at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as "validUntil",
       o.is_active as "isActive"
     from supplier_offers o
-    join products p on p.id = o.product_id and p.is_active
+    join products p on p.id = o.product_id and p.is_active ${productId ? sql`and p.id = ${productId}` : sql``}
     order by o.product_id, o.id
   `;
 }

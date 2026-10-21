@@ -18,9 +18,10 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P09 | Ordering, suppliers, totals, priority | ✅ `afa8ee2` |
 | P10 | Basket, impact, validation, engine | ✅ `c3600d1` |
 | P11 | Context loader and debug plan | ✅ `2b2b280` |
-| P12 | Theme and shell | ✅ |
-| P13 | Plan services and API | ⏭ |
-| P14–P28 | … | ⬜ |
+| P12 | Theme and shell | ✅ `6a1bb63` |
+| P13 | Plan services and API | ✅ |
+| P14 | Command Center | ⏭ |
+| P15–P28 | … | ⬜ |
 
 ---
 
@@ -145,14 +146,14 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 - **You will see:** A professional web dashboard where every sidebar link works; the sidebar shrinks to icons at tablet width.
 - **Why it matters:** First impression for judges, and the frame every later screen sits in.
 
-### P13 — Plan services and API ⏭
+### P13 — Plan services and API ✅
 
 - **What it does:** Builds the server side of planning: create a plan, read it, edit a line (with a preview before saving), refuse edits that would go over budget, recalculate with a new budget, and the calculated "Why?" explanation.
 - **Creates or changes:** `lib/validation/api.ts`, `lib/services/plans.ts`, `dashboard.ts`, `explain.ts`, and the matching `app/api/...` routes.
 - **You will see:** The assistant testing each route and showing you the responses.
 - **Why it matters:** Totals are always recomputed on the server; the browser is never trusted with money.
 
-### P14 — Command Center and plan list ⬜
+### P14 — Command Center and plan list ⏭
 
 - **What it does:** Builds the home screen: budget, proposed spend, SKUs at stockout risk, rupees at expiry risk, pending approvals, the most critical SKUs, and the **Create Purchase Plan** button. Also the list of past plans.
 - **Creates or changes:** `app/(dashboard)/page.tsx`, `components/dashboard/*`, `app/(dashboard)/procurement/page.tsx`.

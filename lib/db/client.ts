@@ -15,10 +15,13 @@ export function getSql(): Sql {
   }
 
   const sql = postgres(url, {
-    max: 5,
+    // Small on purpose: with prepared statements, parallel reads pipeline on few connections, and each
+    // new connection must prepare every statement once (slow to a far-away database).
+    max: 4,
     // Use Supabase's session pooler (port 5432); parallel queries hang on the transaction pooler (6543).
-    // Prepared statements are off so the same client also works through any pooler.
-    prepare: false,
+    // Prepared statements stay on (the session pooler supports them): without them every parameterised
+    // query costs an extra round trip and stops pipelining, which is ~10× slower to a far-away database.
+    prepare: true,
   });
 
   globalForDb.pharmaosSql = sql;

@@ -45,7 +45,7 @@ function printPlan(plan: PlanResult, ctx: PlanningContext) {
 async function main() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is not set (.env.local).");
-  const sql = postgres(url, { max: 4, prepare: false, onnotice: () => {} });
+  const sql = postgres(url, { max: 4, onnotice: () => {} });
   try {
     const asOf = await resolveAsOfDate(sql);
     const [state] = await sql<{ active_scenario_id: string }[]>`select active_scenario_id from app_state where id = 1`;

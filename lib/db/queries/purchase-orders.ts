@@ -5,7 +5,7 @@ import type { SqlHandle } from "@/lib/services/audit";
 
 export type IncomingRow = IncomingInput & { productId: string };
 
-export async function listOpenIncoming(sql: SqlHandle): Promise<IncomingRow[]> {
+export async function listOpenIncoming(sql: SqlHandle, productId?: string): Promise<IncomingRow[]> {
   return sql<IncomingRow[]>`
     select
       po.id as "poId",
@@ -16,7 +16,7 @@ export async function listOpenIncoming(sql: SqlHandle): Promise<IncomingRow[]> {
       l.free_qty as "freeQty"
     from purchase_orders po
     join purchase_order_lines l on l.po_id = po.id
-    where po.status = 'open' and po.expected_delivery_date is not null
+    where po.status = 'open' and po.expected_delivery_date is not null ${productId ? sql`and l.product_id = ${productId}` : sql``}
     order by l.product_id, po.po_number
   `;
 }

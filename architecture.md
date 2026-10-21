@@ -719,7 +719,7 @@ flowchart LR
 |---|---|---|
 | Development | Supabase or local Postgres | `npm run dev`; `db:reset` + `seed` any time |
 | Demo | Same, freshly seeded before judging | Production build; backup video |
-| Vercel (optional) | Supabase session pooler (:5432) | Env vars in the Vercel project; keep the pool small (`max: 5`): session mode holds one server connection per client connection |
+| Vercel (optional) | Supabase session pooler (:5432) | Env vars in the Vercel project; keep the pool small (`max: 4`, prepared statements on): session mode holds one server connection per client connection and allows 15 in total |
 
 ---
 

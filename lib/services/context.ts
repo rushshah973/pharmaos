@@ -22,16 +22,22 @@ function groupBy<T>(rows: T[], key: (r: T) => string): Map<string, T[]> {
   return m;
 }
 
-export async function loadPlanningContext(sql: SqlHandle, asOf: IsoDate, scenarioId: string): Promise<PlanningContext> {
+/** `productId` limits the context to one SKU (suppliers are always all loaded). */
+export async function loadPlanningContext(
+  sql: SqlHandle,
+  asOf: IsoDate,
+  scenarioId: string,
+  productId?: string,
+): Promise<PlanningContext> {
   const [products, suppliers, offers, sales, firstSales, batches, balances, incoming] = await Promise.all([
-    listActiveProducts(sql),
+    listActiveProducts(sql, productId),
     listSuppliers(sql),
-    listOffers(sql),
-    listSalesWindow(sql, asOf, SALES_WINDOW_DAYS),
-    listFirstSaleDates(sql, asOf),
-    listBatches(sql),
-    listBalances(sql),
-    listOpenIncoming(sql),
+    listOffers(sql, productId),
+    listSalesWindow(sql, asOf, SALES_WINDOW_DAYS, productId),
+    listFirstSaleDates(sql, asOf, productId),
+    listBatches(sql, productId),
+    listBalances(sql, productId),
+    listOpenIncoming(sql, productId),
   ]);
 
   const supplierMap: Record<string, SupplierInput> = Object.fromEntries(suppliers.map((s) => [s.id, s]));

@@ -193,9 +193,9 @@ export function analyseSku(sku: SkuContext, config: EngineConfig = ENGINE_CONFIG
   const totals = chosen?.totals ?? null;
 
   // 6. Evidence: every input and intermediate, JSON-safe, for evidence_json.
+  // The engine config is stored once per plan (assumptions_json), not on every line.
   const evidence = {
     asOf,
-    config,
     product,
     demand,
     expiry,

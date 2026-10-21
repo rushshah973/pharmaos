@@ -4,7 +4,7 @@ import type { SqlHandle } from "@/lib/services/audit";
 
 export type BalanceRow = BalanceInput & { productId: string };
 
-export async function listBatches(sql: SqlHandle): Promise<BatchInput[]> {
+export async function listBatches(sql: SqlHandle, productId?: string): Promise<BatchInput[]> {
   return sql<BatchInput[]>`
     select
       b.id,
@@ -16,12 +16,12 @@ export async function listBatches(sql: SqlHandle): Promise<BatchInput[]> {
       b.quality_status as "qualityStatus",
       b.return_policy_status as "returnPolicy"
     from batches b
-    join products p on p.id = b.product_id and p.is_active
+    join products p on p.id = b.product_id and p.is_active ${productId ? sql`and p.id = ${productId}` : sql``}
     order by b.product_id, b.expiry_date, b.batch_number
   `;
 }
 
-export async function listBalances(sql: SqlHandle): Promise<BalanceRow[]> {
+export async function listBalances(sql: SqlHandle, productId?: string): Promise<BalanceRow[]> {
   return sql<BalanceRow[]>`
     select
       id,
@@ -31,6 +31,7 @@ export async function listBalances(sql: SqlHandle): Promise<BalanceRow[]> {
       on_hand_qty as "onHandQty",
       reserved_qty as "reservedQty"
     from inventory_balances
+    where true ${productId ? sql`and product_id = ${productId}` : sql``}
     order by product_id, batch_id, id
   `;
 }
