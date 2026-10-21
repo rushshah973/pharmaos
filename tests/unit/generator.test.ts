@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { PRODUCT_COUNT, SALES_DAYS, generate, type Profile, type SyntheticDataset } from "@/scripts/seed/generate-synthetic";
+import { PRODUCT_COUNT, SALES_DAYS, generate, strengthFits, type Profile, type SyntheticDataset } from "@/scripts/seed/generate-synthetic";
 
 const AS_OF = "2026-10-21";
 const profile = JSON.parse(
@@ -145,6 +145,16 @@ describe("synthetic generator", () => {
     }
     const open = data.purchaseOrders.filter((p) => p.status === "open");
     expect(open.some((p) => p.expected_delivery_date > addDays(AS_OF, 14))).toBe(true);
+  });
+
+  it("only gives a product strengths that suit its dosage form", () => {
+    expect(strengthFits("125mg/5ml", "tablet")).toBe(false);
+    expect(strengthFits("125mg/5ml", "syrup")).toBe(true);
+    expect(strengthFits("1% w/w", "ointment")).toBe(true);
+    expect(strengthFits("500mg", "ointment")).toBe(false);
+    for (const p of data.products) {
+      for (const part of p.strength.split(" + ")) expect(strengthFits(part, p.dosage_form)).toBe(true);
+    }
   });
 
   it("avoids forbidden names and still works without a profile", () => {

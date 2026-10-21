@@ -1,0 +1,454 @@
+// Phase D2: force the guaranteed demo cases (implementationplan.md §5.6) into the
+// generated rows, in place, and return which SKUs belong to which case.
+//
+// TODO(stage 2 / P11): the helpers below re-implement a simplified version of the
+// §6 formulas because lib/business-logic does not exist yet. Switch skuState(),
+// eligibleOffers() and estimateLine() to the engine functions after stage 2.
+import { dec, roundUnit } from "@/lib/money";
+import type { BalanceRow, BatchRow, LocationRow, OfferRow, SyntheticDataset } from "./generate-synthetic";
+import { createRng, type Rng } from "./prng";
+
+// §6 constants (mirror lib/business-logic/config.ts)
+const RISK_WINDOW = 90;
+const STALE_DAYS = 14;
+const HORIZON = 14;
+const REVIEW_DAYS = 7;
+const SAFETY_DAYS = 3;
+const MIN_SAFETY = 2;
+const EXCESS_FACTOR = 1.5;
+
+export type DemoCases = {
+  stockout: string[];
+  expiry: string[];
+  excess: string[];
+  priceAnomaly: string[];
+  capacity: string[];
+  cheapestTooSlow: string[];
+  schemeSkip: string[];
+  staleQuote: string[];
+  unmapped: string[];
+  spike: string[];
+  noEligibleOffer: string[];
+};
+
+// ---------------------------------------------------------------------------
+// Simplified §6 helpers (pure functions of the dataset)
+// ---------------------------------------------------------------------------
+
+export function daysBetween(fromIso: string, toIso: string): number {
+  const [y1, m1, d1] = fromIso.split("-").map(Number);
+  const [y2, m2, d2] = toIso.split("-").map(Number);
+  return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86_400_000);
+}
+export function addDays(dateIso: string, days: number): string {
+  const [y, m, d] = dateIso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+export type Index = ReturnType<typeof buildIndex>;
+
+export function buildIndex(data: SyntheticDataset) {
+  const group = <T, K>(rows: T[], key: (r: T) => K) => {
+    const m = new Map<K, T[]>();
+    for (const r of rows) m.set(key(r), [...(m.get(key(r)) ?? []), r]);
+    return m;
+  };
+  const salesByProduct = new Map<string, Map<string, number>>();
+  for (const s of data.salesHistory) {
+    const m = salesByProduct.get(s.product_id) ?? new Map<string, number>();
+    m.set(s.sale_date, s.units_sold);
+    salesByProduct.set(s.product_id, m);
+  }
+  return {
+    productById: new Map(data.products.map((p) => [p.id, p])),
+    productBySku: new Map(data.products.map((p) => [p.sku, p])),
+    supplierById: new Map(data.suppliers.map((s) => [s.id, s])),
+    binById: new Map(data.inventoryLocations.map((b) => [b.id, b])),
+    salesByProduct,
+    salesRowsByProduct: group(data.salesHistory, (s) => s.product_id),
+    batchesByProduct: group(data.batches, (b) => b.product_id),
+    balancesByBatch: group(data.inventoryBalances, (b) => b.batch_id),
+    offersByProduct: group(data.supplierOffers, (o) => o.product_id),
+    linesByPo: group(data.purchaseOrderLines, (l) => l.po_id),
+  };
+}
+
+export function demand(idx: Index, productId: string, asOf: string) {
+  const sales = idx.salesByProduct.get(productId) ?? new Map<string, number>();
+  let s7 = 0;
+  let s28 = 0;
+  for (let i = 0; i < 28; i++) {
+    const units = sales.get(addDays(asOf, -i)) ?? 0;
+    s28 += units;
+    if (i < 7) s7 += units;
+  }
+  const d7 = s7 / 7;
+  const d28 = s28 / 28;
+  return { d7, d28, dbar: 0.6 * d7 + 0.4 * d28 };
+}
+
+export function isOfferEligible(idx: Index, o: OfferRow, asOf: string): boolean {
+  const supplier = idx.supplierById.get(o.supplier_id);
+  return (
+    supplier?.approved_status === "approved" &&
+    o.is_active &&
+    Number(o.unit_price) > 0 &&
+    o.moq > 0 &&
+    o.pack_multiple > 0 &&
+    o.valid_until.slice(0, 10) >= asOf &&
+    daysBetween(o.quoted_at.slice(0, 10), asOf) <= STALE_DAYS
+  );
+}
+
+export function eligibleOffers(idx: Index, productId: string, asOf: string): OfferRow[] {
+  return (idx.offersByProduct.get(productId) ?? []).filter((o) => isOfferEligible(idx, o, asOf));
+}
+
+const safety = (dbar: number) => Math.max(MIN_SAFETY, dbar * SAFETY_DAYS);
+export const rop = (dbar: number, lead: number) => dbar * lead + safety(dbar);
+export const target = (dbar: number, lead: number) => dbar * (lead + REVIEW_DAYS) + safety(dbar);
+
+export function skuState(data: SyntheticDataset, idx: Index, productId: string, asOf: string) {
+  const { d7, d28, dbar } = demand(idx, productId, asOf);
+  const batches = (idx.batchesByProduct.get(productId) ?? [])
+    .filter((b) => b.quality_status === "released" && b.expiry_date > asOf)
+    .sort((a, b) => a.expiry_date.localeCompare(b.expiry_date) || a.batch_number.localeCompare(b.batch_number));
+  let consumed = 0;
+  let eligibleAvailable = 0;
+  const atRisk: { batch: BatchRow; atRiskQty: number }[] = [];
+  for (const batch of batches) {
+    const available = (idx.balancesByBatch.get(batch.id) ?? []).reduce((s, b) => s + b.on_hand_qty - b.reserved_qty, 0);
+    const sellable = Math.max(0, daysBetween(asOf, addDays(batch.expiry_date, -RISK_WINDOW)));
+    const capacity = Math.max(0, dbar * sellable - consumed);
+    const sold = Math.min(available, capacity);
+    if (available - sold > 0) atRisk.push({ batch, atRiskQty: available - sold });
+    consumed += sold;
+    eligibleAvailable += sold;
+  }
+  let incoming = 0;
+  for (const po of data.purchaseOrders) {
+    if (po.status !== "open" || po.expected_delivery_date > addDays(asOf, HORIZON)) continue;
+    for (const l of idx.linesByPo.get(po.id) ?? []) if (l.product_id === productId) incoming += l.quantity_packs + l.free_qty;
+  }
+  const stockPosition = eligibleAvailable + incoming;
+  const offers = eligibleOffers(idx, productId, asOf);
+  const product = idx.productById.get(productId)!;
+  const fallbackLead = idx.supplierById.get((idx.offersByProduct.get(productId) ?? [])[0]?.supplier_id ?? "")?.default_lead_time_days ?? 7;
+  const lFastest = offers.length ? Math.min(...offers.map((o) => o.lead_time_days)) : fallbackLead;
+  const cover = dbar > 0 ? stockPosition / dbar : null;
+  const status =
+    dbar === 0
+      ? "NO_DEMAND"
+      : cover! < lFastest
+        ? "STOCKOUT_RISK"
+        : stockPosition < rop(dbar, lFastest)
+          ? "BELOW_ROP"
+          : stockPosition > EXCESS_FACTOR * target(dbar, lFastest)
+            ? "EXCESS"
+            : "HEALTHY";
+  return { product, d7, d28, dbar, eligibleAvailable, incoming, stockPosition, lFastest, cover, status, atRisk, offers };
+}
+
+/** Rough line estimate: cheapest eligible offer, q per §6.5 (no scheme). */
+export function estimateLine(data: SyntheticDataset, idx: Index, productId: string, asOf: string) {
+  const s = skuState(data, idx, productId, asOf);
+  const candidate = s.dbar > 0 && s.offers.length > 0 && s.stockPosition < rop(s.dbar, s.lFastest);
+  if (!candidate) return { candidate: false as const, state: s };
+  let best: { offer: OfferRow; qty: number; cost: number } | null = null;
+  for (const o of s.offers) {
+    const raw = Math.max(0, (s.atRisk.length ? rop(s.dbar, o.lead_time_days) : target(s.dbar, o.lead_time_days)) - s.stockPosition);
+    if (raw <= 0) continue;
+    const qty = Math.max(o.moq, Math.ceil(raw / o.pack_multiple) * o.pack_multiple);
+    const cost = qty * (Number(o.unit_price) * (1 + Number(o.tax_rate) / 100) + Number(o.freight_per_pack));
+    if (!best || cost < best.cost) best = { offer: o, qty, cost };
+  }
+  return best ? { candidate: true as const, state: s, ...best } : { candidate: false as const, state: s };
+}
+
+export function binFill(data: SyntheticDataset): Map<string, number> {
+  const fill = new Map<string, number>();
+  for (const b of data.inventoryBalances) if (b.location_id) fill.set(b.location_id, (fill.get(b.location_id) ?? 0) + b.on_hand_qty);
+  return fill;
+}
+
+// ---------------------------------------------------------------------------
+// Injection
+// ---------------------------------------------------------------------------
+
+export function injectDemoCases(data: SyntheticDataset, seed = 42): DemoCases {
+  const asOf = data.meta.asOf;
+  const rng: Rng = createRng(seed + 1);
+  const used = new Set<string>(); // product ids already given a case
+  let idx = buildIndex(data);
+  const reindex = () => (idx = buildIndex(data));
+  const sku = (pid: string) => idx.productById.get(pid)!.sku;
+  const bySkuOrder = <T extends { sku: string }>(rows: T[]) => [...rows].sort((a, b) => a.sku.localeCompare(b.sku));
+
+  const balancesOf = (pid: string) => (idx.batchesByProduct.get(pid) ?? []).flatMap((b) => idx.balancesByBatch.get(b.id) ?? []);
+  const hasIncoming = (pid: string) => skuState(data, idx, pid, asOf).incoming > 0;
+
+  /** Set eligible (released, unexpired) stock of a product to about `packs`, reserved 0. */
+  const setEligibleStock = (pid: string, packs: number) => {
+    const eligible = new Set(
+      (idx.batchesByProduct.get(pid) ?? []).filter((b) => b.quality_status === "released" && b.expiry_date > asOf).map((b) => b.id),
+    );
+    const rows = balancesOf(pid).filter((b) => eligible.has(b.batch_id));
+    const current = rows.reduce((s, b) => s + b.on_hand_qty, 0);
+    let left = Math.max(0, Math.floor(packs));
+    for (const [i, b] of rows.entries()) {
+      const share = i === rows.length - 1 ? left : Math.min(left, Math.floor((b.on_hand_qty / Math.max(current, 1)) * packs));
+      b.on_hand_qty = Math.min(b.on_hand_qty, share); // only ever reduces (bins stay within capacity)
+      b.reserved_qty = 0;
+      left -= b.on_hand_qty;
+    }
+  };
+
+  /** Add packs to a batch, using free space in its existing bin or another matching bin. Returns packs added. */
+  const addToBatch = (batch: BatchRow, packs: number): number => {
+    const product = idx.productById.get(batch.product_id)!;
+    const fill = binFill(data);
+    const free = (bin: LocationRow) => bin.capacity_units - (fill.get(bin.id) ?? 0);
+    const existing = (idx.balancesByBatch.get(batch.id) ?? []).filter((b) => b.location_id);
+    let left = packs;
+    for (const bal of existing) {
+      const add = Math.min(left, free(idx.binById.get(bal.location_id!)!));
+      if (add > 0) {
+        bal.on_hand_qty += add;
+        fill.set(bal.location_id!, (fill.get(bal.location_id!) ?? 0) + add);
+        left -= add;
+      }
+    }
+    const usedBins = new Set(existing.map((b) => b.location_id));
+    const candidates = data.inventoryLocations
+      .filter((b) => b.status === "active" && b.storage_class === product.storage_class && !usedBins.has(b.id))
+      .sort((a, b) => free(b) - free(a));
+    for (const bin of candidates) {
+      if (left <= 0) break;
+      const add = Math.min(left, free(bin));
+      if (add <= 0) continue;
+      const row: BalanceRow = {
+        id: rng.uuid(),
+        product_id: batch.product_id,
+        batch_id: batch.id,
+        location_id: bin.id,
+        on_hand_qty: add,
+        reserved_qty: 0,
+        data_source: "synthetic_demo",
+      };
+      data.inventoryBalances.push(row);
+      fill.set(bin.id, (fill.get(bin.id) ?? 0) + add);
+      left -= add;
+    }
+    reindex();
+    return packs - left;
+  };
+
+  const pickProducts = (filter: (pid: string) => boolean, n: number, order: "fast" | "slow" | "random" = "random") => {
+    let pool = bySkuOrder(data.products).filter((p) => !used.has(p.id) && filter(p.id));
+    if (order !== "random") {
+      const d = new Map(pool.map((p) => [p.id, demand(idx, p.id, asOf).dbar]));
+      pool = pool.sort((a, b) => (order === "fast" ? d.get(b.id)! - d.get(a.id)! : d.get(a.id)! - d.get(b.id)!));
+      pool = rng.shuffle(pool.slice(0, Math.max(n * 3, n)));
+    } else pool = rng.shuffle(pool);
+    return pool.slice(0, n).map((p) => p.id);
+  };
+
+  const ambientOrCool = (pid: string) => idx.productById.get(pid)!.storage_class !== "cold_chain";
+
+  // 0. Every SKU keeps at least one eligible offer (only case 1 below may have none):
+  //    refresh the first approved offer of any SKU whose offers all ended up stale or expired.
+  for (const p of data.products) {
+    if (eligibleOffers(idx, p.id, asOf).length > 0) continue;
+    const offer = (idx.offersByProduct.get(p.id) ?? []).find((o) => idx.supplierById.get(o.supplier_id)?.approved_status === "approved");
+    if (!offer) continue;
+    const quoted = addDays(asOf, -rng.int(1, 10));
+    offer.quoted_at = `${quoted}T10:00:00.000Z`;
+    offer.valid_until = `${addDays(asOf, rng.int(7, 21))}T10:00:00.000Z`;
+  }
+  reindex();
+  // SKUs with unmapped stock stay out of the other cases, so they remain clean examples.
+  for (const b of data.inventoryBalances) if (b.location_id === null) used.add(b.product_id);
+
+  // 1. No eligible offer (1 SKU): every offer of one SKU has expired.
+  const noEligible = pickProducts((pid) => ambientOrCool(pid) && !hasIncoming(pid), 1);
+  for (const pid of noEligible) {
+    used.add(pid);
+    for (const o of idx.offersByProduct.get(pid) ?? []) {
+      o.quoted_at = `${addDays(asOf, -12)}T10:00:00.000Z`;
+      o.valid_until = `${addDays(asOf, -2)}T10:00:00.000Z`;
+    }
+  }
+  reindex();
+
+  // 2. Capacity (2 SKUs): the cold-chain room is full, so no bin can take their order.
+  const cold = bySkuOrder(data.products.filter((p) => p.storage_class === "cold_chain"));
+  const capacity = rng
+    .shuffle(cold.filter((p) => eligibleOffers(idx, p.id, asOf).length > 0 && demand(idx, p.id, asOf).dbar > 0 && !hasIncoming(p.id)))
+    .slice(0, 2)
+    .map((p) => p.id);
+  // Other cold-chain SKUs get healthy stock first (while there is still room), so only these 2 need an order.
+  for (const p of cold) {
+    if (capacity.includes(p.id)) continue;
+    const s = skuState(data, idx, p.id, asOf);
+    if (s.dbar === 0) continue;
+    const need = Math.ceil(target(s.dbar, s.lFastest)) + 1 - s.stockPosition;
+    const batch = (idx.batchesByProduct.get(p.id) ?? [])
+      .filter((b) => b.quality_status === "released" && b.expiry_date > addDays(asOf, 400))
+      .sort((a, b) => b.expiry_date.localeCompare(a.expiry_date))[0];
+    if (need > 0 && batch) addToBatch(batch, need);
+  }
+  for (const pid of capacity) {
+    used.add(pid);
+    setEligibleStock(pid, 0);
+  }
+  reindex();
+  const minQty = Math.min(...capacity.map((pid) => estimateLine(data, idx, pid, asOf)).map((e) => (e.candidate ? e.qty : 2)));
+  const coldFill = binFill(data);
+  const slack = Math.max(0, Math.min(5, minQty - 1));
+  for (const bin of data.inventoryLocations.filter((b) => b.storage_class === "cold_chain" && b.status === "active")) {
+    bin.capacity_units = Math.max((coldFill.get(bin.id) ?? 0) + slack, 1);
+  }
+  reindex();
+
+  // 3. Cheapest supplier too slow (3) — on stockout SKUs — then the rest of the stockout cases (12 total).
+  const fastWithTwoOffers = pickProducts(
+    (pid) => ambientOrCool(pid) && !hasIncoming(pid) && eligibleOffers(idx, pid, asOf).length >= 2,
+    3,
+    "fast",
+  );
+  for (const pid of fastWithTwoOffers) {
+    used.add(pid);
+    const offers = [...eligibleOffers(idx, pid, asOf)].sort((a, b) => Number(a.unit_price) - Number(b.unit_price));
+    offers[0].lead_time_days = rng.int(9, 10);
+    for (const o of offers.slice(1)) o.lead_time_days = rng.int(2, 3);
+  }
+  reindex();
+  const moreStockout = pickProducts((pid) => ambientOrCool(pid) && !hasIncoming(pid) && eligibleOffers(idx, pid, asOf).length > 0, 9, "fast");
+  const stockout = [...fastWithTwoOffers, ...moreStockout];
+  for (const pid of stockout) {
+    used.add(pid);
+    const s = skuState(data, idx, pid, asOf);
+    setEligibleStock(pid, Math.floor(s.dbar * s.lFastest * 0.4));
+  }
+  reindex();
+
+  // 4. Expiry-risk batches (≥ 8): slow movers with a large batch expiring in 95–150 days.
+  const expiry: string[] = [];
+  for (const pid of pickProducts((p) => ambientOrCool(p), 40, "slow")) {
+    if (expiry.length >= 9) break;
+    const s = skuState(data, idx, pid, asOf);
+    const batch = (idx.batchesByProduct.get(pid) ?? [])
+      .filter((b) => b.quality_status === "released" && b.expiry_date > asOf && (idx.balancesByBatch.get(b.id) ?? []).some((x) => x.location_id))
+      .sort((a, b) => a.expiry_date.localeCompare(b.expiry_date))[0];
+    if (!batch || s.dbar === 0) continue;
+    const oldExpiry = batch.expiry_date;
+    batch.expiry_date = addDays(asOf, rng.int(95, 150));
+    const sellable = daysBetween(asOf, addDays(batch.expiry_date, -RISK_WINDOW));
+    const available = (idx.balancesByBatch.get(batch.id) ?? []).reduce((t, b) => t + b.on_hand_qty - b.reserved_qty, 0);
+    const wanted = Math.ceil(s.dbar * sellable) + rng.int(30, 80);
+    if (available < wanted) addToBatch(batch, wanted - available);
+    reindex();
+    if (skuState(data, idx, pid, asOf).atRisk.some((r) => r.batch.id === batch.id)) {
+      used.add(pid);
+      expiry.push(pid);
+    } else batch.expiry_date = oldExpiry;
+  }
+  reindex();
+
+  // 5. Excess stock (≥ 5): slow movers pushed above 1.5 × target.
+  const excess: string[] = [];
+  for (const pid of pickProducts((p) => ambientOrCool(p), 30, "slow")) {
+    if (excess.length >= 6) break;
+    const s = skuState(data, idx, pid, asOf);
+    if (s.dbar === 0) continue;
+    const need = Math.floor(EXCESS_FACTOR * target(s.dbar, s.lFastest)) + rng.int(10, 30) - s.stockPosition;
+    const batch = (idx.batchesByProduct.get(pid) ?? [])
+      .filter((b) => b.quality_status === "released" && b.expiry_date > addDays(asOf, 500))
+      .sort((a, b) => b.expiry_date.localeCompare(a.expiry_date))[0];
+    if (!batch) continue;
+    if (need > 0) addToBatch(batch, need);
+    if (skuState(data, idx, pid, asOf).status === "EXCESS") {
+      used.add(pid);
+      excess.push(pid);
+    }
+  }
+
+  // 6. Price anomaly (3): one eligible offer priced at 1.35 × the median of the SKU's other offers.
+  const priceAnomaly = pickProducts((pid) => (idx.offersByProduct.get(pid) ?? []).length >= 3 && eligibleOffers(idx, pid, asOf).length >= 1, 3);
+  for (const pid of priceAnomaly) {
+    used.add(pid);
+    const offers = idx.offersByProduct.get(pid)!;
+    const target = eligibleOffers(idx, pid, asOf)[0];
+    const others = offers.filter((o) => o.id !== target.id).map((o) => Number(o.unit_price)).sort((a, b) => a - b);
+    const median = others.length % 2 ? others[(others.length - 1) / 2] : (others[others.length / 2 - 1] + others[others.length / 2]) / 2;
+    target.unit_price = roundUnit(dec(median).times(1.35)).toFixed(4);
+  }
+  reindex();
+
+  // 7. Scheme that should be skipped (2): very slow mover, short shelf life, "100+20" scheme.
+  //    Plan §5.6 sized the scheme so the skip rule (§6.5) actually triggers.
+  const schemeSkip = pickProducts((pid) => ambientOrCool(pid) && !hasIncoming(pid) && eligibleOffers(idx, pid, asOf).length > 0, 2, "slow");
+  for (const pid of schemeSkip) {
+    used.add(pid);
+    const product = idx.productById.get(pid)!;
+    product.shelf_life_days = 540;
+    // ~0.17 packs/day: 1 sale in the last 7 days, 6 in the last 28, sparse before that.
+    const lastSevenSale = rng.int(0, 6);
+    const earlierSales = new Set(rng.shuffle([...Array(21).keys()].map((i) => i + 7)).slice(0, 5));
+    for (const row of idx.salesRowsByProduct.get(pid) ?? []) {
+      const ago = daysBetween(row.sale_date, asOf);
+      row.units_sold = ago < 7 ? (ago === lastSevenSale ? 1 : 0) : ago < 28 ? (earlierSales.has(ago) ? 1 : 0) : rng.chance(0.15) ? 1 : 0;
+    }
+    reindex();
+    setEligibleStock(pid, 1);
+    for (const o of eligibleOffers(idx, pid, asOf)) {
+      o.scheme_paid_qty = 100;
+      o.scheme_free_qty = 20;
+    }
+  }
+  reindex();
+
+  // 8. Stale quote on the otherwise best offer (2).
+  const staleQuote = pickProducts((pid) => eligibleOffers(idx, pid, asOf).length >= 2, 2);
+  for (const pid of staleQuote) {
+    used.add(pid);
+    const best = [...eligibleOffers(idx, pid, asOf)].sort((a, b) => Number(a.unit_price) - Number(b.unit_price))[0];
+    best.quoted_at = `${addDays(asOf, -20)}T10:00:00.000Z`;
+    best.valid_until = `${addDays(asOf, 10)}T10:00:00.000Z`;
+  }
+  reindex();
+
+  // 9. Demand spike (3): last 5 days ≈ 4.5 × base, so d7 / d28 ≥ 2.
+  const spikeKind = (pid: string) => data.meta.demandBySku[sku(pid)]?.kind === "spike";
+  const spike = pickProducts((pid) => spikeKind(pid) && ambientOrCool(pid), 3);
+  if (spike.length < 3) spike.push(...pickProducts((pid) => ambientOrCool(pid) && !spike.includes(pid), 3 - spike.length));
+  for (const pid of spike) {
+    used.add(pid);
+    const base = Math.max(1, data.meta.demandBySku[sku(pid)].basePacksPerDay);
+    data.meta.demandBySku[sku(pid)].kind = "spike";
+    for (const row of idx.salesRowsByProduct.get(pid) ?? []) {
+      const ago = daysBetween(row.sale_date, asOf);
+      if (ago < 5) row.units_sold = Math.round(4.5 * base);
+      else if (ago < 28) row.units_sold = Math.round(base);
+    }
+  }
+  reindex();
+
+  // 10. Unmapped stock (3): the generator already moved 3 balances out of their bins.
+  const unmapped = [...new Set(data.inventoryBalances.filter((b) => b.location_id === null).map((b) => sku(b.product_id)))];
+
+  const toSkus = (ids: string[]) => ids.map(sku).sort();
+  return {
+    stockout: toSkus(stockout),
+    expiry: toSkus(expiry),
+    excess: toSkus(excess),
+    priceAnomaly: toSkus(priceAnomaly),
+    capacity: toSkus(capacity),
+    cheapestTooSlow: toSkus(fastWithTwoOffers),
+    schemeSkip: toSkus(schemeSkip),
+    staleQuote: toSkus(staleQuote),
+    unmapped: unmapped.sort(),
+    spike: toSkus(spike),
+    noEligibleOffer: toSkus(noEligible),
+  };
+}

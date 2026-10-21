@@ -276,6 +276,26 @@ function shareBelow(q: Quantiles, x: number): number | null {
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
+/** Does a strength string suit a dosage form? ("125mg/5ml" → syrup, "1% w/w" → ointment, "500mg" → tablet…) */
+export function strengthFits(strength: string, form: Form): boolean {
+  const s = strength.toLowerCase();
+  const topical = s.includes("w/w");
+  const liquid = /\/\s*\d*\s*ml|w\/v/.test(s);
+  switch (form) {
+    case "tablet":
+    case "capsule":
+      return !liquid && !topical;
+    case "ointment":
+      return topical;
+    case "syrup":
+      return /\/\s*\d+\s*ml/.test(s) && !s.includes("iu");
+    case "drops":
+      return liquid;
+    case "injection":
+      return !topical && !/\/\s*\d+\s*ml/.test(s);
+  }
+}
+
 function pickName(rng: Rng, build: () => string, taken: Set<string>, forbidden: ReadonlySet<string>): string {
   for (let attempt = 0; attempt < 200; attempt++) {
     const name = build();
@@ -347,25 +367,28 @@ export function generate(profile: Profile, asOf: string, seed = 42, options: Gen
     const category = rng.weighted(categoryWeights);
     const isCombo = rng.chance(comboProbability) && COMBINATIONS[category].length > 0;
 
+    // Pick the form first, then only a strength that suits it (no "125mg/5ml" tablets).
+    const formWeight = (f: Form) => [f, formShare?.[f] ?? 1 / FORMS.length] as const;
     let genericName: string;
     let strength: string;
-    let allowedForms: readonly Form[];
-    if (isCombo) {
-      const [primary, partner, partnerStrength, forms] = rng.pick(COMBINATIONS[category]);
+    let form: Form;
+    const usableCombos = COMBINATIONS[category].filter(([primary, , partnerStrength, forms]) => {
       const base = GENERICS[category].find((g) => g.name === primary);
-      // Prefer a solid-dose strength ("500mg") over a liquid one ("125mg/5ml") for the primary.
-      const solid = base?.strengths.filter((s) => !s.includes("/")) ?? [];
-      const primaryStrength = base ? rng.pick(solid.length ? solid : base.strengths) : "";
+      return forms.some((f) => strengthFits(partnerStrength, f) && (base?.strengths ?? []).some((s) => strengthFits(s, f)));
+    });
+    const combo = isCombo && usableCombos.length > 0 ? rng.pick(usableCombos) : undefined;
+    if (combo) {
+      const [primary, partner, partnerStrength, forms] = combo;
+      const base = GENERICS[category].find((g) => g.name === primary)!;
+      form = rng.weighted(forms.filter((f) => strengthFits(partnerStrength, f) && base.strengths.some((s) => strengthFits(s, f))).map(formWeight));
       genericName = `${primary} + ${partner}`;
-      strength = primaryStrength ? `${primaryStrength} + ${partnerStrength}` : partnerStrength;
-      allowedForms = forms;
+      strength = `${rng.pick(base.strengths.filter((s) => strengthFits(s, form)))} + ${partnerStrength}`;
     } else {
       const g = rng.pick(GENERICS[category]);
+      form = rng.weighted(g.forms.filter((f) => g.strengths.some((s) => strengthFits(s, f))).map(formWeight));
       genericName = g.name;
-      strength = rng.pick(g.strengths);
-      allowedForms = g.forms;
+      strength = rng.pick(g.strengths.filter((s) => strengthFits(s, form)));
     }
-    const form = rng.weighted(allowedForms.map((f) => [f, formShare?.[f] ?? 1 / FORMS.length] as const));
 
     const packWeights = Object.entries(packShare?.[form] ?? {})
       .map(([q, w]) => [Number(q), w] as const)

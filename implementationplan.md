@@ -329,20 +329,20 @@ Use `faker.seed(42)` and `prng.ts` (`mulberry32(42)`) everywhere; never `Math.ra
 
 ### 5.6 `inject-demo-cases.ts` — guaranteed cases
 
-After generation, adjust specific SKUs so these counts hold exactly, and record which SKUs are which in `data/synthetic/demo-cases.json` (used by the demo script and tests):
+First, any SKU whose offers all came out stale or expired gets one approved offer refreshed (only the `noEligibleOffer` SKU may have none), and SKUs holding unmapped stock are kept out of the other cases. Then adjust specific SKUs so these counts hold exactly, and record which SKUs are which in `data/synthetic/demo-cases.json` (used by the demo script and tests):
 
 | Case | Count | How it is forced |
 |---|---|---|
 | Stockout risk (cover < fastest eligible lead time) | ≥ 10 | Reduce on-hand of fast movers |
-| Expiry-risk batches (projected unsold before risk window) | ≥ 8 | Move expiry to as-of + 95…150 days on slow movers with large qty |
+| Expiry-risk batches (projected unsold before risk window) | ≥ 8 (9 listed) | Move expiry to as-of + 95…150 days on slow movers with large qty |
 | Excess stock (position > 1.5 × target) | ≥ 5 | Increase on-hand of slow movers |
 | Supplier price anomaly (offer > 1.2 × median of other offers) | 3 | Inflate one offer price |
-| Capacity warning (no bin can take the proposed qty) | 2 | Fill all matching bins of a storage class |
+| Capacity warning (no bin can take the proposed qty) | 2 | Cold-chain room full: the other cold-chain SKUs get healthy stock, these 2 get none, then every cold-chain bin's capacity is set just above its current fill (no bin ever exceeds capacity) |
 | Cheapest supplier too slow (cheapest lead time > cover) | 3 | Cheapest offer gets lead time 9–10 days on stockout SKUs |
-| Scheme that should be skipped (slow mover with `20+3`) | 2 | Add a scheme to a slow mover whose extra qty would expire |
+| Scheme that should be skipped | 2 | A very slow mover (≈0.17 packs/day, shelf life 540 days, 1 pack in stock) gets a `100+20` scheme on its offers, so (stock + 120) ÷ d̄ ≥ shelf life − 90 and q < 100. (A `20+3` scheme can never trigger the skip at stockist demand levels.) |
 | Stale quote on an otherwise best offer | 2 | `quoted_at` = as-of − 20 days |
 | Unmapped stock | 3 | `location_id = null` |
-| Demand spike flag | ≥ 2 | Spike profile |
+| Demand spike flag | ≥ 2 (3 listed, used by the demand_spike scenario) | Spike profile; last 5 days set to ≈ 4.5 × base so d7 / d28 ≥ 2 |
 
 ### 5.7 `validate.ts` — fail loudly
 
