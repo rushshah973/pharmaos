@@ -46,7 +46,7 @@ export function CreatePlanDialog({ variant = "default" }: { variant?: "default" 
       </DialogTrigger>
       <DialogContent
         showCloseButton={!pending}
-        className="gap-0 border border-border-strong bg-surface-2 p-0 shadow-[0_12px_32px_rgba(0,0,0,0.45)] ring-0 sm:max-w-[480px]"
+        className="gap-0 border border-border-strong bg-surface-2 p-0 shadow-(--shadow-pop) ring-0 sm:max-w-[480px]"
       >
         <form onSubmit={submit}>
           <div className="space-y-1.5 px-6 pt-6">

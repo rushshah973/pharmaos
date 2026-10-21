@@ -40,7 +40,7 @@ export function ReasonDialog({
     <Dialog open={target !== null} onOpenChange={(open) => !open && !pending && (setReason(""), onClose())}>
       <DialogContent
         showCloseButton={!pending}
-        className="gap-0 border border-border-strong bg-surface-2 p-0 shadow-[0_12px_32px_rgba(0,0,0,0.45)] ring-0 sm:max-w-[440px]"
+        className="gap-0 border border-border-strong bg-surface-2 p-0 shadow-(--shadow-pop) ring-0 sm:max-w-[440px]"
       >
         <form onSubmit={submit}>
           <div className="space-y-1.5 px-6 pt-6">

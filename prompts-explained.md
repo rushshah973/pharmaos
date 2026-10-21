@@ -146,7 +146,7 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 
 ### P12 — Theme and shell ✅
 
-- **What it does:** Gives the dashboard its premium look (plan §10.1: layered dark surfaces, one teal accent, refined type and spacing, logo mark): dark navy and teal, the left sidebar with six sections, the top bar with the "Synthetic demo data" badge, date and (after P13) the ₹4,00,000 approval limit, and placeholder pages for every section.
+- **What it does:** Gives the dashboard its premium look (plan §10.1: light surfaces (white cards on a soft grey page), one teal accent, refined type and spacing, logo mark): dark navy and teal, the left sidebar with six sections, the top bar with the "Synthetic demo data" badge, date and (after P13) the ₹4,00,000 approval limit, and placeholder pages for every section.
 - **Creates or changes:** `app/globals.css`, `app/layout.tsx`, `components/layout/*`, placeholder pages.
 - **You will see:** A professional web dashboard where every sidebar link works; the sidebar shrinks to icons at tablet width.
 - **Why it matters:** First impression for judges, and the frame every later screen sits in.

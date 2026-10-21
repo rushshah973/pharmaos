@@ -37,7 +37,7 @@ export function WhyButton({ planId, lineId, sku }: { planId: string; lineId: str
         </TooltipTrigger>
         <TooltipContent>Why?</TooltipContent>
       </Tooltip>
-      <PopoverContent align="end" className="w-[340px] border border-border-strong bg-surface-2 p-4 shadow-[0_12px_32px_rgba(0,0,0,0.45)] ring-0">
+      <PopoverContent align="end" className="w-[340px] border border-border-strong bg-surface-2 p-4 shadow-(--shadow-pop) ring-0">
         <p className="micro-label">Why {sku}</p>
         {state.status === "loading" || state.status === "idle" ? (
           <div className="space-y-2" aria-label="Loading explanation">

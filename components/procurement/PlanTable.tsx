@@ -11,6 +11,7 @@ import {
   Hourglass,
   MapPinOff,
   PauseCircle,
+  MoreHorizontal,
   Pencil,
   ShieldCheck,
   TrendingUp,
@@ -23,6 +24,7 @@ import { cn } from "cn";
 import { SkuStatusPill } from "@/components/layout/SkuStatusPill";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { apiCall, errorMessage } from "@/lib/api/client";
 import type { WarningCode } from "@/lib/business-logic/types";
@@ -57,7 +59,7 @@ const HEADERS: { label: string; className?: string }[] = [
   { label: "Line total", className: "text-right" },
   { label: "Flags" },
   { label: "Reason" },
-  { label: "", className: "w-[132px]" },
+  { label: "", className: "w-[100px]" },
 ];
 
 // Checkbox, rank and SKU stay pinned when the table scrolls sideways (tablet widths).
@@ -220,7 +222,7 @@ function PlanRow({
           {l.status === "edited" && <Tag className="border-brand/30 text-brand">Edited</Tag>}
           {onPo && <Tag className="border-healthy/30 text-healthy">On PO</Tag>}
         </div>
-        <div className="max-w-[180px] truncate text-[12.5px] text-fg-2" title={`${l.brandName} · ${l.strength} · ${l.packSize}/pack`}>
+        <div className="max-w-[168px] truncate text-[12.5px] text-fg-2" title={`${l.brandName} · ${l.strength} · ${l.packSize}/pack`}>
           {l.brandName} · {l.strength} · {l.packSize}/pack
         </div>
       </td>
@@ -267,7 +269,7 @@ function PlanRow({
               render={
                 <span
                   tabIndex={0}
-                  className="inline-flex h-[22px] max-w-[124px] items-center gap-1 rounded-full border border-border-strong px-2.5 text-[12px] text-fg-2"
+                  className="inline-flex h-[22px] max-w-[112px] items-center gap-1 rounded-full border border-border-strong px-2.5 text-[12px] text-fg-2"
                 />
               }
             >
@@ -288,8 +290,21 @@ function PlanRow({
         <div className="flex items-center justify-end gap-0.5 opacity-70 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
           <WhyButton planId={planId} lineId={l.id} sku={l.sku} />
           <IconAction icon={Pencil} label={`Details and edit ${l.sku}`} hint="Details & edit" onClick={() => onOpen(l.id)} />
-          <IconAction icon={PauseCircle} label={`Defer ${l.sku}`} hint="Defer" disabled={rowLocked} onClick={() => onReason("deferred")} />
-          <IconAction icon={Ban} label={`Reject ${l.sku}`} hint="Reject" disabled={rowLocked} onClick={() => onReason("rejected")} danger />
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<button type="button" className="row-action" aria-label={`More actions for ${l.sku}`} disabled={rowLocked} />}
+            >
+              <MoreHorizontal className="size-4" strokeWidth={1.75} aria-hidden />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-40 border border-border bg-surface-1 shadow-(--shadow-pop)">
+              <DropdownMenuItem onClick={() => onReason("deferred")}>
+                <PauseCircle className="size-4" strokeWidth={1.75} aria-hidden /> Defer line…
+              </DropdownMenuItem>
+              <DropdownMenuItem variant="destructive" onClick={() => onReason("rejected")}>
+                <Ban className="size-4" strokeWidth={1.75} aria-hidden /> Reject line…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </td>
     </tr>
@@ -332,7 +347,7 @@ function Tag({ className, children }: { className?: string; children: React.Reac
 function FooterBar({ count, total }: { count: number; total: string }) {
   return (
     <div className="sticky bottom-4 z-20">
-      <div className="surface flex items-center justify-between gap-4 border-border-strong bg-surface-2/95 px-5 py-3 shadow-[0_12px_32px_rgba(0,0,0,0.45)] backdrop-blur">
+      <div className="surface flex items-center justify-between gap-4 border-border-strong bg-surface-2/95 px-5 py-3 shadow-(--shadow-pop) backdrop-blur">
         <p className="text-fg-2">
           {count === 0 ? (
             "Select lines to approve them into purchase orders."

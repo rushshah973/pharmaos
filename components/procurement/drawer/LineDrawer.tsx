@@ -61,7 +61,7 @@ export function LineDrawer({
     <Sheet open={lineId !== null} onOpenChange={(open) => !open && close()}>
       <SheetContent
         side="right"
-        className="w-[560px] max-w-[calc(100vw-2rem)] gap-0 overflow-y-auto border-l border-border-strong bg-surface-2 p-0 shadow-[0_12px_32px_rgba(0,0,0,0.45)] data-[side=right]:sm:max-w-[560px]"
+        className="w-[560px] max-w-[calc(100vw-2rem)] gap-0 overflow-y-auto border-l border-border-strong bg-surface-2 p-0 shadow-(--shadow-pop) data-[side=right]:sm:max-w-[560px]"
       >
         {!ready ? (
           <DrawerSkeleton />

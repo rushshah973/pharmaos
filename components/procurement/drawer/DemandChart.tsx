@@ -56,7 +56,7 @@ export function DemandChart({ series, d7, d28, dbar }: { series: SalesPoint[]; d
               cursor={{ stroke: "var(--border-strong)", strokeWidth: 1 }}
               content={({ active, payload }) =>
                 active && payload?.[0] ? (
-                  <div className="rounded-md border border-border-strong bg-surface-2 px-2.5 py-1.5 text-[12px] shadow-[0_12px_32px_rgba(0,0,0,0.45)]">
+                  <div className="rounded-md border border-border-strong bg-surface-2 px-2.5 py-1.5 text-[12px] shadow-(--shadow-pop)">
                     <div className="text-fg-3">{formatDisplayDate(String(payload[0].payload.date))}</div>
                     <div className="num font-medium text-fg-1">{payload[0].value} packs sold</div>
                   </div>

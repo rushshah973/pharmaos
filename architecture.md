@@ -598,7 +598,7 @@ Behind three dashboard entry points (problemstatement §9.7, "dashboard, not cha
 | `/activity` | `activity/page.tsx` | Server, paginated |
 | `/data` | `data/page.tsx` | Server summary + client scenario cards and ROI model |
 
-`app/(dashboard)/layout.tsx` holds the sidebar and top bar. The root `app/layout.tsx` sets `className="dark"`, fonts and `<Toaster />`.
+`app/(dashboard)/layout.tsx` holds the sidebar and top bar. The root `app/layout.tsx` sets the fonts, `<TooltipProvider>` and `<Toaster />`; the theme is light only.
 
 ### 10.2 Server/client split and data flow
 
@@ -622,7 +622,7 @@ flowchart TB
 
 ### 10.4 Design system
 
-Dark navy surfaces, teal primary, and fixed status colours (stockout red, expiry amber, excess violet, healthy slate, proposed cyan ghost). Base UI–based shadcn components (`render` prop composition). Tabular numbers, INR formatting via `formatINR()`. Tokens are listed in plan §10.1.
+Light surfaces (soft grey page, white cards), deep-teal primary, and fixed status colours (stockout red, expiry amber, excess violet, healthy slate, proposed cyan ghost). Base UI–based shadcn components (`render` prop composition). Tabular numbers, INR formatting via `formatINR()`. Tokens are listed in plan §10.1.
 
 ---
 
