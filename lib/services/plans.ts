@@ -3,6 +3,7 @@
 // controlled per purchase order by the Owner approval limit (app_state.po_approval_limit).
 // Every mutation runs in one transaction and writes its audit row inside it.
 import type postgres from "postgres";
+import { cache } from "react";
 import { ServiceError, notFound } from "@/lib/api/errors";
 import { ENGINE_CONFIG } from "@/lib/business-logic/config";
 import { analyseSku, buildPlan } from "@/lib/business-logic/engine";
@@ -98,7 +99,7 @@ export type LineView = {
 };
 
 export type PlanView = PlanSummary & { lines: LineView[] };
-export type LineWithEvidence = LineView & { evidence: Record<string, unknown> };
+export type LineWithEvidence = LineView & { evidence: Record<string, unknown>; dataSource: string };
 
 const COUNTED_STATUSES: ReadonlySet<RecommendationStatus> = new Set(["proposed", "edited", "approved_for_po"]);
 const isCounted = (l: { inBasket: boolean; status: RecommendationStatus }) => l.inBasket && COUNTED_STATUSES.has(l.status);
@@ -179,10 +180,11 @@ type LineRow = Omit<LineView, "totals" | "counted"> & {
   lineFreight: string;
   lineTotal: string;
   evidence?: Record<string, unknown>;
+  dataSource?: string;
 };
 
 async function selectLines(sql: SqlHandle, planId: string, opts: { lineId?: string; withEvidence?: boolean } = {}): Promise<LineRow[]> {
-  const evidence = opts.withEvidence ? sql`, r.evidence_json as evidence` : sql``;
+  const evidence = opts.withEvidence ? sql`, r.evidence_json as evidence, p.data_source as "dataSource"` : sql``;
   const one = opts.lineId ? sql`and r.id = ${opts.lineId}` : sql``;
   return sql<LineRow[]>`
     select
@@ -222,8 +224,9 @@ async function selectLines(sql: SqlHandle, planId: string, opts: { lineId?: stri
 }
 
 function toLineView(r: LineRow): LineView {
-  const { lineSubtotal, lineTax, lineFreight, lineTotal, evidence: _evidence, ...rest } = r;
+  const { lineSubtotal, lineTax, lineFreight, lineTotal, evidence: _evidence, dataSource: _source, ...rest } = r;
   void _evidence;
+  void _source;
   return { ...rest, totals: { lineSubtotal, lineTax, lineFreight, lineTotal }, counted: isCounted(r) };
 }
 
@@ -265,11 +268,14 @@ export async function listPlans(limit = 50, sql: SqlHandle = getSql()): Promise<
   `;
 }
 
+/** getPlan deduplicated within one server render (the plan screen and its drawer both need it). */
+export const getPlanForRender = cache((planId: string) => getPlan(planId));
+
 /** One line with its full evidence_json (line drawer, explain). */
 export async function getLine(planId: string, lineId: string, sql: SqlHandle = getSql()): Promise<LineWithEvidence> {
   const [row] = await selectLines(sql, planId, { lineId, withEvidence: true });
   if (!row) throw notFound("Line", lineId);
-  return { ...toLineView(row), evidence: row.evidence ?? {} };
+  return { ...toLineView(row), evidence: row.evidence ?? {}, dataSource: row.dataSource ?? "synthetic_demo" };
 }
 
 // ---------------------------------------------------------------------------

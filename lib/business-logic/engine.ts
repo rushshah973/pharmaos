@@ -190,6 +190,7 @@ export function analyseSku(sku: SkuContext, config: EngineConfig = ENGINE_CONFIG
   const totals = chosen?.totals ?? null;
 
   // 6. Evidence: every input and intermediate, JSON-safe, for evidence_json.
+  const eligibleBatchIds = new Set(expiry.batches.map((b) => b.batchId));
   // The engine config is stored once per plan (assumptions_json), not on every line.
   const evidence = {
     asOf,
@@ -197,7 +198,15 @@ export function analyseSku(sku: SkuContext, config: EngineConfig = ENGINE_CONFIG
     demand,
     expiry,
     incoming: { lines: sku.incoming, confirmedQty: incomingQty, horizonDays: config.planningHorizonDays },
-    stock: { eligibleAvailable: expiry.eligibleAvailable, incoming: incomingQty, stockPosition: position, cover },
+    stock: {
+      eligibleAvailable: expiry.eligibleAvailable,
+      // On hand and reserved across the eligible (FEFO) batches; available = on hand − reserved.
+      onHand: sku.balances.filter((b) => eligibleBatchIds.has(b.batchId)).reduce((n, b) => n + b.onHandQty, 0),
+      reserved: sku.balances.filter((b) => eligibleBatchIds.has(b.batchId)).reduce((n, b) => n + b.reservedQty, 0),
+      incoming: incomingQty,
+      stockPosition: position,
+      cover,
+    },
     policy: { leadFastest, safetyStock: safetyStock(dbar, config), reorderPoint: rop, targetStock: target, needsStock },
     offers: working.map((w) => ({
       ...w.evaluation,

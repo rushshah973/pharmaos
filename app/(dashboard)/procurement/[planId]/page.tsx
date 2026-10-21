@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import { ErrorState } from "@/components/layout/ErrorState";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ImpactCard } from "@/components/procurement/ImpactCard";
+import { type DrawerPayload, LineDrawer } from "@/components/procurement/drawer/LineDrawer";
 import { NotInPlanList } from "@/components/procurement/NotInPlanList";
 import { PlanStatusPill } from "@/components/procurement/PlanStatusPill";
 import { PlanTable } from "@/components/procurement/PlanTable";
@@ -12,18 +13,48 @@ import { RecalculateButton } from "@/components/procurement/RecalculateButton";
 import { SupplierPoStrip } from "@/components/procurement/SupplierPoStrip";
 import { ServiceError } from "@/lib/api/errors";
 import { formatDateTime, formatDisplayDate } from "@/lib/format/date";
-import { type PlanView, getPlan } from "@/lib/services/plans";
+import { getLineDetail } from "@/lib/services/line-detail";
+import { type PlanView, getPlanForRender } from "@/lib/services/plans";
 import { uuid } from "@/lib/validation/api";
 
 export const metadata: Metadata = { title: "Purchase plan" };
 
 // Procurement Plan (§10.3): Impact Card, supplier PO strip, ranked plan table, lines not in the plan.
-export default function PlanPage({ params }: PageProps<"/procurement/[planId]">) {
+export default function PlanPage({ params, searchParams }: PageProps<"/procurement/[planId]">) {
   return (
-    <Suspense fallback={<PlanSkeleton />}>
-      <Plan params={params} />
-    </Suspense>
+    <>
+      <Suspense fallback={<PlanSkeleton />}>
+        <Plan params={params} />
+      </Suspense>
+      {/* The line drawer is its own boundary: opening a line never waits on (or re-suspends) the plan. */}
+      {/* No fallback: the drawer reads the URL, which is unknown while prerendering. A click from the table
+          keeps the mounted drawer (showing its skeleton) while the new line's data streams in. */}
+      <Suspense fallback={null}>
+        <Drawer params={params} searchParams={searchParams} />
+      </Suspense>
+    </>
   );
+}
+
+async function Drawer({ params, searchParams }: Pick<PageProps<"/procurement/[planId]">, "params" | "searchParams">) {
+  await connection();
+  const [{ planId }, query] = await Promise.all([params, searchParams]);
+  if (!uuid.safeParse(planId).success) return null;
+  const raw = query.line;
+  const lineId = typeof raw === "string" ? raw : null;
+  let plan: PlanView;
+  try {
+    plan = await getPlanForRender(planId);
+  } catch {
+    return null;
+  }
+  let payload: DrawerPayload = null;
+  if (lineId) {
+    const detail = uuid.safeParse(lineId).success ? await getLineDetail(planId, lineId).catch(() => null) : null;
+    payload = { lineId, detail };
+  }
+  const locked = plan.status === "approved" || plan.status === "rejected";
+  return <LineDrawer planId={planId} payload={payload} planTotal={plan.proposedTotal} supplierPos={plan.supplierPos} locked={locked} />;
 }
 
 async function Plan({ params }: { params: PageProps<"/procurement/[planId]">["params"] }) {
@@ -32,7 +63,7 @@ async function Plan({ params }: { params: PageProps<"/procurement/[planId]">["pa
   if (!uuid.safeParse(planId).success) notFound();
   let plan: PlanView;
   try {
-    plan = await getPlan(planId);
+    plan = await getPlanForRender(planId);
   } catch (err) {
     if (err instanceof ServiceError && err.status === 404) notFound();
     console.error("[plan]", err);

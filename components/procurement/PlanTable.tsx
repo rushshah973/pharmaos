@@ -29,6 +29,7 @@ import type { WarningCode } from "@/lib/business-logic/types";
 import { REASON_ORDER, REASON_TEXT, WARNING_TEXT } from "@/lib/format/codes";
 import { formatINR, sumMoney } from "@/lib/money";
 import type { LineView, PlanStatus } from "@/lib/services/plans";
+import { requestLine } from "./drawer/line-store";
 import { ReasonDialog, type ReasonTarget } from "./ReasonDialog";
 import { WhyButton } from "./WhyButton";
 
@@ -92,6 +93,13 @@ export function PlanTable({
   const allChosen = pickable.length > 0 && chosen.length === pickable.length;
   const selectedTotal = sumMoney(chosen.map((l) => l.totals.lineTotal)).toFixed(2);
 
+  // The drawer is driven by ?line=<id>. requestLine opens it on its skeleton at once; the navigation then
+  // streams that line's evidence from the server.
+  const openLine = (lineId: string) => {
+    requestLine(lineId);
+    router.push(`?line=${lineId}`, { scroll: false });
+  };
+
   const toggle = (id: string, on: boolean) =>
     setSelected((s) => {
       const next = new Set(s);
@@ -154,6 +162,7 @@ export function PlanTable({
                   checked={selected.has(l.id)}
                   onCheck={(on) => toggle(l.id, on)}
                   onReason={(status) => setReasonTarget({ lineId: l.id, sku: l.sku, brand: `${l.brandName} ${l.strength}`, status })}
+                  onOpen={openLine}
                 />
               ))}
             </tbody>
@@ -175,6 +184,7 @@ function PlanRow({
   checked,
   onCheck,
   onReason,
+  onOpen,
 }: {
   line: LineView;
   planId: string;
@@ -182,6 +192,7 @@ function PlanRow({
   checked: boolean;
   onCheck: (on: boolean) => void;
   onReason: (status: "deferred" | "rejected") => void;
+  onOpen: (lineId: string) => void;
 }) {
   const reasons = REASON_ORDER.filter((r) => l.reasons.includes(r));
   // Pinned cells need an opaque background that follows the row's hover / selected state.
@@ -203,7 +214,9 @@ function PlanRow({
       <td className={cn("num px-2.5 text-right text-fg-3", STICKY[1], cellBg)}>{l.rank}</td>
       <td className={cn("px-2.5 py-2", STICKY[2], cellBg, EDGE)}>
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[12.5px] text-fg-1">{l.sku}</span>
+          <button type="button" onClick={() => onOpen(l.id)} className="font-mono text-[12.5px] text-fg-1 hover:text-brand hover:underline">
+            {l.sku}
+          </button>
           {l.status === "edited" && <Tag className="border-brand/30 text-brand">Edited</Tag>}
           {onPo && <Tag className="border-healthy/30 text-healthy">On PO</Tag>}
         </div>
@@ -274,7 +287,7 @@ function PlanRow({
       <td className="pr-4 pl-2">
         <div className="flex items-center justify-end gap-0.5 opacity-70 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
           <WhyButton planId={planId} lineId={l.id} sku={l.sku} />
-          <IconAction icon={Pencil} label="Edit" hint="Line details and edits arrive in the next step" disabled />
+          <IconAction icon={Pencil} label={`Details and edit ${l.sku}`} hint="Details & edit" onClick={() => onOpen(l.id)} />
           <IconAction icon={PauseCircle} label={`Defer ${l.sku}`} hint="Defer" disabled={rowLocked} onClick={() => onReason("deferred")} />
           <IconAction icon={Ban} label={`Reject ${l.sku}`} hint="Reject" disabled={rowLocked} onClick={() => onReason("rejected")} danger />
         </div>

@@ -21,9 +21,10 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P12 | Theme and shell | ✅ `6a1bb63` |
 | P13 | Plan services and API | ✅ `2296530` |
 | P14 | Command Center and plan list | ✅ `90d5ce4` |
-| P15 | Plan screen | ✅ |
-| P16 | Line drawer and edit preview | ⏭ |
-| P17–P28 | … | ⬜ |
+| P15 | Plan screen | ✅ `8d364b0` |
+| P16 | Line drawer and edit preview | ✅ |
+| P17 | Approval service | ⏭ |
+| P18–P28 | … | ⬜ |
 
 > Budget cap removed; ₹4,00,000 per-PO Owner approval added (after P13).
 
@@ -171,7 +172,7 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 - **You will see:** A full plan you can read, sort through and adjust.
 - **Why it matters:** The heart of the product — where the owner makes today's buying decision.
 
-### P16 — Line drawer and edit preview ⏭
+### P16 — Line drawer and edit preview ✅
 
 - **What it does:** Opens one recommendation in a side panel: demand chart, stock breakdown, batches and expiry, every supplier compared (including why some were excluded), the formulas with real numbers filled in, and an edit control that shows the new total before saving.
 - **Creates or changes:** `LineDrawer`, `DemandChart`, `SupplierComparison`, `FormulaPanel`, edit controls.
@@ -182,7 +183,7 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 
 ## Stage 4 — Approval and audit
 
-### P17 — Approval service ⬜
+### P17 — Approval service ⏭
 
 - **What it does:** Builds the only code allowed to create purchase orders: re-checks every rule with fresh data, groups approved lines by supplier and creates one PO per supplier inside one database transaction (a PO above ₹4,00,000 is held as "Awaiting Owner approval"), and makes a double click or retry harmless. Also adds the Owner's Approve / Reject for held POs and a simulated "Send to supplier" that refuses held POs. Adds Approve and Reject plan to the screen.
 - **Creates or changes:** `lib/services/approval.ts`, PO approve/reject/send in `purchase-orders.ts`, their routes, approval dialog, an optional integration test.
