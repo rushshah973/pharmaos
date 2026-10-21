@@ -2,7 +2,7 @@
 
 A plain-English companion to `prompts.md`. For every prompt: **what it does**, **what it creates or changes**, **what you will see when it is done**, and **why it matters** for the product or the demo. The prompts themselves (the text you paste) stay in `prompts.md`.
 
-**Status** — ✅ done (commit) · ⏭ next · ⬜ not started. Last updated after P07.
+**Status** — ✅ done (commit) · ⏭ next · ⬜ not started. Last updated after P08.
 
 | # | Prompt | Status |
 |---|---|---|
@@ -14,8 +14,9 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P05 | Generate synthetic data | ✅ `db15a70`, then 500 products in `06691da` |
 | P06 | Demo cases, validation and seed | ✅ `a58fe1b` |
 | P07 | Engine tests first | ✅ `698bd9c` |
-| P08 | Demand, expiry, inventory | ⏭ |
-| P09–P28 | … | ⬜ |
+| P08 | Demand, expiry, inventory | ✅ `5ef2952` |
+| P09 | Ordering, suppliers, totals, priority | ⏭ |
+| P10–P28 | … | ⬜ |
 
 ---
 
@@ -101,14 +102,14 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 - **You will see:** 30 tests failing with "not implemented" — on purpose.
 - **Why it matters:** Wrong numbers on stage would destroy trust. Writing the tests first means every formula is proven against hand-computed answers.
 
-### P08 — Demand, expiry, inventory ⏭
+### P08 — Demand, expiry, inventory ✅
 
 - **What it does:** Implements the first half of the maths: how much each medicine sells per day, which batches will sell before they expire (first-expiry-first-out), how much usable stock there really is, how many days it will last, and when to reorder.
 - **Creates or changes:** `dates.ts`, `demand.ts`, `expiry.ts`, `inventory.ts` in `lib/business-logic/`.
 - **You will see:** F1 (demand part), F4 and matching F8 tests turning green.
 - **Why it matters:** This is how PharmaOS knows a SKU will run out *before the supplier can deliver*, and that near-expiry or quarantined stock must not be counted.
 
-### P09 — Ordering, suppliers, totals, priority ⬜
+### P09 — Ordering, suppliers, totals, priority ⏭
 
 - **What it does:** Implements the second half: how many packs to order (rounded to pack size and minimum order), whether a "10+1" scheme is worth taking given expiry, which supplier wins on cost, speed, reliability and payment terms, the rupee totals with GST and freight, and how much loss each line prevents per rupee.
 - **Creates or changes:** `ordering.ts`, `supplier-scoring.ts`, `totals.ts`, `priority.ts`.
