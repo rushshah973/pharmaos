@@ -761,29 +761,104 @@ Notes:
 
 PharmaOS is a web dashboard: a left sidebar, a top bar and data-dense screens (tables, cards, a 3D panel) laid out for desktop browsers. Build every screen for 1280 px and wider first, and make sure it still works at tablet width (≥ 768 px: the sidebar collapses to icons, wide tables scroll horizontally inside their card). Phone layouts are out of scope.
 
-### 10.1 Design system
+### 10.1 Design system — premium quality bar
 
-- Dark by default: `<html className="dark">`. Palette as CSS variables in `app/globals.css` (map to shadcn tokens):
+**Goal:** the dashboard must look like a funded B2B product, not a hackathon template. Reference quality: Linear, Vercel dashboard, Stripe dashboard, Ramp. Calm, dark, precise, data-dense; one accent colour; every pixel aligned. Judges decide in the first 10 seconds, so the first screen must already look finished.
+
+#### Principles
+1. **Restraint.** One accent (teal). Colour is used for meaning (status, selection, the primary action), never for decoration.
+2. **Hierarchy through type and space**, not boxes and borders. Big numbers, small quiet labels.
+3. **Depth through layered surfaces**, not drop shadows: page → surface → raised surface, each one step lighter, with hairline borders.
+4. **Numbers are the product.** Tabular figures, right-aligned, Indian digit grouping (₹2,00,000), consistent decimals.
+5. **Motion explains change** (a total updating, a drawer opening), short and subtle. Nothing bounces.
+6. **Finished states everywhere:** loading skeletons shaped like the content, designed empty states, clear errors.
+
+#### Colour tokens (`app/globals.css`, mapped onto the shadcn variables; dark is the only theme)
 
 | Token | Value | Use |
 |---|---|---|
-| background | `#0B1220` | page |
-| card | `#111A2E` | panels, tables |
-| border | `#1F2A44` | dividers |
-| primary (teal) | `#14B8A6` | primary buttons, focus, selected |
-| stockout | `#EF4444` | stockout risk |
-| expiry | `#F59E0B` | expiry risk |
-| excess | `#8B5CF6` | excess stock |
-| healthy | `#64748B` | normal |
-| proposed | `#22D3EE` at 35% opacity | ghost / proposed stock |
+| `--bg` | `#070B14` | page background |
+| `--surface-1` | `#0D1424` | cards, sidebar, tables |
+| `--surface-2` | `#121B2F` | raised: popovers, drawer, table header, inputs |
+| `--surface-3` | `#18233A` | hover and selected rows |
+| `--border` | `#1C2740` | hairline dividers (1 px) |
+| `--border-strong` | `#2A3954` | inputs, focused cards |
+| `--text-1` | `#E6EDF7` | primary text and numbers |
+| `--text-2` | `#94A3B8` | secondary text, column headers |
+| `--text-3` | `#5B6B85` | tertiary: captions, axis labels, placeholders |
+| `--accent` | `#2DD4BF` | brand, focus ring, selected, links |
+| `--accent-strong` | `#14B8A6` | primary button background |
+| `--accent-glow` | `rgba(45, 212, 191, 0.10)` | hero card glow, selected row tint |
+| `--stockout` | `#F87171` on `rgba(248,113,113,0.12)` | stockout risk |
+| `--expiry` | `#FBBF24` on `rgba(251,191,36,0.12)` | expiry risk |
+| `--excess` | `#A78BFA` on `rgba(167,139,250,0.12)` | excess stock |
+| `--healthy` | `#34D399` on `rgba(52,211,153,0.12)` | healthy / approved |
+| `--neutral` | `#94A3B8` on `rgba(148,163,184,0.10)` | deferred, info |
+| `--proposed` | `#22D3EE` at 35% opacity | ghost / proposed stock (3D) |
 
-- Font: Geist (already loaded). Numbers in tables: `tabular-nums`, right-aligned, INR via `formatINR()`.
-- Every status uses colour **plus** a text badge. Every screen has loading (Skeleton), empty, stale-data and error states. No inert buttons.
+Contrast: all text ≥ WCAG AA on its surface. Status is always **dot + label** (never colour alone).
+
+#### Typography (Geist Sans for UI, Geist Mono for SKU codes, IDs and formulas — both already loaded)
+
+| Role | Size / line | Weight | Notes |
+|---|---|---|---|
+| Hero number (Impact Card, KPI) | 32 / 36 | 600 | `tabular-nums`, tracking −0.02em |
+| Page title | 22 / 28 | 600 | tracking −0.01em |
+| Section title | 15 / 22 | 600 | |
+| Body / table | 13.5 / 20 | 400 | the default size: dense but readable |
+| Label (micro) | 11 / 16 | 500 | UPPERCASE, tracking 0.06em, `--text-3` |
+| Mono (SKU, PO no., formula) | 12.5 / 18 | 450 | Geist Mono |
+
+Money: `formatINR()` → "₹2,00,000" (no paise on KPI tiles, paise in tables and POs). Dates: "21 Oct 2026". Days of cover: one decimal ("4.3 d").
+
+#### Space, shape, elevation
+- 4 px grid. Page padding 32 px (24 px at tablet). Card padding 20 px. Gaps 16 / 24 px. Content max-width 1440 px, centred.
+- Radius: 8 px controls, 12 px cards, 16 px hero card; status pills fully rounded.
+- Surfaces: `--surface-1` with a 1 px `--border` and a top inner highlight `inset 0 1px 0 rgba(255,255,255,0.04)`. No large drop shadows; popovers/drawer get one soft shadow `0 12px 32px rgba(0,0,0,0.45)`.
+- **One signature gradient only:** the Plan Impact Card and the Command Center hero get a faint radial teal glow (`--accent-glow`) from the top-left corner. No other gradients.
+
+#### Layout
+- Sidebar 240 px (`--surface-1`), collapsible to a 64 px icon rail (and auto-collapsed below 1024 px). Logo mark + wordmark at the top; nav items 36 px tall, 16 px lucide icons (stroke 1.75), active item = `--surface-3` background + 2 px accent bar on the left; data-source badge and demo user pinned at the bottom.
+- Top bar 56 px, sticky, `--bg` at 80% with `backdrop-blur`, hairline bottom border: breadcrumb/page title left; scenario chip, as-of date, budget right.
+- Page header: title + one-line description + primary action on the right.
+
+#### Components
+- **Buttons:** primary = `--accent-strong` bg, dark text, 36 px; secondary = `--surface-2` + border; ghost for row actions. One primary button per view.
+- **KPI tile:** micro label, hero number (count-up on first load), a one-line context ("12 below reorder point"), and a sparkline **only when backed by real data** (e.g. 28-day sales). No fake trends.
+- **Status pill:** 6 px dot + label, tinted background from the status table, 22 px tall.
+- **Tables:** 44 px rows, sticky header on `--surface-2`, micro-label headers, hairline row dividers, hover `--surface-3`, selected row = accent-glow tint + 2 px accent left edge; numbers right-aligned and tabular; SKU in mono with brand/strength as a second line in `--text-2`; row actions appear on hover.
+- **Drawer (line detail):** 560 px wide, `--surface-2`, slides from the right (220 ms); sticky header with SKU, status pill and Edit controls; sections separated by space and micro labels, not boxes.
+- **Formula panel:** each formula on one line in mono, with the real values substituted and the result highlighted in `--text-1` ("ROP = 9.2 × 4 + 27.6 = **64.4**").
+- **Charts (Recharts):** no chart junk — faint horizontal gridlines only, axis text 11 px `--text-3`, teal line 2 px with an area fill fading from 20% to 0%, reference lines dashed for d7/d28/d̄, custom tooltip card on `--surface-2`.
+- **Toasts (sonner):** dark, bottom-right, icon + one line + optional link.
+- **Empty states:** 40 px icon in a soft circle, one line of explanation, one action. **Errors:** what happened + what to do + Retry. **Loading:** skeletons with the same layout as the content, subtle shimmer.
+
+#### Motion (CSS transitions + `tw-animate-css`, already installed; no new library)
+- 150 ms ease-out for hover/focus; 220 ms for drawers and dialogs; KPI and Impact Card numbers count up once (≤ 600 ms); the budget bar fills smoothly when totals change.
+- Recalculated values flash a faint accent background for 600 ms so the eye sees what changed.
+- Respect `prefers-reduced-motion` (no count-up, no shimmer).
+
+#### Brand
+- Logo mark: a 24 px rounded square with a teal gradient (`#2DD4BF` → `#0EA5A4`) and a simple white glyph (a capsule crossed with a check), inline SVG in `components/layout/Logo.tsx`; also used as `app/icon.svg` (favicon). Wordmark "PharmaOS" in Geist 600.
+- Browser title: "PharmaOS · <page>".
+
+#### Signature moments (polish these most — they are the demo)
+1. Command Center hero: budget, at-risk SKUs and ₹ at expiry risk, with the **Create Purchase Plan** button.
+2. Plan Impact Card with counting numbers and the budget bar.
+3. A ranked plan table that reads like a decision list (reason chips, Why? on hover).
+4. The line drawer: demand chart + supplier comparison + live formulas.
+5. The 3D warehouse: dark scene, soft lighting, emissive heatmap bins, smooth camera fly-to.
+
+#### Don'ts
+No emoji, no stock illustrations, no gradients on ordinary cards, no glassmorphism except the top bar, no more than one accent, no default unstyled shadcn look, no lorem ipsum, no placeholder numbers, no layout shift when data loads.
+
+#### Visual QA (every UI prompt)
+Before committing a UI step: run the dev server, take a screenshot at **1440 × 900** and at **1024 × 768**, and check it against this section (alignment, spacing, contrast, states, no overflow, numbers formatted). Fix what fails before the commit.
 
 ### 10.2 Shell (`app/(dashboard)/layout.tsx`)
 
-- Left sidebar (lucide icons): Command Center `/`, Procurement `/procurement`, 3D Warehouse `/warehouse`, Purchase Orders `/purchase-orders`, Activity Log `/activity`, Data & Scenarios `/data`.
-- Top bar: "PharmaOS" wordmark, `DataSourceBadge` ("Synthetic demo data"), active scenario chip (if not baseline), default budget, as-of date, demo user.
+- Left sidebar (lucide icons, see §10.1 Layout): logo + wordmark; Command Center `/`, Procurement `/procurement`, 3D Warehouse `/warehouse`, Purchase Orders `/purchase-orders`, Activity Log `/activity`, Data & Scenarios `/data`; `DataSourceBadge` ("Synthetic demo data") and demo user at the bottom.
+- Top bar (sticky, blurred): page title / breadcrumb; active scenario chip (if not baseline), as-of date, default budget.
 - `<Toaster />` (sonner) in the root layout.
 
 ### 10.3 Screens

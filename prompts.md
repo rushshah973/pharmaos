@@ -235,10 +235,11 @@ STOP for my review. After I approve: `npm run check`, commit "stage 2: planning 
 
 ```text
 Stage 3, step 1: theme and dashboard shell. Follow implementationplan.md §10 (intro: web dashboard, desktop-first, tablet ≥ 768 px), §10.1 and §10.2.
+Design: follow implementationplan.md §10.1 (premium design system) exactly, and do its Visual QA step (screenshots at 1440×900 and 1024×768) before committing.
 
-1. app/globals.css: map the §10.1 palette onto the shadcn CSS variables (background, card, border, primary = teal) and add status colour variables (stockout, expiry, excess, healthy, proposed). Keep the existing shadcn structure.
+1. app/globals.css: map the §10.1 colour tokens onto the shadcn CSS variables (background, card, popover, border, input, ring, primary = teal, muted…) and add the surface, text and status tokens (stockout, expiry, excess, healthy, neutral, proposed). Keep the existing shadcn structure.
 2. app/layout.tsx: <html className="dark">, keep the Geist fonts, title "PharmaOS", add <Toaster /> from components/ui/sonner.tsx and a TooltipProvider if the component requires one (check components/ui/tooltip.tsx).
-3. components/layout/: Sidebar (6 links with lucide icons, active state), TopBar (wordmark, DataSourceBadge "Synthetic demo data", active scenario chip if not baseline, default budget via formatINR, as-of date, DEMO_USER), PageHeader.
+3. components/layout/: Logo (§10.1 Brand, + app/icon.svg), Sidebar (§10.1 Layout: 6 links with lucide icons, active state, collapsible icon rail, DataSourceBadge "Synthetic demo data" and DEMO_USER at the bottom), TopBar (sticky, blurred; page title, active scenario chip if not baseline, as-of date, default budget via formatINR), PageHeader (title, description, action slot), StatusPill.
 4. Replace the temporary app/(dashboard)/layout.tsx with the real shell. TopBar data is read server-side inside <Suspense>.
 5. Create placeholder pages (title + "Coming in stage N") for /procurement, /warehouse, /purchase-orders, /activity and /data so every sidebar link works.
 6. `npm run check` and `npm run build` must pass. Commit: "stage 3: theme and shell".
@@ -263,6 +264,7 @@ Stage 3, step 2: plan services and API routes. Follow implementationplan.md §7.
 
 ```text
 Stage 3, step 3: Command Center and procurement list. Follow implementationplan.md §10.3 (Command Center, Procurement list).
+Design: follow implementationplan.md §10.1 (premium design system) exactly, and do its Visual QA step (screenshots at 1440×900 and 1024×768) before committing.
 
 1. app/(dashboard)/page.tsx: KPI tiles (components/dashboard/KpiTile) for available budget, proposed spend, SKUs at stockout risk, ₹ expiry exposure and pending approvals; CriticalSkuList (top 8) with "Open in plan" and "Locate" (/warehouse?sku=…) links. All values come from getCommandCenter().
 2. Create Purchase Plan dialog (client): budget prefilled from app_state.default_budget, optional priority text; POST /api/procurement/analyze; loading state; on success navigate to /procurement/[planId]; on error show a toast with the error message.
@@ -276,6 +278,7 @@ Stage 3, step 3: Command Center and procurement list. Follow implementationplan.
 
 ```text
 Stage 3, step 4: the Procurement Plan screen. Follow implementationplan.md §10.3 (Procurement Plan), §6.10 and Appendix B.
+Design: follow implementationplan.md §10.1 (premium design system) exactly, and do its Visual QA step (screenshots at 1440×900 and 1024×768) before committing.
 
 1. app/(dashboard)/procurement/[planId]/page.tsx (PageProps, await params, Suspense).
 2. components/procurement/ImpactCard: every §6.10 field, large numbers, one line of explanation each; budget bar (committed vs remaining).
@@ -291,6 +294,7 @@ Stage 3, step 4: the Procurement Plan screen. Follow implementationplan.md §10.
 
 ```text
 Stage 3, step 5: the recommendation detail drawer. Follow implementationplan.md §10.3 (Line drawer) and architecture.md §6.4 and §7.2.
+Design: follow implementationplan.md §10.1 (premium design system) exactly, and do its Visual QA step (screenshots at 1440×900 and 1024×768) before committing.
 
 1. The drawer opens from ?line=<id> (Sheet component) and reads everything from the line's evidence_json.
 2. Sections: product identity (+ data_source label); DemandChart (Recharts, last 28 days, with d7/d28/d̄ reference lines); stock breakdown (available, reserved, incoming, ineligible with reasons); cover, ROP, target; batches table with FEFO projection and at-risk value; SupplierComparison (all offers, including excluded ones with reason codes, factor scores, winner highlighted, quote timestamps); FormulaPanel (each §6 formula with the actual values substituted); "Locate in warehouse" link.
@@ -321,6 +325,7 @@ Stage 4, step 1: approval. Follow implementationplan.md §7.6 exactly and archit
 
 ```text
 Stage 4, step 2: PO screens and activity log. Follow implementationplan.md §10.3 (Purchase Orders, Activity), §7.7 (exportPo) and §13.
+Design: follow implementationplan.md §10.1 (premium design system) exactly, and do its Visual QA step (screenshots at 1440×900 and 1024×768) before committing.
 
 1. lib/services/purchase-orders.ts: listPurchaseOrders, getPurchaseOrder, exportPo (CSV, status → exported, audit po.exported).
 2. Routes: GET /api/purchase-orders, GET /api/purchase-orders/[id], POST /api/purchase-orders/[id]/export (text/csv download), GET /api/audit.
@@ -352,6 +357,7 @@ Stage 5, step 1: warehouse logic and API. Follow implementationplan.md §6.13, �
 
 ```text
 Stage 5, step 2: the warehouse page with the 2D grid first. Follow implementationplan.md §11 and architecture.md §10.3.
+Design: follow implementationplan.md §10.1 (premium design system) exactly, and do its Visual QA step (screenshots at 1440×900 and 1024×768) before committing.
 
 1. components/warehouse3d/WarehouseView (client): loads the layout once and the heatmap on mode change; state for mode, selectedBinId and search; reads ?mode, ?sku and ?bin from the URL.
 2. Grid2D: CSS grid grouped aisle → side → rack → shelf, coloured by severity, with the bin code on hover; click selects.
@@ -367,6 +373,7 @@ Stage 5, step 2: the warehouse page with the 2D grid first. Follow implementatio
 
 ```text
 Stage 5, step 3: the 3D scene. Follow implementationplan.md §11 exactly.
+Design: follow implementationplan.md §10.1 (premium design system) exactly, and do its Visual QA step (screenshots at 1440×900 and 1024×768) before committing.
 
 1. components/warehouse3d/Scene3D, loaded in WarehouseView with next/dynamic(() => import("./Scene3D"), { ssr: false }) (inside the client component).
 2. <Canvas camera={{ position: [24, 18, 24], fov: 45 }} frameloop="demand">: floor, aisle labels, rack frames, ONE InstancedMesh for all bins (shared geometry and material, per-instance colour from severity), click → event.instanceId → bin id, hover tooltip with bin code and status, Drei OrbitControls with a Reset camera button, an Html label only for the selected bin.
@@ -400,6 +407,7 @@ Stage 6, step 1: the AI orchestrator. Follow implementationplan.md §9.2, §9.3 
 
 ```text
 Stage 6, step 2: AI in the dashboard. Follow implementationplan.md §9.1 and §10.3 (Ask PharmaOS).
+Design: follow implementationplan.md §10.1 (premium design system) exactly, and do its Visual QA step (screenshots at 1440×900 and 1024×768) before committing.
 
 1. AskPanel (Sheet) on the plan screen: message box, conversation list, replies with `references` rendered as links (SKU → drawer, bin → warehouse), a "source: AI / calculated" tag, and a small note when the AI is unavailable.
 2. The Why? popover shows the source tag too.
@@ -418,6 +426,7 @@ Stage 6, step 2: AI in the dashboard. Follow implementationplan.md §9.1 and §1
 
 ```text
 Stage 7, step 1: scenarios and the Data & Scenarios screen. Follow implementationplan.md §12, §10.3 (Data & Scenarios) and architecture.md §7.7.
+Design: follow implementationplan.md §10.1 (premium design system) exactly, and do its Visual QA step (screenshots at 1440×900 and 1024×768) before committing.
 
 1. lib/scenarios/apply.ts: implement all 5 scenarios as IN-MEMORY changes to the planning context, exactly as the §12 table says, using SKUs from data/synthetic/demo-cases.json. Never write scenario effects to the seed tables.
 2. lib/services/scenarios.ts: list, run (sets app_state.active_scenario_id, audit scenario.run), reset (baseline, audit scenario.reset). budget_cut makes ₹1,00,000 the budget for new and recalculated plans.
@@ -433,6 +442,7 @@ Stage 7, step 1: scenarios and the Data & Scenarios screen. Follow implementatio
 
 ```text
 Stage 7, step 2: polish pass. No new features.
+Design: follow implementationplan.md §10.1 (premium design system) exactly, and do its Visual QA step (screenshots at 1440×900 and 1024×768) before committing.
 
 Go screen by screen (Command Center, Procurement list, Plan, drawer, Warehouse, POs, PO detail, Activity, Data) and fix:
 1. Loading (Skeleton), empty, error and stale-data states everywhere (§10.1).
