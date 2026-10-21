@@ -260,6 +260,7 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 - **Creates or changes:** `lib/agents/pipeline/` (shared tool loop, the three agents, the run), `/api/agents/run` and the run-status routes, the `agent_runs` / `agent_steps` trace, audit entries, and tests with a scripted fake Gemini.
 - **You will see:** A real run changes some lines (with the agent's reason) and creates POs grouped by supplier; one may need Owner approval. Without the Gemini key the run ends "fallback" and changes nothing.
 - **Why it matters:** This is the agentic core, and it is real: the agents decide, their decisions change the plan and create POs, and code guardrails keep them inside the rules. They can never send a PO, approve a large PO for the Owner, or change the limit.
+- **Decided (22 Oct 2026):** Add a cost-of-delay comparison here. For each offer, compare the rupees lost from the expected days without stock (gap days × average daily demand × margin) against the price saving, so "faster vs cheaper" is decided by a number the Supplier Agent can see. Code computes it; the agent may only pick an offer that passes the rules.
 
 ### P23B — Agent run view ⬜
 
