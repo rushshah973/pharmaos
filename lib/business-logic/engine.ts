@@ -5,7 +5,7 @@ import { ENGINE_CONFIG, type EngineConfig } from "./config";
 import { computeDemand } from "./demand";
 import { projectExpiry } from "./expiry";
 import { computeImpact } from "./impact";
-import { confirmedIncoming, coverDays, reorderPoint, safetyStock, skuStatus, stockPosition, targetStock } from "./inventory";
+import { confirmedIncoming, coverDays, daysUntilReorder, reorderPoint, safetyStock, skuStatus, stockPosition, targetStock } from "./inventory";
 import { applyScheme, isCandidate, orderQuantity } from "./ordering";
 import { comparePriority, criticalityWeight, lossPrevented, priorityScore } from "./priority";
 import { applyUrgencyRule, effectiveUnitCost, offerExclusions, priceAnomalies, scoreOffers } from "./supplier-scoring";
@@ -251,6 +251,7 @@ export function analyseSku(sku: SkuContext, config: EngineConfig = ENGINE_CONFIG
     leadFastest,
     reorderPoint: rop,
     targetStock: target,
+    reorderInDays: daysUntilReorder(position, dbar, rop),
     candidate,
     offers: working.map((w) => w.evaluation),
     chosen,

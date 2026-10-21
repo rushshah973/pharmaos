@@ -233,6 +233,10 @@ const QUANTILE_POINTS = [0.1, 0.25, 0.5, 0.75, 0.9] as const;
 // Date helpers (UTC calendar dates as YYYY-MM-DD; never local time)
 // ---------------------------------------------------------------------------
 
+function daysBetweenIso(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+}
+
 function addDays(dateIso: string, days: number): string {
   const [y, m, d] = dateIso.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
@@ -337,19 +341,23 @@ export function generate(profile: Profile, asOf: string, seed = 42, options: Gen
   const weekday = present(profile.weekdayFactors);
 
   // ---- Suppliers (8): 6 approved, 1 pending, 1 blocked; one approved with null reliability ----
+  // Lead times as Indian pharma distribution runs: local distributors deliver next day or in 2–3 days;
+  // one approved supplier is a manufacturer-direct channel (cheaper, 5–7 days) — the "cheaper but slower" trade-off.
   const supplierNames = new Set<string>();
   const statuses: SupplierRow["approved_status"][] = ["approved", "approved", "approved", "approved", "approved", "approved", "pending", "blocked"];
+  const approvedLeads = rng.shuffle([1, 1, 2, 2, 3, 6]);
   const suppliers: SupplierRow[] = statuses.map((status, i) => ({
     id: rng.uuid(),
     name: pickName(rng, () => `${rng.pick(SUPPLIER_PARTS.first)} ${rng.pick(SUPPLIER_PARTS.last)}`, supplierNames, forbidden),
     supplier_code: `SUP-${String(i + 1).padStart(2, "0")}`,
     approved_status: status,
-    default_lead_time_days: rng.int(1, 10),
+    default_lead_time_days: status === "approved" ? approvedLeads[i] : rng.int(2, 4),
     reliability_score: i === 5 ? null : rng.float(60, 98).toFixed(2),
     payment_terms_days: rng.pick([15, 21, 30, 45, 60]),
     data_source: DATA_SOURCE,
   }));
   const approvedSuppliers = suppliers.filter((s) => s.approved_status === "approved");
+  const isDirect = (s: SupplierRow) => s.approved_status === "approved" && s.default_lead_time_days >= 5;
 
   // ---- Manufacturers (fictional) ----
   const makerNames = new Set<string>();
@@ -435,11 +443,11 @@ export function generate(profile: Profile, asOf: string, seed = 42, options: Gen
     });
   }
 
-  // ---- Supplier offers (1–3 per SKU; the first is always from an approved supplier) ----
+  // ---- Supplier offers (1–4 per SKU, mostly 2–3; the first is the stockist's usual distributor, always approved) ----
   const supplierOffers: OfferRow[] = [];
   for (const p of products) {
-    const count = rng.weighted([[1, 0.3], [2, 0.4], [3, 0.3]] as const);
-    const chosen = [rng.pick(approvedSuppliers)];
+    const count = rng.weighted([[1, 0.1], [2, 0.35], [3, 0.4], [4, 0.15]] as const);
+    const chosen = [rng.pick(approvedSuppliers.filter((s) => !isDirect(s)))];
     for (const s of rng.shuffle(suppliers)) {
       if (chosen.length >= count) break;
       if (!chosen.includes(s)) chosen.push(s);
@@ -456,7 +464,8 @@ export function generate(profile: Profile, asOf: string, seed = 42, options: Gen
         id: rng.uuid(),
         supplier_id: s.id,
         product_id: p.id,
-        unit_price: roundUnit(dec(p.ptr).times(rng.float(0.78, 0.9))).toFixed(4),
+        // Manufacturer-direct buys a few % cheaper than distributors.
+        unit_price: roundUnit(dec(p.ptr).times(isDirect(s) ? rng.float(0.74, 0.8) : rng.float(0.8, 0.9))).toFixed(4),
         moq: rng.pick([1, 5, 10, 20]),
         pack_multiple: rng.pick([1, 5, 10]),
         available_qty: rng.int(50, 2000),
@@ -477,14 +486,18 @@ export function generate(profile: Profile, asOf: string, seed = 42, options: Gen
   const offersByProduct = new Map<string, OfferRow[]>();
   for (const o of supplierOffers) offersByProduct.set(o.product_id, [...(offersByProduct.get(o.product_id) ?? []), o]);
 
-  // ---- Sales history (90 days ending on asOf, zero days included) ----
+  // ---- Customer demand (90 days ending on asOf); sales are recorded by the simulation below ----
   const zeroShare = typeof zeroShareProfile === "number" ? clamp(zeroShareProfile, 0, 0.9) : DEFAULT_ZERO_DAY_SHARE;
   const demandRatio = demandQ
     ? Object.fromEntries(Object.entries(demandQ).map(([k, v]) => [k, v / (demandQ.p50 || 1)]))
     : DEFAULT_DEMAND_RATIO;
   const salesHistory: SalesRow[] = [];
   const demandBySku: SyntheticDataset["meta"]["demandBySku"] = {};
+  /** Customer demand per SKU per day; recorded sales = what stock allowed (see the operations simulation). */
+  const demandUnits = new Map<string, number[]>();
   for (const p of products) {
+    const units: number[] = [];
+    demandUnits.set(p.id, units);
     const kind = rng.weighted([["stable", 0.4], ["intermittent", 0.2], ["growing", 0.15], ["declining", 0.15], ["spike", 0.1]] as const);
     const base = clamp(MEDIAN_PACKS_PER_DAY * sampleFromQuantiles(rng, demandRatio), MIN_PACKS_PER_DAY, MAX_PACKS_PER_DAY);
     demandBySku[p.sku] = { kind, basePacksPerDay: Math.round(base * 100) / 100 };
@@ -496,10 +509,7 @@ export function generate(profile: Profile, asOf: string, seed = 42, options: Gen
       if (kind === "growing") lambda *= 1.01 ** (t - (SALES_DAYS - 1));
       if (kind === "declining") lambda *= 0.99 ** (t - (SALES_DAYS - 1));
       if (kind === "spike" && t >= SALES_DAYS - 5) lambda *= 3;
-      let units: number;
-      if (kind === "intermittent") units = rng.chance(zeroShare) ? 0 : rng.poisson(lambda / (1 - zeroShare));
-      else units = rng.poisson(lambda);
-      salesHistory.push({ product_id: p.id, sale_date: date, units_sold: units, data_source: DATA_SOURCE });
+      units.push(kind === "intermittent" ? (rng.chance(zeroShare) ? 0 : rng.poisson(lambda / (1 - zeroShare))) : rng.poisson(lambda));
     }
   }
 
@@ -535,69 +545,159 @@ export function generate(profile: Profile, asOf: string, seed = 42, options: Gen
   });
   for (const bin of rng.shuffle(inventoryLocations.filter((b) => b.storage_class === "ambient")).slice(0, 4)) bin.status = "inactive";
 
-  // ---- Batches (1–3 per SKU) ----
+  // ---- Daily operations simulation (90 days ending on asOf) ----
+  // How a stockist actually runs: each SKU is reviewed twice a week and topped up from its usual distributor
+  // on a rough rule of thumb; deliveries arrive after the offer's lead time (sometimes late, by supplier
+  // reliability) as new batches; every day's demand is sold from stock, oldest expiry first (FEFO). What is
+  // left at asOf — batches, stock, POs still on the way, POs received recently — is the seeded state.
+  // Imperfect on purpose (missed reviews, late deliveries, trends, spikes), so a realistic few SKUs end short.
   const shortShare = expiryQ
     ? Math.min(shareBelow(expiryQ, RISK_WINDOW_DAYS) ?? DEFAULT_SHORT_DATED, SHORT_DATED_CAP)
     : DEFAULT_SHORT_DATED;
+  const startDate = addDays(asOf, -(SALES_DAYS - 1));
+  const supplierById = new Map(suppliers.map((sp) => [sp.id, sp]));
   const batches: BatchRow[] = [];
   const batchesByProduct = new Map<string, BatchRow[]>();
+  const stockByBatch = new Map<string, number>();
+  type SimOrder = { productId: string; offer: OfferRow; qty: number; orderDay: number; arrivalDay: number; expectedDay: number; cancelled: boolean };
+  const orders: SimOrder[] = [];
+  const batchNumbers = new Set<string>();
+  const newBatchNumber = () => {
+    let n: string;
+    do n = `B${faker.string.alphanumeric({ length: 6, casing: "upper" })}`;
+    while (batchNumbers.has(n));
+    batchNumbers.add(n);
+    return n;
+  };
+  const makeBatch = (p: ProductRow, offer: OfferRow, receivedDay: number, shortDated: boolean): BatchRow => {
+    // Stock arrives part-way through its shelf life (manufactured 1–6 months earlier); a few lots are short-dated.
+    const age = shortDated ? rng.int(Math.max(30, p.shelf_life_days - 240), Math.max(60, p.shelf_life_days - 150)) : rng.int(30, 180);
+    const received = addDays(startDate, receivedDay);
+    const row: BatchRow = {
+      id: rng.uuid(),
+      product_id: p.id,
+      batch_number: newBatchNumber(),
+      expiry_date: addDays(received, Math.max(60, p.shelf_life_days - age)),
+      received_date: received,
+      supplier_id: offer.supplier_id,
+      unit_cost: roundUnit(dec(offer.unit_price).times(rng.float(0.97, 1.03))).toFixed(4),
+      quality_status: "released",
+      return_policy_status: rng.weighted([["returnable", 0.4], ["non_returnable", 0.3], ["unknown", 0.3]] as const),
+      data_source: DATA_SOURCE,
+    };
+    batches.push(row);
+    batchesByProduct.set(p.id, [...(batchesByProduct.get(p.id) ?? []), row]);
+    return row;
+  };
+  const coverDaysBySku: Record<string, number> = {};
+
   for (const p of products) {
-    const n = rng.int(1, 3);
-    const offers = offersByProduct.get(p.id) ?? [];
-    const costOffer = offers[0];
-    const numbers = new Set<string>();
-    const list: BatchRow[] = [];
-    for (let k = 0; k < n; k++) {
-      let batchNumber: string;
-      do batchNumber = `B${faker.string.alphanumeric({ length: 6, casing: "upper" })}`;
-      while (numbers.has(batchNumber));
-      numbers.add(batchNumber);
-      const expiryDays = rng.chance(shortShare) ? rng.int(60, 150) : rng.int(151, 900);
-      const received = addDays(asOf, -rng.int(10, 300));
-      const row: BatchRow = {
-        id: rng.uuid(),
-        product_id: p.id,
-        batch_number: batchNumber,
-        expiry_date: addDays(asOf, expiryDays),
-        received_date: received,
-        supplier_id: costOffer.supplier_id,
-        unit_cost: roundUnit(dec(costOffer.unit_price).times(rng.float(0.97, 1.03))).toFixed(4),
-        quality_status: "released",
-        return_policy_status: rng.weighted([["returnable", 0.4], ["non_returnable", 0.3], ["unknown", 0.3]] as const),
-        data_source: DATA_SOURCE,
-      };
-      list.push(row);
-      batches.push(row);
+    const usual = (offersByProduct.get(p.id) ?? [])[0];
+    const supplier = supplierById.get(usual.supplier_id)!;
+    const lateChance = (100 - Number(supplier.reliability_score ?? 75)) / 100;
+    const demandPath = demandUnits.get(p.id)!;
+    const base = demandBySku[p.sku].basePacksPerDay;
+    // Two review days a week (e.g. Mon + Thu), different per SKU.
+    const firstReview = rng.int(0, 6);
+    const reviewDays = new Set([firstReview, (firstReview + 3) % 7]);
+    const myOrders: SimOrder[] = [];
+    const soldHistory: number[] = [];
+    const orderUp = (packs: number) => Math.max(usual.moq, Math.ceil(packs / usual.pack_multiple) * usual.pack_multiple);
+
+    // Opening stock: 10–30 days of cover in 1–2 lots received over the previous months.
+    const opening = Math.round(base * rng.int(10, 30));
+    const lots = opening > 20 && rng.chance(0.5) ? 2 : 1;
+    for (let k = 0; k < lots; k++) {
+      const batch = makeBatch(p, usual, -rng.int(10, 120), rng.chance(shortShare));
+      stockByBatch.set(batch.id, Math.round(opening / lots));
     }
-    batchesByProduct.set(p.id, list);
-  }
-  // Quality and expiry exceptions: 3 quarantine, 1 recalled, 2 already expired.
-  const exceptionPool = rng.shuffle(batches);
-  exceptionPool.slice(0, 3).forEach((b) => (b.quality_status = "quarantine"));
-  exceptionPool[3].quality_status = "recalled";
-  for (const b of exceptionPool.slice(4, 6)) {
-    b.expiry_date = addDays(asOf, -rng.int(5, 40));
-    b.received_date = addDays(b.expiry_date, -rng.int(400, 700));
+
+    for (let t = 0; t < SALES_DAYS; t++) {
+      // 1. Deliveries that arrive today become new batches.
+      for (const o of myOrders) {
+        if (o.cancelled || o.arrivalDay !== t) continue;
+        const batch = makeBatch(p, o.offer, t, rng.chance(shortShare * 0.5));
+        stockByBatch.set(batch.id, o.qty);
+      }
+      // 2. Sell today's demand from eligible stock, oldest expiry first; anything short is a lost sale.
+      const today = addDays(startDate, t);
+      const sellable = (batchesByProduct.get(p.id) ?? [])
+        .filter((bt) => bt.expiry_date > today && (stockByBatch.get(bt.id) ?? 0) > 0)
+        .sort((x, y) => x.expiry_date.localeCompare(y.expiry_date));
+      let left = demandPath[t];
+      let sold = 0;
+      for (const bt of sellable) {
+        if (left <= 0) break;
+        const take = Math.min(left, stockByBatch.get(bt.id)!);
+        stockByBatch.set(bt.id, stockByBatch.get(bt.id)! - take);
+        left -= take;
+        sold += take;
+      }
+      salesHistory.push({ product_id: p.id, sale_date: today, units_sold: sold, data_source: DATA_SOURCE });
+      soldHistory.push(sold);
+      // 3. Review days: the owner's rule of thumb — if stock + on order covers less than lead + 6 days of
+      //    recent sales, order up to two weeks beyond the lead time. Busy days mean ~10% of reviews are missed.
+      const dow = new Date(`${today}T00:00:00Z`).getUTCDay();
+      if (!reviewDays.has(dow) || rng.chance(0.1)) continue;
+      const recent = soldHistory.slice(-14);
+      const avg = recent.length >= 7 ? recent.reduce((n, v) => n + v, 0) / recent.length : base;
+      if (avg <= 0) continue;
+      const onHand = sellable.reduce((n, bt) => n + (stockByBatch.get(bt.id) ?? 0), 0);
+      const onOrder = myOrders.filter((o) => !o.cancelled && o.arrivalDay > t).reduce((n, o) => n + o.qty, 0);
+      const lead = usual.lead_time_days;
+      if (onHand + onOrder >= avg * (lead + 6)) continue;
+      const qty = Math.min(usual.available_qty, orderUp(avg * (lead + 14) - onHand - onOrder));
+      if (qty <= 0) continue;
+      const delay = rng.chance(lateChance) ? rng.int(1, 3) : 0;
+      // Now and then an order is cancelled straight away (out of stock at the distributor); the next review re-orders.
+      const order = { productId: p.id, offer: usual, qty, orderDay: t, expectedDay: t + lead, arrivalDay: t + lead + delay, cancelled: rng.chance(0.01) };
+      myOrders.push(order);
+      orders.push(order);
+    }
+    const onHandEnd = (batchesByProduct.get(p.id) ?? []).filter((bt) => bt.expiry_date > asOf).reduce((n, bt) => n + (stockByBatch.get(bt.id) ?? 0), 0);
+    coverDaysBySku[p.sku] = base > 0 ? Math.round((onHandEnd / base) * 10) / 10 : 0;
   }
 
-  // ---- Inventory balances (cover 0–90 days, matching storage class, within bin capacity) ----
+  // Keep the batches that still hold stock, plus each SKU's latest receipt (so every SKU has a batch on record).
+  const keep = new Set<string>();
+  for (const p of products) {
+    const list = batchesByProduct.get(p.id) ?? [];
+    for (const bt of list) if ((stockByBatch.get(bt.id) ?? 0) > 0) keep.add(bt.id);
+    const latest = [...list].sort((x, y) => y.received_date.localeCompare(x.received_date))[0];
+    if (latest) keep.add(latest.id);
+  }
+  for (let i = batches.length - 1; i >= 0; i--) if (!keep.has(batches[i].id)) batches.splice(i, 1);
+  for (const [pid, list] of batchesByProduct) batchesByProduct.set(pid, list.filter((bt) => keep.has(bt.id)));
+
+  // Quality and expiry exceptions: 3 lots received in the last few days still in quarantine (awaiting QC),
+  // 1 recalled lot, and 2 lots that expired on the shelf.
+  const withStock = batches.filter((bt) => (stockByBatch.get(bt.id) ?? 0) > 0 && bt.expiry_date > asOf);
+  const fresh = rng.shuffle(withStock.filter((bt) => daysBetweenIso(bt.received_date, asOf) <= 3));
+  const older = rng.shuffle(withStock.filter((bt) => daysBetweenIso(bt.received_date, asOf) > 3));
+  fresh.slice(0, 3).forEach((bt) => (bt.quality_status = "quarantine"));
+  if (older[0]) older[0].quality_status = "recalled";
+  for (const bt of older.slice(1, 3)) {
+    bt.expiry_date = addDays(asOf, -rng.int(5, 40));
+    if (bt.received_date >= bt.expiry_date) bt.received_date = addDays(bt.expiry_date, -rng.int(300, 500));
+  }
+
+  // ---- Inventory balances: what the simulation left, in bins of the matching storage class ----
   const binFill = new Map<string, number>();
   const binsByClass = new Map<StorageClass, LocationRow[]>();
-  for (const b of inventoryLocations) {
-    if (b.status !== "active") continue;
-    binsByClass.set(b.storage_class, [...(binsByClass.get(b.storage_class) ?? []), b]);
+  for (const bn of inventoryLocations) {
+    if (bn.status !== "active") continue;
+    binsByClass.set(bn.storage_class, [...(binsByClass.get(bn.storage_class) ?? []), bn]);
   }
   const inventoryBalances: BalanceRow[] = [];
-  const coverDaysBySku: Record<string, number> = {};
 
   const placeInBin = (storage: StorageClass, qty: number): { bin: LocationRow; qty: number } | null => {
     const bins = binsByClass.get(storage) ?? [];
-    const fits = bins.filter((b) => b.capacity_units - (binFill.get(b.id) ?? 0) >= qty);
+    const fits = bins.filter((bn) => bn.capacity_units - (binFill.get(bn.id) ?? 0) >= qty);
     const bin = fits.length
       ? rng.pick(fits)
-      : bins.reduce<LocationRow | null>((best, b) => {
-          const free = b.capacity_units - (binFill.get(b.id) ?? 0);
-          return !best || free > best.capacity_units - (binFill.get(best.id) ?? 0) ? b : best;
+      : bins.reduce<LocationRow | null>((best, bn) => {
+          const free = bn.capacity_units - (binFill.get(bn.id) ?? 0);
+          return !best || free > best.capacity_units - (binFill.get(best.id) ?? 0) ? bn : best;
         }, null);
     if (!bin) return null;
     const placed = Math.min(qty, bin.capacity_units - (binFill.get(bin.id) ?? 0));
@@ -606,119 +706,102 @@ export function generate(profile: Profile, asOf: string, seed = 42, options: Gen
     return { bin, qty: placed };
   };
 
-  for (const p of products) {
-    const cover = rng.int(0, 90);
-    coverDaysBySku[p.sku] = cover;
-    const totalPacks = Math.round(demandBySku[p.sku].basePacksPerDay * cover);
-    const list = batchesByProduct.get(p.id) ?? [];
-    if (totalPacks <= 0 || list.length === 0) continue;
-    // Older (earlier-expiry) batches hold less stock.
-    const ordered = [...list].sort((a, b) => a.expiry_date.localeCompare(b.expiry_date));
-    const weights = ordered.map((_, idx) => idx + 1);
-    const weightSum = weights.reduce((a, b) => a + b, 0);
-    let remaining = totalPacks;
-    ordered.forEach((batch, idx) => {
-      const share = idx === ordered.length - 1 ? remaining : Math.round((totalPacks * weights[idx]) / weightSum);
-      remaining -= share;
-      if (share <= 0) return;
-      const parts = share >= 40 && rng.chance(0.3) ? [Math.ceil(share / 2), Math.floor(share / 2)] : [share];
-      const usedBins = new Set<string>();
-      for (const part of parts) {
-        const placed = placeInBin(p.storage_class, part);
-        if (!placed) continue;
-        const existing = usedBins.has(placed.bin.id)
-          ? inventoryBalances.find((r) => r.batch_id === batch.id && r.location_id === placed.bin.id)
-          : undefined;
-        if (existing) {
-          existing.on_hand_qty += placed.qty;
-          existing.reserved_qty = Math.min(existing.reserved_qty, existing.on_hand_qty);
-          continue;
-        }
-        usedBins.add(placed.bin.id);
-        inventoryBalances.push({
-          id: rng.uuid(),
-          product_id: p.id,
-          batch_id: batch.id,
-          location_id: placed.bin.id,
-          on_hand_qty: placed.qty,
-          reserved_qty: Math.floor(placed.qty * rng.float(0, 0.1)),
-          data_source: DATA_SOURCE,
-        });
+  for (const bt of batches) {
+    const packs = stockByBatch.get(bt.id) ?? 0;
+    if (packs <= 0) continue;
+    const product = products.find((x) => x.id === bt.product_id)!;
+    const parts = packs >= 40 && rng.chance(0.3) ? [Math.ceil(packs / 2), Math.floor(packs / 2)] : [packs];
+    for (const part of parts) {
+      const placed = placeInBin(product.storage_class, part);
+      if (!placed) continue;
+      const existing = inventoryBalances.find((r) => r.batch_id === bt.id && r.location_id === placed.bin.id);
+      if (existing) {
+        existing.on_hand_qty += placed.qty;
+        continue;
       }
-    });
+      inventoryBalances.push({
+        id: rng.uuid(),
+        product_id: bt.product_id,
+        batch_id: bt.id,
+        location_id: placed.bin.id,
+        on_hand_qty: placed.qty,
+        // Packs held for customer orders not yet dispatched (0–10%).
+        reserved_qty: bt.quality_status === "released" ? Math.floor(placed.qty * rng.float(0, 0.1)) : 0,
+        data_source: DATA_SOURCE,
+      });
+    }
   }
-  // 3 unmapped balances: move whole balances of distinct batches out of their bins.
+  // 3 unmapped balances: stock received but not yet put away in a bin.
   const unmappedCandidates = rng.shuffle(
-    inventoryBalances.filter((b, i, all) => all.findIndex((x) => x.batch_id === b.batch_id) === i),
+    inventoryBalances.filter((bl, i, all) => all.findIndex((x) => x.batch_id === bl.batch_id) === i),
   );
   for (const bal of unmappedCandidates.slice(0, 3)) {
     if (bal.location_id) binFill.set(bal.location_id, (binFill.get(bal.location_id) ?? 0) - bal.on_hand_qty);
     bal.location_id = null;
   }
 
-  // ---- Purchase orders: 15 open, 1 received, 1 cancelled ----
-  const offersBySupplier = new Map<string, OfferRow[]>();
-  for (const o of supplierOffers) {
-    const s = suppliers.find((x) => x.id === o.supplier_id);
-    if (s?.approved_status !== "approved") continue;
-    offersBySupplier.set(o.supplier_id, [...(offersBySupplier.get(o.supplier_id) ?? []), o]);
-  }
-  const poSuppliers = approvedSuppliers.filter((s) => (offersBySupplier.get(s.id)?.length ?? 0) > 0);
-  const poStatuses: PurchaseOrderRow["status"][] = [...Array<"open">(15).fill("open"), "received", "cancelled"];
+  // ---- Purchase orders from the simulation: one per supplier per order day ----
+  // Still on the way at asOf → 'open' (some overdue: the supplier is late); arrived in the last 21 days →
+  // 'received'; cancelled in the last 21 days → 'cancelled'. Older history is not kept.
   const purchaseOrders: PurchaseOrderRow[] = [];
   const purchaseOrderLines: PurchaseOrderLineRow[] = [];
-  poStatuses.forEach((status, i) => {
-    const supplier = rng.pick(poSuppliers);
-    const supplierOffersList = rng.shuffle(offersBySupplier.get(supplier.id) ?? []).slice(0, rng.int(1, 3));
-    // Last 3 open POs arrive after the 14-day horizon (tests exclusion from incoming stock).
-    const expected =
-      status === "open" ? addDays(asOf, i >= 12 ? rng.int(15, 20) : rng.int(1, 14)) : status === "received" ? addDays(asOf, -3) : addDays(asOf, 5);
+  const asOfDay = SALES_DAYS - 1;
+  const relevant = orders.filter((o) => (o.cancelled ? o.orderDay >= asOfDay - 21 : o.arrivalDay > asOfDay || o.arrivalDay >= asOfDay - 21));
+  const groups = new Map<string, SimOrder[]>();
+  for (const o of relevant) {
+    const state = o.cancelled ? "cancelled" : o.arrivalDay > asOfDay ? "open" : "received";
+    const key = `${o.orderDay}|${o.offer.supplier_id}|${state}`;
+    groups.set(key, [...(groups.get(key) ?? []), o]);
+  }
+  const groupList = [...groups.entries()].sort((x, y) => Number(x[0].split("|")[0]) - Number(y[0].split("|")[0]) || x[0].localeCompare(y[0]));
+  groupList.forEach(([key, list], i) => {
+    const [, supplierId, state] = key.split("|");
+    const status = state as PurchaseOrderRow["status"];
     const poId = rng.uuid();
     let subtotal = dec(0);
     let tax = dec(0);
     let freight = dec(0);
-    for (const offer of supplierOffersList) {
-      const qty = Math.max(offer.moq, offer.pack_multiple * rng.int(2, 20));
-      const roundedQty = Math.ceil(qty / offer.pack_multiple) * offer.pack_multiple;
-      const amounts = lineAmounts(roundedQty, offer.unit_price, offer.tax_rate, offer.freight_per_pack);
+    for (const o of list) {
+      const amounts = lineAmounts(o.qty, o.offer.unit_price, o.offer.tax_rate, o.offer.freight_per_pack);
       subtotal = subtotal.plus(amounts.subtotal);
       tax = tax.plus(amounts.tax);
       freight = freight.plus(amounts.freight);
       purchaseOrderLines.push({
         id: rng.uuid(),
         po_id: poId,
-        product_id: offer.product_id,
-        supplier_offer_id: offer.id,
+        product_id: o.productId,
+        supplier_offer_id: o.offer.id,
         recommendation_id: null,
-        quantity_packs: roundedQty,
+        quantity_packs: o.qty,
         free_qty: 0,
-        unit_price: offer.unit_price,
-        tax_rate: offer.tax_rate,
+        unit_price: o.offer.unit_price,
+        tax_rate: o.offer.tax_rate,
         line_subtotal: amounts.subtotal.toFixed(2),
         line_tax: amounts.tax.toFixed(2),
         line_freight: amounts.freight.toFixed(2),
         line_total: amounts.total.toFixed(2),
       });
     }
+    const first = list[0];
     purchaseOrders.push({
       id: poId,
       po_number: `EXT-${String(i + 1).padStart(4, "0")}`,
-      supplier_id: supplier.id,
+      supplier_id: supplierId,
       status,
       subtotal: subtotal.toFixed(2),
       tax_total: tax.toFixed(2),
       freight_total: freight.toFixed(2),
       grand_total: subtotal.plus(tax).plus(freight).toFixed(2),
-      expected_delivery_date: expected,
+      // Open POs show the date the supplier promised; late ones are already past it.
+      expected_delivery_date: addDays(startDate, status === "received" ? first.arrivalDay : first.expectedDay),
       source_plan_id: null,
       idempotency_key: null,
       approved_by: null,
       approved_at: null,
-      created_at: at10Utc(addDays(asOf, -rng.int(1, 10))),
+      created_at: at10Utc(addDays(startDate, first.orderDay)),
       data_source: DATA_SOURCE,
     });
   });
-
   return {
     products,
     suppliers,

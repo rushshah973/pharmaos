@@ -31,6 +31,8 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 >
 > Added after P16: ML demand model (P16B) and three-agent pipeline (P22B, P23B). The build now runs about 42 hours instead of 30, by choice.
 
+After P16B: the seed now **simulates daily operations** (twice-weekly reviews, realistic 1–3 day distributor lead times plus one slower manufacturer-direct channel, late deliveries, FEFO sales, real PO history), the stockout explanation says plainly how many days you will be without stock, and the Command Center shows **Reorder in the next 7 days** with an order-by date.
+
 ---
 
 ## How the prompts fit together

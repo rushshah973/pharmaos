@@ -5,6 +5,7 @@ import { ArrowRight, ClipboardList, PackageX, ShieldCheck, TimerOff } from "luci
 import { CriticalSkuList, CriticalSkuListSkeleton } from "@/components/dashboard/CriticalSkuList";
 import { CountUp } from "@/components/dashboard/CountUp";
 import { KpiTile, KpiTileSkeleton } from "@/components/dashboard/KpiTile";
+import { ReorderSoonList } from "@/components/dashboard/ReorderSoonList";
 import { ErrorState } from "@/components/layout/ErrorState";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { CreatePlanDialog } from "@/components/procurement/CreatePlanDialog";
@@ -62,6 +63,7 @@ async function CommandCenterContent() {
         />
       </div>
       <CriticalSkuList skus={data.criticalSkus} latestPlanId={data.latestPlan?.id ?? null} totalAtRisk={data.stockoutRisk} />
+      <ReorderSoonList items={data.reorderSoon} total={data.reorderSoonCount} />
     </>
   );
 }

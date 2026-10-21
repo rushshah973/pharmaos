@@ -45,6 +45,16 @@ export function targetStock(avgDailyDemand: number, leadTimeDays: number, config
     .toNumber();
 }
 
+/**
+ * Days until the stock position falls to the reorder point at today's demand — the "order by" lead (§6.4).
+ * 0 when it is already at or below the ROP; null when there is no demand to project.
+ */
+export function daysUntilReorder(stockPositionQty: number, avgDailyDemand: number, reorderPointQty: number): number | null {
+  if (avgDailyDemand <= 0) return null;
+  const days = dec(stockPositionQty).minus(reorderPointQty).dividedBy(avgDailyDemand);
+  return days.isNegative() ? 0 : days.toDecimalPlaces(1, 1).toNumber();
+}
+
 /** First match wins: NO_DEMAND → STOCKOUT_RISK → BELOW_ROP → EXCESS → HEALTHY. */
 export function skuStatus(
   args: { avgDailyDemand: number; stockPosition: number; leadFastest: number },

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { orderQuantity, applyScheme } from "@/lib/business-logic/ordering";
 import { comparePriority, lossPrevented, priorityScore } from "@/lib/business-logic/priority";
 import { applyUrgencyRule, offerExclusions, priceAnomalies, scoreOffers } from "@/lib/business-logic/supplier-scoring";
+import { daysUntilReorder } from "@/lib/business-logic/inventory";
 import { planTotal, supplierTotals } from "@/lib/business-logic/totals";
 import { AS_OF, makeOffer, makeSupplier } from "@/tests/fixtures/engine";
 
@@ -127,5 +128,14 @@ describe("§6.8 priority", () => {
       { key: "E", priority: 0, cover: 5, criticalityWeight: 1 },
     ];
     expect([...keys].sort(comparePriority).map((k) => k.key)).toEqual(["B", "D", "A", "C", "E"]);
+  });
+});
+
+describe("§6.4 order-by date", () => {
+  it("projects the days until stock reaches the reorder point at today's demand", () => {
+    expect(daysUntilReorder(60, 5, 30)).toBe(6); // 30 packs above ROP ÷ 5 a day
+    expect(daysUntilReorder(32, 5, 30)).toBe(0.4); // rounded down: order a little early, never late
+    expect(daysUntilReorder(20, 5, 30)).toBe(0); // already below: order now
+    expect(daysUntilReorder(20, 0, 30)).toBeNull(); // no demand to project
   });
 });

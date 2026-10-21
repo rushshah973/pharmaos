@@ -292,6 +292,8 @@ export type SkuAnalysis = {
   leadFastest: number;
   reorderPoint: number; // at leadFastest
   targetStock: number; // at leadFastest
+  /** Days until stock reaches the reorder point (0 = order now; null = no demand). */
+  reorderInDays: number | null;
   candidate: boolean;
   offers: OfferEvaluation[];
   chosen: OfferEvaluation | null;

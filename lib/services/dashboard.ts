@@ -1,6 +1,7 @@
 // Command Center metrics (implementationplan.md §7.7). Stock figures are computed live by the engine
 // on the current context; spend and approvals come from the saved plans.
 import type postgres from "postgres";
+import { addDays } from "@/lib/business-logic/dates";
 import { analyseSku } from "@/lib/business-logic/engine";
 import { criticalityWeight } from "@/lib/business-logic/priority";
 import type { Criticality, Money, SkuStatus } from "@/lib/business-logic/types";
@@ -25,6 +26,21 @@ export type CriticalSku = {
   planLineId: string | null;
 };
 
+/** A SKU that is fine today but will reach its reorder point within the week (the forward-looking view). */
+export type ReorderSoon = {
+  productId: string;
+  sku: string;
+  brandName: string;
+  strength: string;
+  packSize: number;
+  reorderInDays: number;
+  orderBy: string; // YYYY-MM-DD
+  stockPosition: number;
+  avgDailyDemand: number;
+  method: "ml" | "baseline";
+  leadTimeDays: number;
+};
+
 export type CommandCenter = {
   asOf: string;
   scenario: { id: string; name: string };
@@ -41,9 +57,13 @@ export type CommandCenter = {
   /** Purchase orders waiting for the Owner (above the approval limit). */
   posAwaitingApproval: number;
   criticalSkus: CriticalSku[];
+  /** Reaching the reorder point in the next 7 days (not urgent yet), soonest first. */
+  reorderSoon: ReorderSoon[];
+  reorderSoonCount: number;
 };
 
 const CRITICAL_LIMIT = 8;
+const REORDER_HORIZON_DAYS = 7;
 const SEVERITY: Record<SkuStatus, number> = { STOCKOUT_RISK: 0, BELOW_ROP: 1, EXCESS: 3, HEALTHY: 3, NO_DEMAND: 4 };
 
 export async function getCommandCenter(sql: postgres.Sql = getSql()): Promise<CommandCenter> {
@@ -106,6 +126,24 @@ export async function getCommandCenter(sql: postgres.Sql = getSql()): Promise<Co
       planLineId: lineByProduct.get(product.id) ?? null,
     }));
 
+  // Forward-looking: SKUs above their reorder point today that will cross it within a week at forecast demand.
+  const soon = analysed
+    .filter(({ a }) => !a.candidate && a.reorderInDays !== null && a.reorderInDays > 0 && a.reorderInDays <= REORDER_HORIZON_DAYS)
+    .sort((x, y) => x.a.reorderInDays! - y.a.reorderInDays! || x.a.sku.localeCompare(y.a.sku));
+  const reorderSoon = soon.slice(0, CRITICAL_LIMIT).map(({ product, a }) => ({
+    productId: product.id,
+    sku: product.sku,
+    brandName: product.brandName,
+    strength: product.strength,
+    packSize: product.packSize,
+    reorderInDays: a.reorderInDays!,
+    orderBy: addDays(asOf, Math.floor(a.reorderInDays!)),
+    stockPosition: a.stockPosition,
+    avgDailyDemand: a.demand.avgDailyDemand,
+    method: a.demand.method,
+    leadTimeDays: a.leadFastest,
+  }));
+
   return {
     asOf,
     scenario: { id: scenarioId, name: state?.scenario_name ?? "Baseline" },
@@ -119,5 +157,7 @@ export async function getCommandCenter(sql: postgres.Sql = getSql()): Promise<Co
     linesAwaitingPo: pending?.lines ?? 0,
     posAwaitingApproval: pending?.pos ?? 0,
     criticalSkus,
+    reorderSoon,
+    reorderSoonCount: soon.length,
   };
 }

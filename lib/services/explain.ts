@@ -60,13 +60,21 @@ export function explainLine(evidenceJson: Record<string, unknown>, current?: Cur
   }
 
   const free = freeQty > 0 ? ` + ${freeQty} free` : "";
-  const why =
-    cover === null
-      ? "there is no recent demand to cover"
-      : reasons.has("STOCKOUT_BEFORE_DELIVERY")
-        ? `${cover <= 0 ? "stock has already run out" : `stock covers only ${days(cover)}`} and no supplier can deliver sooner than ${chosen.supplierCode}'s ${days(chosen.leadTimeDays)}`
-        : `stock covers ${days(cover)} and ${chosen.supplierCode} delivers in ${days(chosen.leadTimeDays)}`;
-  out.push(`Ordering ${packs(qty)}${free} from ${chosen.supplierCode} because ${why}.`);
+  const lead = chosen.leadTimeDays;
+  const order = `${packs(qty)}${free} from ${chosen.supplierCode}`;
+  if (cover === null) {
+    out.push(`Ordering ${order}; there is no recent demand to measure cover against.`);
+  } else if (reasons.has("STOCKOUT_BEFORE_DELIVERY")) {
+    // Say plainly what lead time means here: even ordering today, the shelf is empty until the delivery lands.
+    const gap = Math.max(0, lead - cover);
+    const runsOut = cover <= 0 ? "Stock has already run out" : `Stock runs out in about ${days(cover)}`;
+    out.push(
+      `Urgent: ${runsOut}, but the fastest supplier, ${chosen.supplierCode}, needs ${days(lead)} to deliver, so expect about ${days(Math.round(gap * 10) / 10)} without stock even if you order today.`,
+      `Ordering ${order} now; consider an emergency local purchase to cover the gap.`,
+    );
+  } else {
+    out.push(`Ordering ${order}: stock covers ${days(cover)} and ${chosen.supplierCode} delivers in ${days(lead)}, so the new stock arrives before the shelf is empty.`);
+  }
 
   if (reasons.has("CHEAPER_OFFER_TOO_SLOW") && chosen.effectiveCost) {
     const cheaper = offers

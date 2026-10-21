@@ -30,18 +30,19 @@ describe("synthetic generator", () => {
     expect(data.suppliers).toHaveLength(8);
     expect(data.inventoryLocations).toHaveLength(240);
     expect(data.salesHistory).toHaveLength(PRODUCT_COUNT * SALES_DAYS);
-    expect(data.purchaseOrders).toHaveLength(17);
-    expect(data.purchaseOrders.filter((p) => p.status === "open")).toHaveLength(15);
-    expect(data.purchaseOrders.filter((p) => p.status === "received")).toHaveLength(1);
-    expect(data.purchaseOrders.filter((p) => p.status === "cancelled")).toHaveLength(1);
+    // POs come from the daily-operations simulation: still on the way (open), received in the last 21 days, a few cancelled.
+    expect(data.purchaseOrders.filter((p) => p.status === "open").length).toBeGreaterThanOrEqual(5);
+    expect(data.purchaseOrders.filter((p) => p.status === "received").length).toBeGreaterThanOrEqual(20);
+    expect(data.purchaseOrders.filter((p) => p.status === "cancelled").length).toBeGreaterThanOrEqual(1);
+    expect(data.purchaseOrders.every((p) => ["open", "received", "cancelled"].includes(p.status))).toBe(true);
 
     const offersPerProduct = countBy(data.supplierOffers, (o) => o.product_id);
     const batchesPerProduct = countBy(data.batches, (b) => b.product_id);
     for (const p of data.products) {
       expect(offersPerProduct.get(p.id)).toBeGreaterThanOrEqual(1);
-      expect(offersPerProduct.get(p.id)).toBeLessThanOrEqual(3);
+      expect(offersPerProduct.get(p.id)).toBeLessThanOrEqual(4);
       expect(batchesPerProduct.get(p.id)).toBeGreaterThanOrEqual(1);
-      expect(batchesPerProduct.get(p.id)).toBeLessThanOrEqual(3);
+      expect(batchesPerProduct.get(p.id)).toBeLessThanOrEqual(6);
     }
   });
 
@@ -143,8 +144,17 @@ describe("synthetic generator", () => {
       const sum = lines.reduce((acc, l) => acc + Math.round(Number(l.line_total) * 100), 0);
       expect(Math.round(Number(po.grand_total) * 100)).toBe(sum);
     }
-    const open = data.purchaseOrders.filter((p) => p.status === "open");
-    expect(open.some((p) => p.expected_delivery_date > addDays(AS_OF, 14))).toBe(true);
+  });
+
+  it("runs like daily operations: realistic lead times, most SKUs healthy, sales never above stock", () => {
+    const approved = data.suppliers.filter((s) => s.approved_status === "approved").map((s) => s.default_lead_time_days).sort((a, b) => a - b);
+    expect(approved).toEqual([1, 1, 2, 2, 3, 6]); // local distributors 1–3 days, one manufacturer-direct channel
+    const fast = data.supplierOffers.filter((o) => o.lead_time_days <= 3).length;
+    expect(fast / data.supplierOffers.length).toBeGreaterThan(0.75);
+    const covers = Object.values(data.meta.coverDaysBySku);
+    expect(covers.filter((c) => c >= 3).length / covers.length).toBeGreaterThan(0.8);
+    // Open POs are due soon (or a few days overdue); none is weeks away.
+    for (const po of data.purchaseOrders.filter((p) => p.status === "open")) expect(po.expected_delivery_date <= addDays(AS_OF, 14)).toBe(true);
   });
 
   it("only gives a product strengths that suit its dosage form", () => {

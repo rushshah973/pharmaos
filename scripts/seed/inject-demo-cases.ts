@@ -281,10 +281,12 @@ export function injectDemoCases(data: SyntheticDataset, seed = 42): DemoCases {
     used.add(pid);
     // "Cheapest" means lowest effective cost (price + GST + freight), as the engine compares it.
     const offers = [...eligibleOffers(idx, pid, asOf)].sort((a, b) => effectiveCostApprox(a) - effectiveCostApprox(b));
-    offers[0].lead_time_days = rng.int(9, 10);
+    offers[0].lead_time_days = rng.int(6, 7); // the manufacturer-direct style channel
+    // It must be ruled out for speed alone, so it can always supply the order.
+    offers[0].available_qty = Math.max(offers[0].available_qty, 1000);
     // The faster (dearer) offers must be able to supply the whole order, or there is nothing to choose between.
     for (const o of offers.slice(1)) {
-      o.lead_time_days = rng.int(2, 3);
+      o.lead_time_days = rng.int(1, 2);
       o.available_qty = Math.max(o.available_qty, 1000);
       // Keep the slow offer clearly cheapest (≥ 3% gap) after freight and GST.
       const floor = effectiveCostApprox(offers[0]) * 1.03;
