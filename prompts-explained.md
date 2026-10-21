@@ -2,7 +2,7 @@
 
 A plain-English companion to `prompts.md`. For every prompt: **what it does**, **what it creates or changes**, **what you will see when it is done**, and **why it matters** for the product or the demo. The prompts themselves (the text you paste) stay in `prompts.md`.
 
-**Status** — ✅ done (commit) · ⏭ next · ⬜ not started. Last updated after P08.
+**Status** — ✅ done (commit) · ⏭ next · ⬜ not started. Last updated after P09.
 
 | # | Prompt | Status |
 |---|---|---|
@@ -15,8 +15,9 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P06 | Demo cases, validation and seed | ✅ `a58fe1b` |
 | P07 | Engine tests first | ✅ `698bd9c` |
 | P08 | Demand, expiry, inventory | ✅ `5ef2952` |
-| P09 | Ordering, suppliers, totals, priority | ⏭ |
-| P10–P28 | … | ⬜ |
+| P09 | Ordering, suppliers, totals, priority | ✅ `afa8ee2` |
+| P10 | Basket, impact, validation, engine | ⏭ |
+| P11–P28 | … | ⬜ |
 
 ---
 
@@ -109,14 +110,14 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 - **You will see:** F1 (demand part), F4 and matching F8 tests turning green.
 - **Why it matters:** This is how PharmaOS knows a SKU will run out *before the supplier can deliver*, and that near-expiry or quarantined stock must not be counted.
 
-### P09 — Ordering, suppliers, totals, priority ⏭
+### P09 — Ordering, suppliers, totals, priority ✅
 
 - **What it does:** Implements the second half: how many packs to order (rounded to pack size and minimum order), whether a "10+1" scheme is worth taking given expiry, which supplier wins on cost, speed, reliability and payment terms, the rupee totals with GST and freight, and how much loss each line prevents per rupee.
 - **Creates or changes:** `ordering.ts`, `supplier-scoring.ts`, `totals.ts`, `priority.ts`.
 - **You will see:** F1, F2, F3, F5, F7 and matching F8 tests green.
 - **Why it matters:** This is the "why Supplier B and not A?" logic and the money maths that must be exact to the paisa.
 
-### P10 — Basket, impact, validation, engine ⬜
+### P10 — Basket, impact, validation, engine ⏭
 
 - **What it does:** Fits the best lines into the budget (and tries a cheaper supplier or a smaller quantity for lines that just miss), computes the Plan Impact Card, the approval hard stops, and wires everything into two main functions: analyse one SKU, and build a whole plan.
 - **Creates or changes:** `basket.ts`, `impact.ts`, `validation.ts`, `engine.ts`; removes the temporary `_stub.ts`.
