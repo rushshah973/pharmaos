@@ -5,7 +5,7 @@ A web-based dashboard that gives Indian pharma stockists budget-capped, explaina
 - Problem: [problemstatement.md](problemstatement.md)
 - Architecture: [architecture.md](architecture.md)
 - Build plan: [implementationplan.md](implementationplan.md)
-- Build prompts, run one by one: [prompts.md](prompts.md)
+- Build prompts, run one by one: [prompts.md](prompts.md) · what each one does: [prompts-explained.md](prompts-explained.md)
 
 ## Quick start
 

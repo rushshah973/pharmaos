@@ -1,5 +1,7 @@
 # PharmaOS — Build Prompts
 
+> Want to know what a prompt does before running it? See [`prompts-explained.md`](prompts-explained.md) — a plain-English explanation of every prompt, what it creates, and why it matters.
+
 Run these prompts **one at a time, in order**, with your AI coding assistant opened in the `pharmaos/` folder. Each prompt matches a stage in `implementationplan.md` §15 and names the exact plan sections to follow.
 
 ## How to use this file
