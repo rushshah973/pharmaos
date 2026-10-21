@@ -7,7 +7,7 @@
 
 ## 1. Architecture in one paragraph
 
-PharmaOS is a single Next.js application. The browser renders a dashboard. Server components and route handlers call a **services layer**, which reads one consistent snapshot of the database, passes it through a **pure decision engine**, and writes results back in transactions. An **AI orchestrator** sits beside the API routes and reaches the same engine only through typed, read-mostly tools. It explains and adjusts plans but can never approve, create or send a purchase order. Postgres is the single source of truth for the plan screens, the PO screens and the 3D warehouse. Every number comes from deterministic, unit-tested code, and every change is written to an append-only audit log.
+PharmaOS is a **web-based dashboard**: a single Next.js web application that users open in a desktop browser (no mobile or desktop app). The browser renders the dashboard. Server components and route handlers call a **services layer**, which reads one consistent snapshot of the database, passes it through a **pure decision engine**, and writes results back in transactions. An **AI orchestrator** sits beside the API routes and reaches the same engine only through typed, read-mostly tools. It explains and adjusts plans but can never approve, create or send a purchase order. Postgres is the single source of truth for the plan screens, the PO screens and the 3D warehouse. Every number comes from deterministic, unit-tested code, and every change is written to an append-only audit log.
 
 ### 1.1 Quality goals (in priority order)
 
@@ -24,6 +24,7 @@ PharmaOS is a single Next.js application. The browser renders a dashboard. Serve
 - One builder, 30 hours, a hackathon demo (problemstatement §8).
 - One workflow only: intelligent procurement. No other modules (mentor feedback).
 - All data is synthetic demo data shaped by reference datasets. No reference row is copied (plan §5).
+- Web dashboard only, for desktop browsers (latest Chrome or Edge, 1280 px wide and up; usable on a tablet). No native mobile or desktop app.
 - No authentication and no external integrations. Nothing leaves the system except calls to the Gemini API.
 
 ---
@@ -35,7 +36,7 @@ flowchart LR
     owner["Owner / purchase manager<br/>(browser)"]
     wh["Warehouse in-charge<br/>(browser, read)"]
     subgraph pharmaos["PharmaOS (one Next.js app)"]
-        app["Dashboard + API + engine + agent"]
+        app["Web dashboard + API + engine + agent"]
     end
     db[("Postgres<br/>Supabase or local")]
     gemini["Gemini API<br/>(optional)"]

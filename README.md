@@ -1,6 +1,6 @@
 # PharmaOS — Intelligent Procurement Agent
 
-Budget-capped, explainable purchase plans for Indian pharma stockists, with human-approved draft POs and a 3D warehouse view on the same data.
+A web-based dashboard that gives Indian pharma stockists budget-capped, explainable purchase plans, with human-approved draft POs and a 3D warehouse view on the same data.
 
 - Problem: [problemstatement.md](problemstatement.md)
 - Architecture: [architecture.md](architecture.md)

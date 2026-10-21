@@ -6,7 +6,7 @@ Run these prompts **one at a time, in order**, with your AI coding assistant ope
 
 1. **New chat session?** Paste **P00** first, then the next prompt in the list.
 2. Paste one prompt. Wait until it finishes and reports back.
-3. Check the **You check** line yourself (open the app, look at the numbers). If it fails, use **FIX** (end of file) before moving on.
+3. Check the **You check** line yourself (open the dashboard in your browser at http://localhost:3000 and look at the numbers). If it fails, use **FIX** (end of file) before moving on.
 4. Each prompt ends with the assistant running `npm run check` and committing. Don't start the next prompt until that commit exists.
 5. **Behind schedule?** Use **CUT** (end of file).
 6. Prompts marked **STOP** end with the assistant waiting for your review. Don't skip that review.
@@ -14,7 +14,7 @@ Run these prompts **one at a time, in order**, with your AI coding assistant ope
 | # | Stage | Hours | Prompt |
 |---|---|---|---|
 | — | Any | — | P00 Session primer |
-| 1 | Foundation and data | 0–3 | P01 Database · P02 App skeleton · P03 Register references (STOP) · P04 Profile references (STOP) · P05 Generate synthetic data · P06 Demo cases, validation, seed |
+| 1 | Foundation and data | 0–3 | P01 Database · P02 Dashboard skeleton · P03 Register references (STOP) · P04 Profile references (STOP) · P05 Generate synthetic data · P06 Demo cases, validation, seed |
 | 2 | Calculation engine | 3–9 | P07 Engine tests first · P08 Demand, expiry, inventory · P09 Ordering, suppliers, totals, priority · P10 Basket, impact, validation, engine · P11 Context loader and debug plan (STOP) |
 | 3 | Procurement UI | 9–14 | P12 Theme and shell · P13 Plan services and API · P14 Command Center · P15 Plan screen · P16 Line drawer and edit preview |
 | 4 | Approval and audit | 14–17 | P17 Approval service · P18 POs and Activity |
@@ -70,10 +70,10 @@ No commit needed unless you changed files.
 ```
 **You check:** the Supabase table editor shows the tables and 5 scenarios.
 
-### P02 — App skeleton
+### P02 — Dashboard skeleton
 
 ```text
-Stage 1, step 2: app skeleton. Follow implementationplan.md §1.1, §2 and §15 Stage 1.
+Stage 1, step 2: web dashboard skeleton. Follow implementationplan.md §1.1, §2 and §15 Stage 1.
 
 1. Delete app/page.tsx (it conflicts with app/(dashboard)/page.tsx).
 2. Create app/(dashboard)/layout.tsx: a temporary plain shell (header text "PharmaOS", main area). The real shell comes in P12.
@@ -81,7 +81,7 @@ Stage 1, step 2: app skeleton. Follow implementationplan.md §1.1, §2 and §15 
 4. Create lib/services/as-of.ts: resolveAsOfDate() per architecture.md §5.5 (DEMO_AS_OF_DATE → app_state.as_of_date → max(sales_history.sale_date); if there are no sales yet, return today's UTC date and say so in a comment). Return a YYYY-MM-DD string.
 5. Create lib/services/audit.ts: writeAudit({ actorType, actorId, action, entityType, entityId, before, after, reason }), accepting either the pool or a transaction handle, plus listAudit({ limit, before }). This is the only module that inserts into audit_logs (architecture.md §3.2).
 6. Run `npm run check` and `npm run build`. Both must pass. Then run `npm run dev`, open http://localhost:3000 and confirm the scenarios count shows 5.
-7. Commit: "stage 1: app skeleton, as-of and audit services".
+7. Commit: "stage 1: dashboard skeleton, as-of and audit services".
 ```
 **You check:** http://localhost:3000 shows "Command Center" and the number 5.
 
@@ -231,7 +231,7 @@ STOP for my review. After I approve: `npm run check`, commit "stage 2: planning 
 ### P12 — Theme and shell
 
 ```text
-Stage 3, step 1: theme and app shell. Follow implementationplan.md §10.1 and §10.2.
+Stage 3, step 1: theme and dashboard shell. Follow implementationplan.md §10 (intro: web dashboard, desktop-first, tablet ≥ 768 px), §10.1 and §10.2.
 
 1. app/globals.css: map the §10.1 palette onto the shadcn CSS variables (background, card, border, primary = teal) and add status colour variables (stockout, expiry, excess, healthy, proposed). Keep the existing shadcn structure.
 2. app/layout.tsx: <html className="dark">, keep the Geist fonts, title "PharmaOS", add <Toaster /> from components/ui/sonner.tsx and a TooltipProvider if the component requires one (check components/ui/tooltip.tsx).
@@ -240,7 +240,7 @@ Stage 3, step 1: theme and app shell. Follow implementationplan.md §10.1 and §
 5. Create placeholder pages (title + "Coming in stage N") for /procurement, /warehouse, /purchase-orders, /activity and /data so every sidebar link works.
 6. `npm run check` and `npm run build` must pass. Commit: "stage 3: theme and shell".
 ```
-**You check:** a dark navy app with a working sidebar on every route.
+**You check:** a dark navy web dashboard with a working sidebar on every route; at tablet width the sidebar collapses to icons.
 
 ### P13 — Plan services and API
 
@@ -321,7 +321,7 @@ Stage 4, step 2: PO screens and activity log. Follow implementationplan.md §10.
 
 1. lib/services/purchase-orders.ts: listPurchaseOrders, getPurchaseOrder, exportPo (CSV, status → exported, audit po.exported).
 2. Routes: GET /api/purchase-orders, GET /api/purchase-orders/[id], POST /api/purchase-orders/[id]/export (text/csv download), GET /api/audit.
-3. /purchase-orders list and /purchase-orders/[poId] detail as a printable PO document with the "DRAFT — not sent to supplier" watermark, Export CSV and Print (print CSS hides the app shell).
+3. /purchase-orders list and /purchase-orders/[poId] detail as a printable PO document with the "DRAFT — not sent to supplier" watermark, Export CSV and Print (print CSS hides the dashboard shell).
 4. /activity: AuditTable (time, actor, action, entity, before → after summary, reason), filters, Load more.
 5. Search the codebase and confirm the words "sent", "ordered" and "confirmed" are never used as a status or label.
 6. `npm run check` and `npm run build`. Commit: "stage 4: purchase orders and activity".
@@ -468,7 +468,7 @@ Stage 8, step 2: prepare the demo environment.
 1. `npm run db:reset && npm run seed`. Confirm validation passes.
 2. `npm run build`, then `npm run start`, and smoke-test every route at http://localhost:3000.
 3. Time "Create plan" at ₹2,00,000 three times and report the measured time-to-reviewable-plan (this is the real number for the pitch).
-4. If a local Postgres is available, seed it the same way and confirm the app works against it by swapping DATABASE_URL (backup for demo day). If not, tell me how to set it up (plan §3.2).
+4. If a local Postgres is available, seed it the same way and confirm the dashboard works against it by swapping DATABASE_URL (backup for demo day). If not, tell me how to set it up (plan §3.2).
 5. Report anything that failed. Commit only if files changed: "stage 8: demo build".
 ```
 
@@ -479,7 +479,7 @@ Stage 8, step 3: demo notes. Create docs/demo-notes.md (no code changes).
 
 Using implementationplan.md §17 and data/synthetic/demo-cases.json, write the exact click path for the 3–4 minute demo:
 - which SKU to open at each step (its brand name and SKU code), which supplier comparison to show, which bin to click, which scenario to run, and which line to edit to what quantity;
-- the expected numbers at each step, read from the running app (not guessed);
+- the expected numbers at each step, read from the running dashboard (not guessed);
 - one fallback line per step if something fails (e.g. "If the AI is slow, use Why?, which is deterministic");
 - the 3 questions judges are most likely to ask, with short honest answers (synthetic data, the forecast is a baseline, nothing is sent to suppliers).
 Commit: "stage 8: demo notes".

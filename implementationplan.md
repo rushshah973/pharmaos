@@ -1,6 +1,6 @@
 # PharmaOS — Implementation Plan
 
-> Solo builder · 30 hours · Next.js 16 + Supabase Postgres + Gemini
+> Web-based dashboard · solo builder · 30 hours · Next.js 16 + Supabase Postgres + Gemini
 > Read `problemstatement.md` first. This file is the build source of truth: follow it stage by stage, in order. Do not add modules that are not in it.
 
 ---
@@ -25,7 +25,7 @@
 | R6 | Nothing is sent to suppliers. Statuses "sent", "ordered" or "confirmed" never appear. |
 | R7 | Every mutation writes an `audit_logs` row (section 13). |
 | R8 | Every screen shows the data-source badge ("Synthetic demo data"), and detail views show each record's `data_source` label. Never call generated data real, and never present a supplier price as a real quote. |
-| R9 | The app must work fully with `GEMINI_API_KEY` empty: only chat/explanations switch to the deterministic text. |
+| R9 | The dashboard must work fully with `GEMINI_API_KEY` empty: only chat/explanations switch to the deterministic text. |
 | R10 | No secrets in client code. DB and Gemini clients are imported only from server files (`lib/db`, `lib/services`, `lib/agents`, `app/api`). |
 
 ---
@@ -34,6 +34,7 @@
 
 | Area | Decision | Why |
 |---|---|---|
+| Product type | **Web-based dashboard** opened in a desktop browser (latest Chrome or Edge; designed for 1280 px and wider, usable on a tablet). No mobile or desktop app | Team decision; one codebase, nothing to install |
 | Framework | Next.js **16.4.2** (App Router, Turbopack, `cacheComponents: true`), React 19.3, TypeScript strict | Installed by `create-next-app`; read `node_modules/next/dist/docs/` before using an unfamiliar API (see `AGENTS.md`) |
 | UI kit | Tailwind v4 + shadcn/ui, style **base-nova** (built on **Base UI**, not Radix) | Installed. Base UI components compose with the `render` prop, not `asChild` — read the file in `components/ui/` before using a component |
 | Icons | lucide-react | Installed |
@@ -242,7 +243,7 @@ The full schema is `db/migrations/001_init.sql`. Key rules:
 
 ## 5. Data plan: reference datasets → synthetic demo data
 
-**Principle.** The datasets the team provides, and the public sources in *PharmaOS — Public Data Sources & Data Acquisition Plan*, are **reference material only**. Scripts read them to learn patterns (distributions, ranges, shapes). No row, brand name, manufacturer name, price or quantity is copied into the app's tables. Every row in the database is `data_source = 'synthetic_demo'`, and every reference used is recorded in the `data_sources` table. The app labels all data "Synthetic demo data".
+**Principle.** The datasets the team provides, and the public sources in *PharmaOS — Public Data Sources & Data Acquisition Plan*, are **reference material only**. Scripts read them to learn patterns (distributions, ranges, shapes). No row, brand name, manufacturer name, price or quantity is copied into the app's tables. Every row in the database is `data_source = 'synthetic_demo'`, and every reference used is recorded in the `data_sources` table. The dashboard labels all data "Synthetic demo data".
 
 **Phase-wise.** Data work happens in the phases below, in stage 1 of the build. Nothing is generated before then.
 
@@ -750,6 +751,8 @@ Notes:
 
 ## 10. UI
 
+PharmaOS is a web dashboard: a left sidebar, a top bar and data-dense screens (tables, cards, a 3D panel) laid out for desktop browsers. Build every screen for 1280 px and wider first, and make sure it still works at tablet width (≥ 768 px: the sidebar collapses to icons, wide tables scroll horizontally inside their card). Phone layouts are out of scope.
+
 ### 10.1 Design system
 
 - Dark by default: `<html className="dark">`. Palette as CSS variables in `app/globals.css` (map to shadcn tokens):
@@ -1014,7 +1017,7 @@ P2 stretch (only if ahead at hour 22): ghost cartons polish, simulated put-away 
 
 ## 18. Definition of done
 
-- [ ] App loads seeded synthetic demo data, labels it, and lists its reference sources.
+- [ ] The dashboard loads seeded synthetic demo data, labels it, and lists its reference sources.
 - [ ] Dashboard metrics are computed from the database.
 - [ ] Procurement run returns ranked recommendations with reasons and supporting values.
 - [ ] Stock position, cover, reorder qty, rounding, expiry, scoring, basket and totals pass F1–F9.

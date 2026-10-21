@@ -12,7 +12,7 @@ Indian pharma stockists lose money every day in two opposite directions — runn
 
 ## 2. One-line solution
 
-PharmaOS turns that 1–2 hour judgement call into a 10-minute reviewed decision: a budget-capped, explainable purchase plan that says what to buy, how much, from which supplier and why, then creates draft purchase orders only after a human approves them. An interactive 3D warehouse shows the same inventory, its risks and the proposed replenishment.
+PharmaOS is a **web-based dashboard** (opened in a browser, no installation). It turns that 1–2 hour judgement call into a 10-minute reviewed decision: a budget-capped, explainable purchase plan that says what to buy, how much, from which supplier and why, then creates draft purchase orders only after a human approves them. An interactive 3D warehouse shows the same inventory, its risks and the proposed replenishment.
 
 **Tagline:** Buy what will sell, before it runs out, without buying what will expire.
 
@@ -113,7 +113,7 @@ Following the mentor's advice, the build covers **one** workflow — intelligent
 10. Disruption scenarios (P1): demand spike, supplier delay/price change, budget cut, expiry risk.
 11. Stretch (P2): ghost incoming cartons, candidate put-away, simple pick path.
 
-**Out of scope:** real ERP or supplier integrations; sending POs, emails or payments; live IoT/RFID/robots; automatic medicine substitution or safety decisions; claims of proven ROI; receivables, cold-chain, routing or recall products; a chatbot-first interface.
+**Out of scope:** real ERP or supplier integrations; sending POs, emails or payments; live IoT/RFID/robots; automatic medicine substitution or safety decisions; claims of proven ROI; receivables, cold-chain, routing or recall products; a chatbot-first interface; native mobile or desktop apps (the product is a web dashboard).
 
 ## 9. Product principles (non-negotiable)
 
@@ -123,7 +123,7 @@ Following the mentor's advice, the build covers **one** workflow — intelligent
 4. **Human in charge.** Draft POs are not supplier commitments. Nothing is sent externally.
 5. **One source of truth.** The 3D warehouse, dashboards and plan all read the same database records.
 6. **Honest data.** All demo data is labelled synthetic, with its reference sources listed. Supplier prices are never presented as real quotes, and an MRP or NPPA ceiling price is never used as a purchase price. No fabricated metrics, no fake integrations, no "sent / confirmed" without a verified event.
-7. **Dashboard, not chatbot.** The AI works behind buttons and panels; chat is optional.
+7. **Web dashboard, not chatbot.** PharmaOS is a browser-based dashboard. The AI works behind buttons and panels; chat is optional.
 
 ## 10. Success criteria
 
