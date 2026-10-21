@@ -10,7 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## PharmaOS project rules
 
-- Read `problemstatement.md` and `implementationplan.md` before writing code. Build one stage at a time (section 15 of the plan) and do not add features, tables or endpoints that are not in the plan.
+- Read `problemstatement.md`, `architecture.md` and `implementationplan.md` before writing code; respect the layer and dependency rules in `architecture.md` §3. Build one stage at a time (section 15 of the plan) and do not add features, tables or endpoints that are not in the plan.
 - All quantity, price, total and score maths lives in `lib/business-logic/` as pure, unit-tested functions. Money goes through `lib/money.ts` (decimal.js), never JS floats. Quantities are integer packs.
 - Only `lib/services/approval.ts` creates purchase orders, inside one transaction, idempotently. The LLM never gets a tool that approves or creates POs, and nothing is ever sent to a supplier.
 - Every mutation writes an `audit_logs` row. Every page that reads the database wraps its data component in `<Suspense>` and calls `await connection()` first (Cache Components is on).

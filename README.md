@@ -3,6 +3,7 @@
 Budget-capped, explainable purchase plans for Indian pharma stockists, with human-approved draft POs and a 3D warehouse view on the same data.
 
 - Problem: [problemstatement.md](problemstatement.md)
+- Architecture: [architecture.md](architecture.md)
 - Build plan: [implementationplan.md](implementationplan.md)
 
 ## Quick start

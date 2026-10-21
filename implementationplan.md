@@ -80,6 +80,7 @@ Already created (folders contain `.gitkeep` until filled). `✅` = file exists n
 pharmaos/
 ├── AGENTS.md                          ✅ Next.js agent rules + project rules
 ├── problemstatement.md                ✅
+├── architecture.md                   ✅ layers, flows, data model, decisions
 ├── implementationplan.md              ✅ this file
 ├── .env.example                       ✅ copy to .env.local
 ├── package.json                       ✅ scripts: dev, build, lint, typecheck, test, check, db:migrate, db:reset, seed
