@@ -1,6 +1,6 @@
 # PharmaOS — Implementation Plan
 
-> Web-based dashboard · solo builder · 30 hours · Next.js 16 + Supabase Postgres + Gemini
+> Web-based dashboard · solo builder · about 42 hours (was 30; extended for the ML demand model and the agent pipeline) · Next.js 16 + Supabase Postgres + Gemini
 > Read `problemstatement.md` first. This file is the build source of truth: follow it stage by stage, in order. Do not add modules that are not in it.
 
 ---
@@ -8,7 +8,7 @@
 ## 0. How to use this plan
 
 1. Work **one stage at a time** (section 15). Each stage lists its files, exact behaviour, and a "Verify" block. Do not start the next stage until its Verify block passes.
-2. When an AI coding assistant writes the code, use the ready-made prompts in `prompts.md` (P00–P28), or give it this file plus the stage number. Tell it: *"Implement stage N exactly as written in implementationplan.md. Do not invent features, tables or endpoints."*
+2. When an AI coding assistant writes the code, use the ready-made prompts in `prompts.md` (P00–P28, plus P16B, P22B and P23B), or give it this file plus the stage number. Tell it: *"Implement stage N exactly as written in implementationplan.md. Do not invent features, tables or endpoints."*
 3. After every stage: `npm run check` (typecheck + lint + unit tests), then commit: `git add -A && git commit -m "stage N: <name>"`.
 4. Every number shown in the UI must come from the database or from `lib/business-logic`. No hard-coded dashboard values.
 5. If something in this plan turns out to be wrong while building, fix the plan in the same commit so the plan and code never disagree.
@@ -17,15 +17,15 @@
 
 | # | Rule |
 |---|---|
-| R1 | All arithmetic for quantities, prices, totals and scores lives in `lib/business-logic/*` (pure functions, unit-tested). Routes, UI and the LLM never compute them. |
+| R1 | All arithmetic for quantities, prices, totals and scores lives in `lib/business-logic/*` (pure functions, unit-tested); the demand model's maths lives in `lib/ml/*` (pure, unit-tested). Routes, UI and the LLM never compute them. An agent may choose between values the tools return (a forecast method, an eligible offer), never invent one. |
 | R2 | Money uses `lib/money.ts` (decimal.js). Never use JS floats for rupees. DB money columns are `numeric`; postgres.js returns them as strings — pass strings into `dec()`. |
 | R3 | Every quantity is an integer number of **packs**. |
 | R4 | The browser is never the source of truth for totals. The server recomputes on every edit and on approval. |
-| R5 | Only the approve endpoint creates purchase orders, inside one DB transaction, idempotently. A PO whose grand total is above the Owner approval limit (₹4,00,000) is created `pending_approval` and cannot be sent until the Owner approves it. The LLM has no tool that creates, approves or sends POs. |
+| R5 | Only `lib/services/approval.ts` (`approveLines`) creates purchase orders, inside one DB transaction, idempotently. It is called by the approve endpoint (a human click) and by exactly one AI: the pipeline's **Order Agent** (section 9.5), create only, audited as actor `agent`. A PO whose grand total is above the Owner approval limit (₹4,00,000) is created `pending_approval` and cannot be sent until the Owner approves it. No AI can send a PO, Owner-approve a PO, reject a plan or change the approval limit. |
 | R6 | Nothing ever leaves the app: "Send to supplier" is simulated (status `sent`, always labelled "simulated — nothing was emailed"). No email, API or payment integration. Statuses "ordered" or "confirmed" never appear. |
 | R7 | Every mutation writes an `audit_logs` row (section 13). |
 | R8 | Every screen shows the data-source badge ("Synthetic demo data"), and detail views show each record's `data_source` label. Never call generated data real, and never present a supplier price as a real quote. |
-| R9 | The dashboard must work fully with `GEMINI_API_KEY` empty: only chat/explanations switch to the deterministic text. |
+| R9 | The dashboard must work fully with `GEMINI_API_KEY` empty: chat/explanations switch to the deterministic text, and an agent run ends in `fallback` (no AI changes, no POs created — the user reviews and approves manually). The ML forecast needs no API key. |
 | R10 | No secrets in client code. DB and Gemini clients are imported only from server files (`lib/db`, `lib/services`, `lib/agents`, `app/api`). |
 
 ---
@@ -41,11 +41,13 @@
 | Charts | Recharts 3 | Only on Recommendation Detail (demand history) and the ROI model |
 | 3D | three 0.186 + @react-three/fiber 9 + @react-three/drei 10 | Installed |
 | Database | Supabase Postgres (or any Postgres 15+) via **postgres.js** with `DATABASE_URL` | Real transactions for approval; no Supabase SDK needed |
-| Migrations | Plain SQL in `db/migrations/`, applied by `npm run db:migrate` | `001_init.sql`, `002_approval_limit.sql` (removes the budget, adds the PO approval limit) |
+| Migrations | Plain SQL in `db/migrations/`, applied by `npm run db:migrate` | `001_init.sql`, `002_approval_limit.sql` (removes the budget, adds the PO approval limit), `003_ml_and_agents.sql` (demand model + agent runs) |
 | Validation | Zod 4 | API inputs, tool inputs, seed rows |
 | Money | decimal.js via `lib/money.ts` | Already written and tested |
 | AI | Google Gemini via `@google/genai` 2.30 (TypeScript), model from `GEMINI_MODEL`, default `gemini-flash-latest`. Manual function-calling loop, mode `AUTO`, automatic function calling disabled | Team choice; explicit workflow; no agent framework |
 | Tests | Vitest 5 (`tests/**/*.test.ts`) | Already configured: `vitest.config.mts` |
+| Demand ML | Global **ridge regression** in TypeScript (`lib/ml/`), closed-form solve, trained by `npm run train:forecast`; used per SKU only where its 14-day backtest beats the baseline | No Python service; deterministic; explainable; honest backtest (section 6.2a) |
+| Agent pipeline | Three Gemini agents (Demand, Supplier, Order) run in sequence in the background (`after()`), each with its own tools and a Zod-validated terminal `submit_*` tool; every step stored in `agent_steps` | Real decisions with real, guarded effects; a replayable trace (section 9.5) |
 | Scripts | tsx for seed and migration scripts | Installed |
 | Synthetic data | `@faker-js/faker` with a fixed seed (42) + a seeded PRNG for demand | Reproducible demo |
 | CSV | `csv-parse` for reading reference datasets (profiling only) | Installed |
@@ -82,18 +84,20 @@ pharmaos/
 ├── AGENTS.md                          ✅ Next.js agent rules + project rules
 ├── problemstatement.md                ✅
 ├── architecture.md                   ✅ layers, flows, data model, decisions
-├── prompts.md                        ✅ build prompts P00–P28, run one by one
+├── prompts.md                        ✅ build prompts P00–P28 (+ P16B, P22B, P23B), run one by one
 ├── implementationplan.md              ✅ this file
 ├── .env.example                       ✅ copy to .env.local
-├── package.json                       ✅ scripts: dev, build, lint, typecheck, test, check, db:migrate, db:reset, seed
+├── package.json                       ✅ scripts: dev, build, lint, typecheck, test, check, db:migrate, db:reset, seed (+ train:forecast in P16B)
 ├── vitest.config.mts                  ✅
 ├── db/migrations/001_init.sql         ✅ full schema + default scenarios + app_state
 ├── db/migrations/002_approval_limit.sql  no budget; app_state.po_approval_limit; PO statuses ready/pending_approval/approved/sent/rejected; seasonal_surge scenario
+├── db/migrations/003_ml_and_agents.sql   forecast_models, sku_forecast_metrics, agent_runs, agent_steps
 ├── data/
 │   ├── reference/                     ✅ reference datasets (git-ignored) + sources.json + profile.json
 │   └── synthetic/                     generated CSV snapshots for inspection (git-ignored)
 ├── scripts/
 │   ├── db/migrate.ts                  ✅ applies migrations; --reset drops the public schema first
+│   ├── ml/train-forecast.ts           npm run train:forecast — trains the ridge model, backtests, stores it (also run at the end of seed)
 │   └── seed/
 │       ├── index.ts                   orchestrates the whole seed (stage 1)
 │       ├── prng.ts                    seeded random helpers (mulberry32, poisson, pick, weighted)
@@ -104,6 +108,11 @@ pharmaos/
 │       └── write.ts                   inserts rows in FK order + writes CSV snapshots
 ├── lib/
 │   ├── money.ts                       ✅ decimal helpers + INR formatting
+│   ├── ml/                            PURE demand-model maths (no I/O)
+│   │   ├── features.ts                feature rows per (SKU, day): lags, rolling stats, trend, weekday, category
+│   │   ├── ridge.ts                   standardise + closed-form ridge (normal equations, Cholesky)
+│   │   ├── forecast.ts                recursive 14-day forecast from stored coefficients
+│   │   └── backtest.ts                WAPE for ML vs baseline on the holdout; default-method rule
 │   ├── utils.ts                       ✅ shadcn cn()
 │   ├── db/
 │   │   ├── client.ts                  ✅ getSql() shared pool
@@ -137,11 +146,19 @@ pharmaos/
 │   │   ├── warehouse.ts               layout, heatmap, bin details, candidate bin
 │   │   ├── scenarios.ts               list, run, reset
 │   │   ├── audit.ts                   writeAudit(), listAudit()
+│   │   ├── forecast-model.ts          train + store the model, load the latest model, per-SKU metrics
+│   │   ├── agent-runs.ts              start a run, read a run + steps, list runs
 │   │   └── explain.ts                 deterministic explanation text from evidence_json
 │   ├── agents/
 │   │   ├── tools.ts                   tool definitions (name, description, Zod schema, handler)
 │   │   ├── prompts.ts                 system prompt
-│   │   └── orchestrator.ts            runAgent(): manual tool loop + fallback
+│   │   ├── orchestrator.ts            runAgent(): manual tool loop + fallback (Ask PharmaOS, Why?, summary)
+│   │   └── pipeline/                  the three decision-making agents (section 9.5)
+│   │       ├── loop.ts                shared Gemini tool loop with a terminal submit_* tool + step logging
+│   │       ├── demand-agent.ts        tools + submit_demand_decisions + guardrail
+│   │       ├── supplier-agent.ts      tools + submit_supplier_decisions + guardrail
+│   │       ├── order-agent.ts         tools + create_purchase_orders + submit_order_summary
+│   │       └── run.ts                 runPipeline(runId): Demand → Supplier → Order, fallback, run status
 │   ├── scenarios/apply.ts             applies scenario params to the planning context in memory
 │   └── warehouse/geometry.ts          bin layout helpers shared by 2D and 3D
 ├── app/
@@ -168,6 +185,7 @@ pharmaos/
 │   │                                     SupplierComparison, DemandChart, FormulaPanel, AskPanel
 │   ├── purchase-orders/               PoTable, PoDocument
 │   ├── warehouse3d/                   WarehouseView (client), Scene3D, Grid2D, BinPanel, Legend, ModeSelect
+│   ├── agents/                        RunAgentsButton, AgentRunPanel (agent cards, tool timeline, decisions, results)
 │   ├── audit/                         AuditTable
 │   └── scenarios/                     ScenarioCards, RoiModel
 └── tests/
@@ -216,7 +234,7 @@ Local Postgres alternative: `brew install postgresql@16 && brew services start p
 
 ## 4. Data model
 
-The schema is `db/migrations/001_init.sql` plus `002_approval_limit.sql` (drops `purchase_plans.budget_limit` / `budget_remaining` and their check, replaces `app_state.default_budget` with `po_approval_limit` default 400000, replaces the PO status check with `open | received | cancelled | ready | pending_approval | approved | sent | rejected`, adds `purchase_orders.sent_at` / `sent_by`, replaces scenario `budget_cut` with `seasonal_surge`). Key rules:
+The schema is `db/migrations/001_init.sql` plus `002_approval_limit.sql` (drops `purchase_plans.budget_limit` / `budget_remaining` and their check, replaces `app_state.default_budget` with `po_approval_limit` default 400000, replaces the PO status check with `open | received | cancelled | ready | pending_approval | approved | sent | rejected`, adds `purchase_orders.sent_at` / `sent_by`, replaces scenario `budget_cut` with `seasonal_surge`) plus `003_ml_and_agents.sql` (demand model and agent-run tables, below). Key rules:
 
 | Table | Purpose | Rules that matter |
 |---|---|---|
@@ -236,6 +254,10 @@ The schema is `db/migrations/001_init.sql` plus `002_approval_limit.sql` (drops 
 | `approvals` | Decisions | One row per approve / reject / defer |
 | `audit_logs` | History | Append-only (a trigger blocks update/delete) |
 | `warehouse_movements` | Simulated moves | Only `*_simulated` types |
+| `forecast_models` | Trained demand models | `feature_names`, `means`, `stds`, `coefficients` (jsonb), `intercept`, `lambda`, `train_rows`, `holdout_days`, `metrics` {mlWape, baselineWape, skusUsingMl}, `trained_at`, `as_of_date`, `data_source = 'synthetic_demo'`; the latest row is used |
+| `sku_forecast_metrics` | Per-SKU backtest | `model_id`, `product_id`, `ml_wape`, `baseline_wape`, `default_method` ('ml' / 'baseline'); unique per model + product |
+| `agent_runs` | One pipeline run | `plan_id`, `status` running / succeeded / failed / fallback, `max_skus`, `skus` jsonb, `started_at`, `finished_at`, `summary`, `error`; at most one `running` per plan |
+| `agent_steps` | Every tool call and decision | `run_id`, `agent` demand / supplier / order, `seq`, `kind` tool_call / decision / rejected_decision / message / fallback, `tool_name`, `input` / `output` jsonb, `ok`, `ms`; append-only like the audit log |
 
 `data_source` exists on every master and transaction table: `synthetic_demo` for all hackathon rows; `public_reference`, `unverified_sample` and `verified_customer_data` are reserved for later phases. `supplier_offers.price_type` is `supplier_quote` (never MRP or an NPPA ceiling price).
 
@@ -373,7 +395,8 @@ All dates are `YYYY-MM-DD` strings treated as UTC calendar dates. `daysBetween(a
 ```
 d7  = (sum of units sold on days (asOf − 6) … asOf) / 7          missing day = 0
 d28 = (sum of units sold on days (asOf − 27) … asOf) / 28
-avgDailyDemand d̄ = 0.6 × d7 + 0.4 × d28
+baseline     = 0.6 × d7 + 0.4 × d28
+avgDailyDemand d̄ = the chosen method's value: ML (section 6.2a) or the baseline
 ```
 
 Flags (returned as warnings):
@@ -381,7 +404,23 @@ Flags (returned as warnings):
 - `LOW_HISTORY`: first sale date is fewer than 28 days before as-of.
 - `DEMAND_SPIKE`: d28 > 0 and d7 / d28 ≥ 2.
 
-Return `{ d7, d28, avgDailyDemand, windowDays: { short: 7, long: 28 }, flags, dailySeries }` (`dailySeries` = last 28 days for the chart).
+Return `{ d7, d28, baseline, ml, method, methodReason, avgDailyDemand, windowDays: { short: 7, long: 28 }, flags, dailySeries, forecast14 }` (`dailySeries` = last 28 days for the chart, `forecast14` = the ML forecast for the next 14 days). The method is the SKU's default (6.2a) unless a Demand Agent decision overrides it (9.5). With no model trained yet, the method is always the baseline.
+
+### 6.2a ML demand model (`lib/ml/`)
+
+The synthetic sales have learnable structure the baseline ignores: weekday factors (from the reference profile), about 15% growing SKUs (+1%/day), about 15% declining (−1%/day), about 20% intermittent (many zero days) and about 10% with a 5-day ×3 spike. The model learns it; the backtest proves whether it helps.
+
+- **Model:** one **global ridge regression** (all SKUs pooled) predicting packs sold on day t.
+- **Features per (SKU, t)**, from days before t only: `lag1`, `lag7`, `mean7`, `mean28`, `std28`, `zeroShare28`, OLS trend slope over the last 28 days, day-of-week one-hot (6 columns, Monday is the reference), category one-hot. Features are standardised (store `means` and `stds`); the target is not.
+- **Fit:** closed form, w = (XᵀX + λI)⁻¹ Xᵀy, solved with Cholesky in `ridge.ts` (plain numbers; this is demand, not money). The intercept is not penalised. λ is picked from the fixed grid [0.1, 1, 10, 100] by the lowest WAPE on a validation slice (the 14 days before the holdout) → fully deterministic: same data, same coefficients.
+- **Train / holdout:** train on every day except the last 14 (holdout); then refit on the chosen λ with all training days.
+- **Backtest per SKU:** from the holdout start, forecast the 14 holdout days **recursively** (each prediction feeds the next day's lags) and compute WAPE = Σ|actual − forecast| / Σ actual for ML and for the baseline (the baseline value computed at the holdout start, held flat). A SKU with Σ actual = 0 gets WAPE `null` and uses the baseline.
+- **Default method rule (deterministic):** use **ML** if the SKU has ≥ 28 days of history **and** its ML WAPE is at least 5% (relative) lower than its baseline WAPE (`mlWape ≤ 0.95 × baselineWape`); otherwise the **baseline**. The reason is recorded ("ML error 18% vs average 27% on the last 14 days → ML", or the reverse).
+- **Forecast at plan time (live):** `loadPlanningContext` loads the last 56 days of sales and the latest stored model; inference is cheap, so the recursive 14-day forecast runs on the **current** context's sales (scenarios such as `seasonal_surge` and `demand_spike` therefore change it). `mlDaily` = mean of those 14 days (never below 0). `SkuContext.forecast` = `{ mlDaily, baselineDaily, mlWape, baselineWape, defaultMethod, series14 }`.
+- **Storage:** `forecast_models` + `sku_forecast_metrics` (section 4). `npm run train:forecast` trains, backtests and stores a new model (audit `model.trained` with the global metrics); `npm run seed` runs it at the end.
+- **Evidence:** every line stores both values, both WAPEs, the method, the reason and who chose it (`default` or `demand-agent`).
+- **Honesty rule:** if ML does not beat the baseline for a SKU, the system says so and uses the baseline. The UI never claims accuracy the backtest does not show; every model view is labelled "trained on synthetic demo data".
+
 
 ### 6.3 Expiry and eligible stock (`expiry.ts`)
 
@@ -568,7 +607,7 @@ Candidate bin (deterministic): active bins with matching `storage_class` and `ca
 
 ### 7.1 `loadPlanningContext(sql, asOf, scenarioId)`
 
-One function that reads, with a fixed set of queries, everything the engine needs: active products, approved/pending/blocked suppliers, active offers, the last 28 days of sales (plus first-sale date per SKU), released and non-released batches with balances, open POs within the horizon. Then `applyScenario(context, scenario)` (section 12) modifies it **in memory**. Returns plain objects (money as strings).
+One function that reads, with a fixed set of queries, everything the engine needs: active products, approved/pending/blocked suppliers, active offers, the last 56 days of sales (28 for the baseline, 56 for the ML features; plus first-sale date per SKU), the latest demand model and per-SKU metrics, released and non-released batches with balances, open POs within the horizon. Then `applyScenario(context, scenario)` (section 12) modifies it **in memory**, and the ML forecast is computed from the resulting sales (section 6.2a). Returns plain objects (money as strings).
 
 ### 7.2 `createPlan({ priorities? })`
 
@@ -596,14 +635,16 @@ One function that reads, with a fixed set of queries, everything the engine need
 
 Rebuild the same plan with fresh context, the active scenario and the current approval limit. Lines `approved_for_po` are frozen; `rejected` lines stay rejected; owner-`deferred` lines stay deferred; `edited` lines keep the owner's qty/offer at fresh prices (if one now fails a hard stop it stays `edited` but is not counted — `in_basket = false`, `defer_reason` = the code — and is retried on the next recalculation); every other line is recomputed (SKUs that no longer need stock drop out, new ones are added). Audit `plan.recalculated` with before/after totals and the lines added / removed.
 
-### 7.6 `approveLines(planId, lineIds, idempotencyKey, userId)` — the only PO writer
+### 7.6 `approveLines(planId, lineIds, idempotencyKey, actor)` — the only PO writer
+
+`actor` = `{ type: 'user', id: DEMO_USER }` from the approve route, or `{ type: 'agent', id: 'order-agent' }` from the pipeline's Order Agent (section 9.5, `idempotencyKey` = the run id). It is the same function and the same checks for both; the actor is stored in `approved_by` and the audit rows. The Order Agent calls `validate_po` first and passes only lines without hard stops; if a 422 still comes back, it drops those lines and retries once.
 
 In **one transaction**:
 1. `select … from purchase_plans where id = $1 for update`.
 2. If any `purchase_orders` row has this `idempotency_key` → return those POs with `alreadyProcessed: true` (no new rows).
 3. Load the selected lines; each must be `in_basket` (buyable), status `proposed` or `edited`, not already linked to a PO line.
 4. Re-run the SKU analysis and **all hard stops** with fresh data; any failure → abort with 422 and the list of `{ lineId, codes[] }`.
-5. Group lines by supplier. For each supplier insert a `purchase_orders` row: `po_number = 'PO-' || to_char(now(),'YYYYMMDD') || '-' || nextval('po_number_seq')`, status `pending_approval` if grand_total > `po_approval_limit` else `ready`, totals = Σ line amounts (same totals function), `expected_delivery_date = asOf + max lead time of its lines`, `source_plan_id`, `idempotency_key`, `approved_by`, `approved_at` (who approved the plan lines).
+5. Group lines by supplier. For each supplier insert a `purchase_orders` row: `po_number = 'PO-' || to_char(now(),'YYYYMMDD') || '-' || nextval('po_number_seq')`, status `pending_approval` if grand_total > `po_approval_limit` else `ready`, totals = Σ line amounts (same totals function), `expected_delivery_date = asOf + max lead time of its lines`, `source_plan_id`, `idempotency_key`, `approved_by` (the actor id), `approved_at` (who approved the plan lines).
 6. Insert PO lines (copy qty, free qty, price, tax, amounts, `recommendation_id`).
 7. Update recommendations → `approved_for_po`; insert `approvals`; update plan status; audit `po.created` per PO (with its status) and `plan.lines_approved`.
 8. Return the POs (each with `needsApproval`). A second identical request returns the same POs (unique constraints are the final guard).
@@ -650,6 +691,9 @@ All bodies validated with Zod (`lib/validation/api.ts`). Errors return `{ error:
 | `GET /api/products/search?q=` | `q` ≥ 2 chars | up to 20 SKUs with their bins | 400 |
 | `GET /api/scenarios` · `POST /api/scenarios/[id]/run` · `POST /api/scenarios/reset` | — | active scenario | 404 |
 | `POST /api/agent/chat` | `{ message: string (1–2000), planId?: uuid }` | `{ reply, toolCalls: [{ name, ok }], references: [{ type, id, label }], source }` | 503 never — falls back |
+| `POST /api/agents/run` | `{ planId: uuid, maxSkus?: 1–30 (default 15) }` | `{ runId }` (202; runs in the background) | 404, 409 `RUN_IN_PROGRESS`, 409 plan locked |
+| `GET /api/agents/runs/[id]` | — | run + steps (polled every 2 s while running) | 404 |
+| `GET /api/agents/runs?planId=` | — | past runs for a plan, newest first | — |
 | `GET /api/audit?limit=&before=` | pagination | audit rows | — |
 
 UI reads go through server components calling services directly; UI mutations call these routes then `router.refresh()`.
@@ -690,7 +734,7 @@ All tools return the `ToolResult` contract (`lib/validation/tool-contract.ts`). 
 | `get_heatmap_metrics` | `{ mode }` | top 20 highlighted bins |
 | `suggest_candidate_bin` | `{ sku, packs }` | candidate bin or `CAPACITY_REVIEW` |
 
-Not exposed, by design: approve lines, reject, create/update PO, Owner-approve a PO, send a PO, change the approval limit, any SQL. `create_draft_po` / `update_po_draft` from the v1 spec exist only as service functions called by the approve endpoint after a human click.
+Not exposed to the Ask PharmaOS agent, by design: approve lines, reject, create/update PO, Owner-approve a PO, send a PO, change the approval limit, any SQL. Creating POs is available to exactly one AI — the pipeline's Order Agent (section 9.5) — and no AI anywhere can send a PO, Owner-approve a PO, reject a plan or change the approval limit.
 
 ### 9.3 System prompt (`prompts.ts`)
 
@@ -764,6 +808,27 @@ Notes:
 - Errors: catch `ApiError` (has `status`: 429 rate limit, 5xx) and network/timeout errors. Any failure, missing `GEMINI_API_KEY`, a non-`STOP` finish reason or a timeout → deterministic fallback (`explain.ts`) with `source: 'deterministic'`. The UI shows a small "AI unavailable — showing calculated explanation" note.
 - Log each tool call (name, ok, ms) to `audit_logs` with actor `agent` only for mutating tools (`recalculate_plan`); read-only calls go to the response's `toolCalls` list for display.
 - Exact type names come from `node_modules/@google/genai/dist/genai.d.ts` (installed version 2.30.0); check there rather than guessing.
+
+---
+
+### 9.5 Agent pipeline (`lib/agents/pipeline/`) — three agents that decide
+
+**Pitch:** *The engine and the ML model calculate, three agents decide within guardrails, a human sends and the Owner approves large orders.* The agents are not narrators: each makes decisions that change the plan or create POs, and every decision passes a code guardrail before it takes effect.
+
+- **Trigger:** "Run procurement agents" on the plan screen (and on the Command Center for the latest plan) → `POST /api/agents/run { planId, maxSkus? }` → inserts `agent_runs` (status `running`) and returns `{ runId }` immediately; the run executes in the background with `after()` from `next/server`. One running run per plan (409 `RUN_IN_PROGRESS`). The UI polls `GET /api/agents/runs/[id]` every 2 s.
+- **SKU selection:** the top N plan lines by rank with status `proposed` (not edited, deferred, rejected or on a PO). N = `maxSkus` (1–30, default 15).
+- **Loop:** each agent is one Gemini session running the same manual function-calling loop as 9.4 (mode `AUTO`, automatic function calling disabled, `candidate.content` appended unchanged, all functionResponses in one user turn in call order, every `call.args` Zod-validated, max 12 turns, 15 s timeout per call). It handles **all** selected SKUs, sees **only its own tools**, and must finish by calling exactly **one terminal `submit_*` tool** whose arguments are Zod-validated. Agents hand off through the database (the plan lines), not through free text. Every tool call and decision is written to `agent_steps` (input, output, ok, ms).
+
+| Agent | Tools | Terminal tool | Guardrail (code) | Effect |
+|---|---|---|---|---|
+| **Demand Agent** | `get_sales_history`, `get_demand_forecasts {sku}` (baseline, ML, both WAPEs, default method, flags, 14-day ML series), `get_inventory_position` | `submit_demand_decisions { decisions: [{ sku, method: 'ml' \| 'baseline', reason (≥ 10 chars) }] }` | The agent picks a **method**, never a number: d̄ = that method's tool value. Unknown SKU or a SKU outside the run → rejected step | For each decision that differs from the line's current method, the SKU is re-analysed with that method and the line updated (qty, totals, `evidence.demandDecision { method, reason, by: 'demand-agent' }`); audit actor_type `agent`, actor_id `demand-agent`, action `agent.demand_decided` |
+| **Supplier Agent** | `compare_supplier_offers`, `get_po_projection`, `get_approval_limit` | `submit_supplier_decisions { decisions: [{ sku, offerId, reason }] }` | The offer must have **no exclusion codes** and pass every hard stop for the line's quantity (same validation as `editLine`); otherwise the decision is rejected and logged and the line keeps its offer | Applied through `editLine` with actor `supplier-agent` (action `line.edited`, reason = the agent's reason, `evidence.supplierDecision`). It may trade speed for price, consolidate SKUs onto one supplier to save freight, or keep a supplier PO under the ₹4,00,000 Owner limit |
+| **Order Agent** | `get_plan`, `validate_po { lineIds }`, `create_purchase_orders { lineIds }` | `submit_order_summary { created: [poId], skipped: [{ sku, reason }] }` | `create_purchase_orders` calls `approveLines` with actor `order-agent` and `idempotencyKey` = the run id (a retry never duplicates POs); lines with hard stops are skipped with their codes | POs created as `ready` (≤ limit) or `pending_approval` (> limit). It can **never** send a PO, Owner-approve a PO, reject a plan or change the approval limit — those tools do not exist for any AI |
+
+- **Fallback:** no `GEMINI_API_KEY`, API error, timeout, non-`STOP` finish, or an invalid terminal call after 2 retries → the Demand and Supplier agents fall back to the deterministic defaults (no changes, a `fallback` step); the Order Agent in fallback creates **no** POs and reports "AI unavailable — review and approve manually". The run ends with status `fallback`, and the UI says so plainly.
+- **Run status:** `succeeded` when all three agents end with a valid terminal call; `failed` only on an unexpected server error (the error is stored). `summary` lists lines changed and POs created (with which need Owner approval).
+- **Tests:** guardrails (a number instead of a method → rejected; an excluded or ineligible offer → rejected; an unknown tool → rejected; `create_purchase_orders` twice with the same run id → the same POs) and a fake Gemini client (scripted function calls) so the whole pipeline runs end to end in Vitest without the network.
+- The Ask PharmaOS agent (9.1–9.4) stays read-only plus `recalculate_plan`; it does **not** get `create_purchase_orders`.
 
 ---
 
@@ -888,8 +953,9 @@ Before committing a UI step: run the dev server, take a screenshot at **1440 × 
 - Footer bar: selected count and total → **Approve selected** (generates a fresh `idempotencyKey` with `crypto.randomUUID()` when the dialog opens; button disabled while the request runs) → confirmation dialog listing POs per supplier and marking which will need Owner approval (> ₹4,00,000) → success toast with links.
 - **Reject plan** (reason required).
 - **Recalculate** (plain button: fresh data and the active scenario).
+- **Run procurement agents** (section 9.5) → **Agent Run** panel (Sheet, 640 px): three agent cards in order with status (waiting / thinking / done / fallback), the tool calls as a timeline (tool name, ok, ms, one-line result), the decisions table (SKU, decision, reason, accepted or rejected by the guardrail), and the results (lines changed → drawer links, POs created → PO links, which need Owner approval). Live by polling; finished runs stay viewable under "Past runs".
 - **Ask PharmaOS** side panel (Sheet): message box, replies with references rendered as links.
-- Line drawer (`?line=<id>`, Sheet): product identity; demand chart (28 days, Recharts) with d7/d28/d̄; stock breakdown (available, reserved, incoming, ineligible); cover, ROP, target; batches table with FEFO projection; supplier comparison table (all offers incl. excluded with reason codes, factor scores, winner highlighted); formulas with the actual values substituted; quote timestamps; data-source labels; Edit controls (qty stepper by pack multiple, offer select) with live **preview** (PATCH `preview: true`) before Save; "Locate in warehouse" → `/warehouse?sku=<sku>`.
+- Line drawer (`?line=<id>`, Sheet): product identity; demand chart (28 days, Recharts) with d7/d28/d̄; stock breakdown (available, reserved, incoming, ineligible); cover, ROP, target; batches table with FEFO projection; supplier comparison table (all offers incl. excluded with reason codes, factor scores, winner highlighted); formulas with the actual values substituted (incl. the ridge prediction with its largest feature contributions); the 14-day ML forecast as a dashed continuation of the demand chart and an accuracy line ("ML error 18% vs average 27% on the last 14 days → using ML", or the reverse, honestly; plus who chose the method); quote timestamps; data-source labels; Edit controls (qty stepper by pack multiple, offer select) with live **preview** (PATCH `preview: true`) before Save; "Locate in warehouse" → `/warehouse?sku=<sku>`.
 
 **3D Warehouse (`/warehouse`)** — section 11.
 
@@ -897,7 +963,7 @@ Before committing a UI step: run the dev server, take a screenshot at **1440 × 
 
 **Activity & Audit (`/activity`)**: table (time, actor type/id, action, entity, before → after summary, reason), filter by action/entity, "Load more".
 
-**Data & Scenarios (`/data`)**: data summary (rows per table, as-of date, seed) and the **Data sources** list from `data_sources` (name, link, label, what it informed); scenario cards (5) with Run / Reset; Owner approval limit input (default ₹4,00,000, `PATCH /api/settings`); **ROI model** (section 11 of `problemstatement.md`) with sliders for each assumption and live totals, labelled "Illustrative model — edit the assumptions".
+**Data & Scenarios (`/data`)**: data summary (rows per table, as-of date, seed) and the **Data sources** list from `data_sources` (name, link, label, what it informed); scenario cards (5) with Run / Reset; **Demand model** card (trained at, training rows, features, global ML vs baseline WAPE, SKUs using ML, "trained on synthetic demo data", Retrain button calling the training service); Owner approval limit input (default ₹4,00,000, `PATCH /api/settings`); **ROI model** (section 11 of `problemstatement.md`) with sliders for each assumption and live totals, labelled "Illustrative model — edit the assumptions".
 
 ---
 
@@ -929,7 +995,7 @@ Running a scenario sets `app_state.active_scenario_id` (audited) and its effects
 
 ## 13. Audit log catalogue
 
-Every row: `actor_type` (`user` | `system` | `agent` | `tool`), `actor_id` (DEMO_USER, `seed`, `orchestrator`), `action`, `entity_type`, `entity_id`, `before_json`, `after_json`, `reason`.
+Every row: `actor_type` (`user` | `system` | `agent` | `tool`), `actor_id` (DEMO_USER, `seed`, `orchestrator`, `demand-agent`, `supplier-agent`, `order-agent`), `action`, `entity_type`, `entity_id`, `before_json`, `after_json`, `reason`.
 
 | Action | When |
 |---|---|
@@ -945,6 +1011,10 @@ Every row: `actor_type` (`user` | `system` | `agent` | `tool`), `actor_id` (DEMO
 | `plan.rejected` | rejectPlan |
 | `scenario.run` · `scenario.reset` | scenarios |
 | `settings.approval_limit_changed` | Owner approval limit edit |
+| `model.trained` | demand model trained (global metrics, λ, rows) |
+| `agent.run_started` · `agent.run_finished` | pipeline run start / end (status, summary) |
+| `agent.demand_decided` | Demand Agent changed a line's forecast method (actor `agent`, `demand-agent`) |
+| `line.edited` (actor `supplier-agent`) · `plan.lines_approved` + `po.created` (actor `order-agent`) | Supplier / Order Agent effects, same actions as for a human |
 
 ---
 
@@ -953,7 +1023,7 @@ Every row: `actor_type` (`user` | `system` | `agent` | `tool`), `actor_id` (DEMO
 ### 14.1 Unit fixtures (hand-computed — these numbers must match exactly)
 
 **F1 Demand and quantity.** Last 7 days sold `[10, 12, 8, 10, 10, 14, 6]` (sum 70); last 28 days sum 224. Offer: L = 4, pack_multiple = 10, MOQ = 20. Stock position = 40.
-- d7 = 10, d28 = 8, d̄ = 0.6 × 10 + 0.4 × 8 = **9.2**
+- d7 = 10, d28 = 8, d̄ = 0.6 × 10 + 0.4 × 8 = **9.2** (baseline method: the fixture has no forecast model)
 - safety = max(2, 27.6) = **27.6**; ROP = 9.2 × 4 + 27.6 = **64.4**; target = 9.2 × 11 + 27.6 = **128.8**
 - 40 < 64.4 → candidate; qRaw = 88.8 → ceil(8.88) × 10 = **90**; max(90, 20) = **90**
 - cover = 40 / 9.2 = **4.3478…** days
@@ -980,6 +1050,10 @@ Every row: `actor_type` (`user` | `system` | `agent` | `tool`), `actor_id` (DEMO
 
 **F9 Determinism.** `buildPlan` twice on the same context → deep-equal output.
 
+**F10 Demand model.** Ridge solver matches a hand-solved 2-feature problem (λ = 1) to 1e-9; feature builder on a known 35-day series gives the expected lags, means, std, zero share and slope; recursive forecast uses its own predictions as later lags; WAPE on a known pair = expected; default-method rule (ML only when ≥ 28 days of history and `mlWape ≤ 0.95 × baselineWape`; ties and `null` → baseline); training twice on the same rows → identical coefficients.
+
+**F11 Agent guardrails.** With a fake Gemini client: `submit_demand_decisions` with a number instead of a method → rejected step, line unchanged; a supplier decision for an excluded offer → rejected, line keeps its offer; an unknown tool → `INVALID_TOOL_INPUT`; `create_purchase_orders` twice with the same run id → the same POs; no API key → run status `fallback`, no POs.
+
 ### 14.2 Integration (optional, `TEST_DATABASE_URL`)
 
 Seed a tiny fixture DB → create plan → edit qty → approve twice with the same key → exactly one PO per supplier, PO total = Σ lines, every approved line linked once, audit rows exist → reject a plan → no POs.
@@ -993,14 +1067,16 @@ Seed a tiny fixture DB → create plan → edit qty → approve twice with the s
 - [ ] Approve creates POs grouped by supplier; double-click creates nothing extra; a PO above ₹4,00,000 is `pending_approval` and Send returns 409 `APPROVAL_REQUIRED` until the Owner approves it.
 - [ ] 3D: click bin shows the right batches; heatmap modes change colours; `?sku=` focuses; 2D toggle works.
 - [ ] Each scenario run + recalculate changes the numbers; Reset restores them.
-- [ ] With `GEMINI_API_KEY` removed, Why? and Ask still respond (deterministic).
+- [ ] With `GEMINI_API_KEY` removed, Why? and Ask still respond (deterministic), and an agent run ends `fallback` with no changes and no POs.
+- [ ] The Data page model card shows the real backtest; the drawer's accuracy line matches `sku_forecast_metrics` for 3 spot-checked SKUs.
+- [ ] Under Seasonal surge, an agent run changes at least one line, creates POs, and at least one is `pending_approval`; every step is visible in the trace and in the audit log.
 - [ ] `npm run build` passes.
 
 ---
 
-## 15. Build plan — 30 hours, one builder
+## 15. Build plan — about 42 hours, one builder
 
-Stage 0 (setup) is already done, which gives about 1 hour of slack. Hours are cumulative.
+Stage 0 (setup) is already done. Hours are cumulative. The original budget was 30 hours; adding the ML demand model (P16B, about 4–5 h) and the three-agent pipeline (P22B + P23B, about 6–7 h) takes it to about 42 hours — the team accepted going past 30 hours rather than cutting features.
 
 ### Stage 1 — Foundation and data (hours 0–3) · P0
 
@@ -1022,16 +1098,18 @@ Verify: `profile.json` contains no names or rows; `npm run db:reset && npm run s
 
 Verify: `npm run test` all green (F1–F9); debug plan shows urgent SKUs first and the supplier PO totals with any above ₹4,00,000 flagged.
 
-### Stage 3 — Procurement UI (hours 9–14) · P0
+### Stage 3 — Procurement UI and demand model (hours 9–19) · P0
 
 - [ ] Theme tokens in `globals.css` (light only), `Toaster` in root layout; real shell (Sidebar, TopBar, DataSourceBadge).
 - [ ] `lib/validation/api.ts`; routes: dashboard, analyze, get plan, PATCH line (with preview), recalculate.
 - [ ] `lib/services/plans.ts` (createPlan, getPlan, editLine, recalculatePlan), `dashboard.ts`, `explain.ts`.
 - [ ] Command Center screen; Create Purchase Plan dialog; Procurement list; Plan screen with Impact Card, supplier PO strip, table, "Not in this plan" section, line drawer (demand chart, stock breakdown, batches, supplier comparison, formulas), edit with preview.
 
-Verify: create a plan in the browser; open a line; edit qty → preview → save → totals and supplier PO strip change; refresh keeps state.
+- [ ] **ML demand model (P16B, section 6.2a):** `lib/ml/*` + tests F10, migration `003_ml_and_agents.sql`, `npm run train:forecast`, live forecast in `loadPlanningContext`, method + evidence in the engine, drawer accuracy line and forecast continuation, Data page model card.
 
-### Stage 4 — Approval and audit (hours 14–17) · P0
+Verify: create a plan in the browser; open a line; edit qty → preview → save → totals and supplier PO strip change; refresh keeps state. After P16B: `npm run train:forecast` prints the global ML vs baseline WAPE and how many SKUs use ML; a new plan's drawer shows the method and accuracy line; F10 green.
+
+### Stage 4 — Approval and audit (hours 19–22) · P0
 
 - [ ] `lib/services/approval.ts` (7.6) + approve route; reject route; defer/reject/restore via PATCH.
 - [ ] PO Owner approve / reject / send (simulated) services and routes (7.6a).
@@ -1040,7 +1118,7 @@ Verify: create a plan in the browser; open a line; edit qty → preview → save
 
 Verify: approve 5 lines across 3 suppliers → 3 POs (`ready`, or `pending_approval` above ₹4,00,000), totals match; Send works on `ready`, is refused with `APPROVAL_REQUIRED` on `pending_approval`, works after Owner approval; click Approve twice fast / replay the same request → no duplicates; audit shows every action; reject plan → no POs.
 
-### Stage 5 — Warehouse (hours 17–22) · P0
+### Stage 5 — Warehouse (hours 22–27) · P0
 
 - [ ] `heatmap.ts`, `putaway.ts` (+ tests); `lib/services/warehouse.ts`; layout/heatmap/bin/search routes.
 - [ ] `Grid2D` first (CSS grid by aisle → rack → shelf, same colours and panel), then `Scene3D` with instanced bins, hover, click, modes, legend, `?sku=` focus, proposed ghost cartons, reset camera, WebGL fallback.
@@ -1048,38 +1126,40 @@ Verify: approve 5 lines across 3 suppliers → 3 POs (`ready`, or `pending_appro
 
 Verify: every heatmap mode matches the plan's statuses for 3 spot-checked SKUs; unmapped stock is listed, not placed; works with WebGL disabled (2D).
 
-### Stage 6 — Agent orchestration (hours 22–25) · P1
+### Stage 6 — Agents (hours 27–37) · P1
 
 - [ ] `lib/agents/tools.ts`, `prompts.ts`, `orchestrator.ts`; `/api/agent/chat`; `/explain` route uses the agent then falls back.
 - [ ] Ask PharmaOS panel; Why? buttons; plan summary after creation.
 - [ ] Test the 7 prompts in Appendix A with and without the API key.
+- [ ] **Agent pipeline (P22B, section 9.5):** shared loop with terminal tools, Demand / Supplier / Order agents with guardrails, `runPipeline`, routes, tests F11.
+- [ ] **Agent run view (P23B):** Run procurement agents button, Agent Run panel with live trace, past runs.
 
-Verify: "Why did you choose Supplier B instead of Supplier A for <SKU>?" cites the same numbers as the drawer; "Which POs need Owner approval?" cites the supplier totals; "Recalculate the plan" recalculates the saved plan (audited, actor agent); with the key removed every button still works.
+Verify: "Why did you choose Supplier B instead of Supplier A for <SKU>?" cites the same numbers as the drawer; "Which POs need Owner approval?" cites the supplier totals; "Recalculate the plan" recalculates the saved plan (audited, actor agent); with the key removed every button still works. Agent pipeline: a run on the seasonal-surge plan changes lines and creates POs (one `pending_approval`), every step is in the trace; without the key the run ends `fallback`, creating nothing.
 
-### Stage 7 — Scenarios and polish (hours 25–27) · P1
+### Stage 7 — Scenarios and polish (hours 37–39) · P1
 
 - [ ] `apply.ts`, `scenarios.ts`, routes, Data & Scenarios screen, scenario chip in top bar, ROI model.
 - [ ] Loading/empty/error/stale states on every screen; keyboard focus visible; numbers right-aligned.
 
-Verify: run Seasonal surge → recalculate → at least one supplier PO above ₹4,00,000 with the Owner approval badge; Supplier delay re-ranks; Reset restores baseline numbers.
+Verify: run Seasonal surge → recalculate → the ML forecast rises for the surged categories → at least one supplier PO above ₹4,00,000 with the Owner approval badge; Supplier delay re-ranks; Reset restores baseline numbers.
 
-### Stage 8 — Freeze and rehearse (hours 27–30)
+### Stage 8 — Freeze and rehearse (hours 39–42)
 
-- [ ] No new features after hour 27.
+- [ ] No new features after hour 39.
 - [ ] `npm run build` and run the production build locally (`npm run start`).
 - [ ] `db:reset` + `seed` to a clean demo state; note the demo SKUs from `demo-cases.json`.
 - [ ] Rehearse the demo script 3 times with a timer; record a backup video.
 - [ ] Run the manual checklist 14.3.
 
-P2 stretch (only if ahead at hour 22): ghost cartons polish, simulated put-away movement (`warehouse_movements`), simple FEFO pick path.
+P2 stretch (only if ahead at hour 27): ghost cartons polish, simulated put-away movement (`warehouse_movements`), simple FEFO pick path.
 
 ### 15.1 Cut order if time runs short
 
 1. P2 stretch.
 2. Demand-spike and expiry scenarios (keep seasonal surge: it shows the approval gate).
-3. Free-form Ask panel (keep deterministic **Why?** built from `evidence_json`).
+3. Free-form Ask panel (keep deterministic **Why?** built from `evidence_json`). Keep the agent pipeline: it is the agentic core.
 4. Extra heatmap modes (keep stockout and expiry).
-5. **Never cut:** correct calculations, plan editing with server recalculation, approval + audit, and a basic interactive 3D warehouse.
+5. **Never cut:** correct calculations, the ML demand model with its honest backtest, the three-agent pipeline with guardrails, plan editing with server recalculation, approval + audit, and a basic interactive 3D warehouse.
 
 ---
 
@@ -1094,20 +1174,22 @@ P2 stretch (only if ahead at hour 22): ghost cartons polish, simulated put-away 
 | LLM slow / down / refuses | 15 s timeout, deterministic fallback, AI is never on the critical path |
 | WebGL fails on the demo laptop | 2D grid with the same data and panel |
 | Supabase/Wi-Fi issue during judging | Local Postgres fallback (3.2) seeded the same way; backup video |
-| Running out of time | Stage order, freeze at hour 27, cut order 15.1 |
+| Running out of time | Stage order, freeze at hour 39, cut order 15.1 |
+| ML does not beat the baseline | The per-SKU rule falls back to the baseline and the UI says so; the backtest numbers are shown as they are, never tuned for the demo |
+| An agent proposes something unsafe | Code guardrails reject it (method-only demand decisions, eligible offers only, POs only through `approveLines`, no send / Owner-approve tool for any AI); rejected decisions are visible in the trace |
 
 ---
 
 ## 17. Demo script (3–4 minutes)
 
-1. **(0:00) The pain.** "A stockist has ₹2 lakh to spend today, SKUs about to run out and stock near expiry." Command Center; point at the data-source badge.
+1. **(0:00) The pain.** "A stockist has SKUs about to run out, stock near expiry, and orders placed by gut feel." Command Center; point at the data-source badge.
 2. **(0:30) Create plan.** One click → ranked plan with every SKU that needs stock. Impact Card: stockouts covered, total spend, POs per supplier.
-3. **(1:00) Why this line?** Open a stockout SKU: demand chart, stock position, expiry, supplier comparison. Ask "Why Supplier B instead of A?" — the answer cites the drawer's numbers.
+3. **(1:00) Why this line?** Open a stockout SKU: demand chart with the dashed ML forecast and the accuracy line ("ML error 18% vs average 27% → using ML"), stock position, expiry, supplier comparison. Ask "Why Supplier B instead of A?" — the answer cites the drawer's numbers.
 4. **(1:45) Warehouse.** Locate the SKU in 3D, switch stockout → expiry heatmap, click its bin.
 5. **(2:20) Disruption.** Run Seasonal surge → recalculate → quantities rise and one supplier PO crosses ₹4,00,000 (amber Owner approval badge).
-6. **(2:50) Edit.** Change one quantity → preview → save; totals recalculate on the server.
-7. **(3:10) Approve and send.** Approve selected lines → POs grouped by supplier; the large one is `pending_approval` and Send is blocked → Owner approves → Send (simulated) → audit records.
-8. **(3:40) Close.** "A human approved every line, the Owner signed off the big PO, and nothing left the app — sending is simulated." Show the ROI model.
+6. **(2:50) Agents.** Click **Run procurement agents**: watch the Demand Agent pick ML or the average per SKU, the Supplier Agent switch one supplier (with its reason, checked by the guardrail), and the Order Agent create the POs — one needs Owner approval. Every tool call is in the trace.
+7. **(3:20) Owner and send.** Open the large PO: `pending_approval`, Send is blocked → Owner approves → Send (simulated) → the audit log shows the agents' and the humans' actions.
+8. **(3:45) Close.** "The engine and the ML model calculate, three agents decide within guardrails, a human sends and the Owner approves large orders — and nothing leaves the app." Show the ROI model.
 
 ---
 
@@ -1125,6 +1207,8 @@ P2 stretch (only if ahead at hour 22): ghost cartons polish, simulated put-away 
 - [ ] Clicking a 3D bin shows the matching product/batch/quantity records; heatmaps use calculated values; selecting a recommendation focuses its bin; proposed stock looks distinct.
 - [ ] Scenarios change state and recalculated results.
 - [ ] LLM failure does not break any workflow.
+- [ ] The demand model is trained, backtested and stored; each SKU uses ML only where its backtest beats the baseline, and the UI shows both errors honestly.
+- [ ] An agent run makes real, guarded decisions (forecast method, supplier, POs), stores every step, and audits every change; without the API key it ends `fallback` and changes nothing.
 - [ ] No action is labelled ordered/confirmed; every "sent" is labelled simulated; no PO above ₹4,00,000 reaches `sent` without an Owner approval.
 - [ ] `npm run check` and `npm run build` pass.
 

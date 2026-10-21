@@ -1,7 +1,7 @@
 # PharmaOS — Problem Statement
 
 > Intelligent procurement agent for Indian pharmaceutical stockists.
-> Hackathon build · solo builder · 30 hours · Version 1.0 (21 Oct 2026)
+> Hackathon build · solo builder · about 42 hours (extended from 30 for the ML model and agents) · Version 1.1 (21 Oct 2026)
 > Source of truth: *PharmaOS — Final Hackathon Spec* (v1 spec + final revisions). Companion file: `implementationplan.md`.
 
 ---
@@ -81,12 +81,12 @@ The Vector Consulting figures come from a trade-press report of a consulting stu
 3. **Trade-offs are multi-dimensional:** cheapest supplier vs fastest vs most reliable; scheme savings vs expiry risk; buying more today vs cash stuck in slow stock.
 4. **ERPs record, they don't decide:** pharma ERPs (e.g. Marg) handle billing, stock ledgers, batch/expiry tracking and schemes; B2B platforms (e.g. Pharmarack) digitise ordering. Neither tells the owner *what* to buy, in which order of urgency, or *why*.
 
-**Positioning rule (from the research brief):** do not claim that inventory software does not exist. PharmaOS differentiates through cross-system decision coordination — one explainable, ranked purchase decision — and human-approved execution with an Owner approval limit for large POs.
+**Positioning rule (from the research brief):** do not claim that inventory software does not exist. PharmaOS differentiates through cross-system decision coordination — one explainable, ranked purchase decision — and human-controlled execution with an Owner approval limit for large POs. Two things make the decision intelligent rather than rule-of-thumb: an **ML demand model** that is used for a SKU only where its measured backtest beats the simple average, and **three decision-making agents** (Demand, Supplier, Order) that choose within code guardrails.
 
 ## 6. Why now
 
 - LLMs can coordinate business tools and explain a recommendation in plain language, grounded in the numbers those tools return.
-- Tool calling lets an agent orchestrate deterministic calculations instead of guessing numbers, which keeps every output auditable.
+- Tool calling lets agents make real decisions on top of deterministic calculations instead of guessing numbers: an agent chooses a forecast method or a supplier, code checks the choice, and every step is auditable.
 - Stockists already export CSVs from their ERP; no new data entry is needed to start.
 
 ---
@@ -102,14 +102,14 @@ Following the mentor's advice, the build covers **one** workflow — intelligent
 **In scope (P0 unless marked):**
 
 1. Synthetic demo data in the full schema, generated with a fixed seed from patterns learned from reference datasets (the team's datasets and public sources such as an Indian medicine catalogue and NPPA price references). No reference row is copied; every row is labelled `synthetic_demo` and every reference is listed in the app.
-2. Demand baseline, stock position, days of cover, reorder point, order quantity with pack/MOQ rounding.
+2. Demand: a transparent baseline plus an **ML demand model** (global ridge regression on recent sales, trend, weekday and category), backtested on held-out days and used per SKU only where it is measurably better; stock position, days of cover, reorder point, order quantity with pack/MOQ rounding.
 3. Batch-level expiry assessment that changes the recommendation.
 4. Supplier comparison: eligibility filter, scheme-aware landed cost, transparent weighted score.
 5. Plan lines ranked by **loss prevented per rupee** (most urgent first), with a projected PO per supplier.
 6. Editable plan with server-side recalculation and a **Plan Impact Card**.
 7. Approve / reject / defer lines, POs grouped by supplier, idempotent approval, an **Owner approval limit**: any PO above ₹4,00,000 must be approved by the Owner before it can be sent (sending is simulated), append-only audit log.
 8. Interactive 3D warehouse on the same records (heatmaps, bin details, focus from a plan line), with a 2D fallback.
-9. AI orchestrator (P1): one LLM calling typed tools, grounded explanations, full deterministic fallback.
+9. AI (P1): an explaining assistant (Ask PharmaOS, Why?, plan summary) and a **three-agent pipeline** — the Demand Agent picks ML or average per SKU, the Supplier Agent may switch to another eligible supplier, the Order Agent creates the POs — each decision checked by code, every step stored as a visible trace, full deterministic fallback. No AI can send a PO or approve one for the Owner.
 10. Disruption scenarios (P1): demand spike, supplier delay/price change, seasonal surge (POs cross the approval limit), expiry risk.
 11. Stretch (P2): ghost incoming cartons, candidate put-away, simple pick path.
 
@@ -140,6 +140,8 @@ The user runs procurement analysis, sees a ranked and explainable plan, runs a s
 | Supplier validity | 0 selected offers that are stale, unapproved, mismatched or over availability |
 | PO integrity | PO total = Σ line totals; 0 duplicate POs on repeated approval |
 | Time to reviewable plan | Seconds from "Create plan" to rendered plan (report the measured number) |
+| Forecast accuracy | ML vs baseline WAPE on the 14-day holdout, globally and per SKU (report as measured, including SKUs where ML loses) |
+| Agent guardrails | 0 agent decisions applied that break a rule (ineligible offer, invented number, sent or Owner-approved PO) |
 | Warehouse mapping coverage | % of inventory balances mapped to a valid bin |
 
 ### 10.3 North-star metric
@@ -161,7 +163,7 @@ At an assumed ₹5,000/month subscription, payback is under one month on these a
 ## 12. Assumptions and validation needed
 
 - Synthetic demo data does not prove ROI or willingness to pay.
-- The demand forecast is a transparent baseline, not advanced forecasting.
+- The ML demand model is trained and tested on synthetic data shaped by reference patterns; its measured accuracy shows the method works, not how it would perform on a real stockist's sales.
 - Supplier prices, schemes, availability, stock, batches, POs and the warehouse layout are all simulated: no verified open dataset of Indian stockist operations exists (see the data acquisition plan).
 - 3D coordinates and capacity are a virtual demo layout, not a live digital twin.
 - Tax, scheme, supplier-return and product-handling rules must be verified before real use.
@@ -169,4 +171,4 @@ At an assumed ₹5,000/month subscription, payback is under one month on these a
 
 ## 13. Pitch-slide version
 
-> Indian pharma stockists lose money every day in two opposite directions — running out of fast movers and writing off expired slow movers — because the daily purchase decision is made by hand from scattered reports and WhatsApp quotes. PharmaOS makes that decision in minutes, explains every rupee, and keeps the human in charge: large POs need the Owner's approval before they go out.
+> Indian pharma stockists lose money every day in two opposite directions — running out of fast movers and writing off expired slow movers — because the daily purchase decision is made by hand from scattered reports and WhatsApp quotes. PharmaOS makes that decision in minutes — an ML model forecasts where it is proven better, three agents decide within guardrails, the engine explains every rupee — and keeps the human in charge: large POs need the Owner's approval before they go out.

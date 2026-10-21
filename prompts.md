@@ -15,17 +15,19 @@ Run these prompts **one at a time, in order**, with your AI coding assistant ope
 
 > **Change after P13:** the purchase budget was removed. A plan now includes every SKU that needs stock, ranked by priority, and any single PO above ₹4,00,000 needs Owner approval before it can be sent (sending is simulated). The budget wording in the already-run prompts P06 and P10–P12 is kept as history; prompts from P13 on describe the current design.
 
+> **Change after P16:** two features were added (and the build budget grows from 30 to about 42 hours, by choice): a real **ML demand model** (**P16B**, run it **next, before P17**) and a real **three-agent procurement pipeline** — Demand, Supplier and Order agents that make guarded decisions with real effects (**P22B** and **P23B**, after P23). The Order Agent may create POs (never send or Owner-approve them).
+
 | # | Stage | Hours | Prompt |
 |---|---|---|---|
 | — | Any | — | P00 Session primer |
 | 1 | Foundation and data | 0–3 | P01 Database · P02 Dashboard skeleton · P03 Register references (STOP) · P04 Profile references (STOP) · P05 Generate synthetic data · P06 Demo cases, validation, seed |
 | 2 | Calculation engine | 3–9 | P07 Engine tests first · P08 Demand, expiry, inventory · P09 Ordering, suppliers, totals, priority · P10 Basket, impact, validation, engine · P11 Context loader and debug plan (STOP) |
-| 3 | Procurement UI | 9–14 | P12 Theme and shell · P13 Plan services and API · P14 Command Center · P15 Plan screen · P16 Line drawer and edit preview |
-| 4 | Approval and audit | 14–17 | P17 Approval service · P18 POs and Activity |
-| 5 | Warehouse | 17–22 | P19 Heatmap, put-away, warehouse API · P20 2D grid and panels · P21 3D scene |
-| 6 | Agent | 22–25 | P22 Tools and orchestrator · P23 Ask panel, Why?, summary |
-| 7 | Scenarios and polish | 25–27 | P24 Scenarios and ROI model · P25 Polish pass |
-| 8 | Freeze and rehearse | 27–30 | P26 Done audit (STOP) · P27 Demo build and clean seed · P28 Demo notes |
+| 3 | Procurement UI and demand model | 9–19 | P12 Theme and shell · P13 Plan services and API · P14 Command Center · P15 Plan screen · P16 Line drawer and edit preview · **P16B ML demand model** |
+| 4 | Approval and audit | 19–22 | P17 Approval service · P18 POs and Activity |
+| 5 | Warehouse | 22–27 | P19 Heatmap, put-away, warehouse API · P20 2D grid and panels · P21 3D scene |
+| 6 | Agents | 27–37 | P22 Tools and orchestrator · P23 Ask panel, Why?, summary · **P22B Agent pipeline** · **P23B Agent run view** |
+| 7 | Scenarios and polish | 37–39 | P24 Scenarios and ROI model · P25 Polish pass |
+| 8 | Freeze and rehearse | 39–42 | P26 Done audit (STOP) · P27 Demo build and clean seed · P28 Demo notes |
 | — | Any | — | FIX · CUT · STRETCH |
 
 ---
@@ -231,7 +233,7 @@ STOP for my review. After I approve: `npm run check`, commit "stage 2: planning 
 
 ---
 
-## Stage 3 — Procurement UI (hours 9–14)
+## Stage 3 — Procurement UI and demand model (hours 9–19)
 
 ### P12 — Theme and shell
 
@@ -307,14 +309,33 @@ Design: follow implementationplan.md §10.1 (premium design system) exactly, and
 
 ---
 
-## Stage 4 — Approval and audit (hours 14–17)
+### P16B — ML demand model
+
+```text
+Stage 3, step 6: a real ML demand model. Follow implementationplan.md §6.2 and §6.2a exactly, plus architecture.md §3 (lib/ml layer rules). Run this before P17.
+Design: follow implementationplan.md §10.1 (premium design system) exactly, and do its Visual QA step (screenshots at 1440×900 and 1024×768) before committing.
+
+1. db/migrations/003_ml_and_agents.sql: forecast_models, sku_forecast_metrics, agent_runs and agent_steps exactly as plan §4 (agent tables are created now so there is one migration; P22B uses them). Run `npm run db:migrate`.
+2. lib/ml/ (pure, no I/O): features.ts (lag1, lag7, mean7, mean28, std28, zeroShare28, 28-day OLS trend slope, day-of-week one-hot with Monday as reference, category one-hot; from days before t only), ridge.ts (standardise; closed-form ridge with Cholesky; unpenalised intercept), forecast.ts (recursive 14-day forecast from stored coefficients; never below 0), backtest.ts (WAPE for ML and for the flat baseline over the 14-day holdout; null when actual sum is 0; the default-method rule: ML only if ≥ 28 days of history AND mlWape ≤ 0.95 × baselineWape).
+3. Tests F10 (plan §14.1) FIRST, then implement until green: ridge vs a hand-solved 2-feature problem (λ = 1, 1e-9), the feature builder on a known series, recursive forecasting, WAPE, the default-method rule (ties and null → baseline), and determinism (same rows → identical coefficients).
+4. lib/services/forecast-model.ts + scripts/ml/train-forecast.ts (`npm run train:forecast`): train on all days except the last 14, pick λ from [0.1, 1, 10, 100] by WAPE on the 14 days before the holdout, refit, backtest every SKU, store forecast_models + sku_forecast_metrics, audit model.trained. Print the global ML vs baseline WAPE, λ, rows and how many SKUs use ML. Call it at the end of `npm run seed`.
+5. Engine and context: loadPlanningContext loads 56 days of sales and the latest model + metrics and computes SkuContext.forecast live from the current (scenario-applied) sales; computeDemand returns baseline, ml, method, methodReason and forecast14 and sets d̄ from the method (default rule, or a per-SKU override for P22B). With no model, every SKU uses the baseline. F1–F9 must still pass (fixtures without a forecast use the baseline).
+6. UI: in the line drawer, the 14-day ML forecast as a dashed continuation of the demand chart, the honest accuracy line ("ML error 18% vs average 27% on the last 14 days → using ML", or the reverse) with who chose the method, and the ridge formula in the FormulaPanel with the largest feature contributions. On /data (placeholder page for now), a "Demand model" card: trained at, rows, features, λ, global ML vs baseline WAPE, SKUs using ML, labelled "trained on synthetic demo data".
+7. Run `npm run train:forecast`, create a new plan and show me: the global metrics, 3 SKUs that use ML and 3 that use the baseline with their two WAPEs, and one drawer screenshot. Never tune anything to make ML look better.
+8. `npm run check` and `npm run build`. Commit: "stage 3: ML demand model".
+```
+**You check:** `npm run train:forecast` prints both errors; a new plan's drawer shows the dashed ML forecast and an accuracy line that matches the Data page; SKUs where ML did not win say so and use the average.
+
+---
+
+## Stage 4 — Approval and audit (hours 19–22)
 
 ### P17 — Approval service
 
 ```text
 Stage 4, step 1: approval. Follow implementationplan.md §7.6 and §7.6a exactly and architecture.md §7.3 and §7.3a. approveLines is the ONLY code allowed to create purchase orders.
 
-1. lib/services/approval.ts: approveLines(planId, lineIds, idempotencyKey, userId) in ONE transaction: SELECT … FOR UPDATE on the plan → idempotency lookup → load lines → re-run analysis + ALL hard stops with fresh context (422 with { lineId, codes } on failure) → group by supplier → insert POs (status 'pending_approval' if grand_total > app_state.po_approval_limit, else 'ready'; po_number from po_number_seq, totals from the shared totals function, expected_delivery_date) → insert PO lines with recommendation_id → update line statuses, approvals, plan status → audit po.created ×N and plan.lines_approved.
+1. lib/services/approval.ts: approveLines(planId, lineIds, idempotencyKey, actor) — actor is { type: 'user', id } (the approve route) or { type: 'agent', id: 'order-agent' } (the P22B Order Agent, same checks) — in ONE transaction: SELECT … FOR UPDATE on the plan → idempotency lookup → load lines → re-run analysis + ALL hard stops with fresh context (422 with { lineId, codes } on failure) → group by supplier → insert POs (status 'pending_approval' if grand_total > app_state.po_approval_limit, else 'ready'; po_number from po_number_seq, totals from the shared totals function, expected_delivery_date) → insert PO lines with recommendation_id → update line statuses, approvals, plan status → audit po.created ×N and plan.lines_approved.
 2. rejectPlan(planId, reason) in plans.ts.
 3. lib/services/purchase-orders.ts: approvePo (pending_approval → approved, approvals row, audit po.approved), rejectPo (pending_approval → rejected, reason ≥ 3, audit po.rejected), sendPo (ready | approved → sent, sent_at, sent_by, audit po.sent; pending_approval → 409 APPROVAL_REQUIRED; others → 409 PO_LOCKED). Sending is SIMULATED: no email, no API, nothing leaves the app. Each runs in one transaction with SELECT … FOR UPDATE on the PO.
 4. Routes: POST /api/purchase-plans/[id]/approve, POST /api/purchase-plans/[id]/reject, POST /api/purchase-orders/[id]/approve, /reject, /send (Zod, §8 status codes).
@@ -341,7 +362,7 @@ Design: follow implementationplan.md §10.1 (premium design system) exactly, and
 
 ---
 
-## Stage 5 — Warehouse (hours 17–22)
+## Stage 5 — Warehouse (hours 22–27)
 
 ### P19 — Heatmap, put-away and warehouse API
 
@@ -390,14 +411,14 @@ Design: follow implementationplan.md §10.1 (premium design system) exactly, and
 
 ---
 
-## Stage 6 — Agent orchestration (hours 22–25)
+## Stage 6 — Agents (hours 27–37)
 
 ### P22 — Tools and orchestrator
 
 ```text
 Stage 6, step 1: the AI orchestrator. Follow implementationplan.md §9.2, §9.3 and §9.4 exactly, plus architecture.md §9.
 
-1. lib/agents/tools.ts: exactly the 19 tools in the §9.2 table. Each has a name, a description, a Zod input schema converted with z.toJSONSchema() and passed as parametersJsonSchema (keep schemas simple: no oneOf, no recursion) and a handler that calls services and returns a ToolResult (lib/validation/tool-contract.ts). Re-validate every input with Zod before running. recalculate_plan is the only write tool and audits with actor_type 'agent'. Do NOT add tools for approve, reject, PO creation, Owner PO approval, sending a PO, changing the approval limit or SQL.
+1. lib/agents/tools.ts: exactly the 19 tools in the §9.2 table. Each has a name, a description, a Zod input schema converted with z.toJSONSchema() and passed as parametersJsonSchema (keep schemas simple: no oneOf, no recursion) and a handler that calls services and returns a ToolResult (lib/validation/tool-contract.ts). Re-validate every input with Zod before running. recalculate_plan is the only write tool and audits with actor_type 'agent'. Do NOT add tools for approve, reject, PO creation, Owner PO approval, sending a PO, changing the approval limit or SQL to this Ask PharmaOS agent (PO creation exists only for the pipeline's Order Agent, built in P22B).
 2. lib/agents/prompts.ts: the §9.3 system prompt, byte for byte (sent as config.systemInstruction).
 3. lib/agents/orchestrator.ts: runAgent({ message, planId }) with the §9.4 manual function-calling loop using @google/genai: model from GEMINI_MODEL (default gemini-flash-latest), systemInstruction, tools: [{ functionDeclarations }], functionCallingConfig mode AUTO, automaticFunctionCalling { disable: true }, maxOutputTokens 8192, httpOptions { timeout: 15000 }, max 8 turns. Append candidate.content EXACTLY as returned (keeps thoughtSignature parts), then all functionResponse parts in ONE user turn, in call order, with matching id and name. Catch ApiError and network/timeout errors. Missing GEMINI_API_KEY, any non-STOP finishReason, or any failure → deterministic fallback with source 'deterministic'.
    Check exact type names in node_modules/@google/genai/dist/genai.d.ts. Do not guess.
@@ -415,15 +436,48 @@ Design: follow implementationplan.md §10.1 (premium design system) exactly, and
 1. AskPanel (Sheet) on the plan screen: message box, conversation list, replies with `references` rendered as links (SKU → drawer, bin → warehouse), a "source: AI / calculated" tag, and a small note when the AI is unavailable.
 2. The Why? popover shows the source tag too.
 3. After createPlan, if the key is set, generate a 3–5 sentence plan summary through the agent (non-blocking), store it in assumptions_json.summary and show it above the Impact Card.
-4. Run all 7 Appendix A prompts in the UI. Prompt 3 must list the supplier POs and which need Owner approval (from get_po_projection). Prompts 6 and 7 must explain that the user edits and approves, that POs above ₹4,00,000 need the Owner, and that sending is simulated (the agent cannot do any of it). Prompt 2's numbers must match the drawer.
+4. Run all 7 Appendix A prompts in the UI. Prompt 3 must list the supplier POs and which need Owner approval (from get_po_projection). Prompts 6 and 7 must explain that the user edits and approves, that POs above ₹4,00,000 need the Owner, and that sending is simulated (the Ask PharmaOS agent cannot do any of it; PO creation by AI exists only in the P22B Order Agent). Prompt 2's numbers must match the drawer.
 5. Remove GEMINI_API_KEY and confirm every button still works.
 6. `npm run check` and `npm run build`. Commit: "stage 6: ask panel, why and summary".
 ```
-**You check:** stage 6 Verify in plan §15.
+**You check:** stage 6 Verify in plan §15 (Ask PharmaOS part).
+
+### P22B — Agent pipeline: Demand, Supplier and Order agents
+
+```text
+Stage 6, step 3: the three-agent procurement pipeline. Follow implementationplan.md §9.5 exactly, plus architecture.md §9.2 and §9.4. These agents make REAL decisions with REAL effects; every effect passes a code guardrail. Nothing is narrated or faked.
+
+1. lib/agents/pipeline/loop.ts: one shared Gemini loop (same rules as §9.4: mode AUTO, automaticFunctionCalling disabled, candidate.content appended unchanged, all functionResponses in ONE user turn in call order with matching id and name, Zod-validate every call.args, max 12 turns, httpOptions timeout 15000) that takes an agent's own tool list plus ONE terminal submit_* tool, writes every tool call to agent_steps (agent, seq, kind, tool_name, input, output, ok, ms), retries an invalid terminal call twice, and otherwise returns a fallback. Inject the Gemini client so tests can use a fake.
+2. demand-agent.ts: tools get_sales_history, get_demand_forecasts {sku} (baseline, ML, both WAPEs, default method, flags, 14-day ML series), get_inventory_position; terminal submit_demand_decisions { decisions: [{ sku, method: 'ml'|'baseline', reason ≥ 10 chars }] }. Guardrail: method only, never a number; only SKUs in this run. Effect: for each decision that changes a line's method, re-analyse the SKU with that method override and update the line (qty, totals, evidence.demandDecision), audit agent.demand_decided (actor_type 'agent', actor_id 'demand-agent'). Rejected decisions → 'rejected_decision' steps.
+3. supplier-agent.ts: tools compare_supplier_offers, get_po_projection, get_approval_limit; terminal submit_supplier_decisions { decisions: [{ sku, offerId, reason }] }. Guardrail: the offer must have no exclusion codes and pass every hard stop for the line's quantity (reuse editLine's validation); otherwise reject and keep the offer. Effect: editLine with actor 'supplier-agent', reason = the agent's reason, evidence.supplierDecision.
+4. order-agent.ts: tools get_plan, validate_po { lineIds }, create_purchase_orders { lineIds } → approval.ts approveLines with actor 'order-agent' and idempotencyKey = the run id; terminal submit_order_summary { created, skipped }. POs come out ready or pending_approval. Do NOT create any tool that sends a PO, Owner-approves a PO, rejects a plan or changes the approval limit. Update AGENTS.md / architecture only if they disagree with §9.5.
+5. run.ts runPipeline(runId): select the top N proposed lines by rank, run Demand → Supplier → Order (each sees the database state left by the previous one), set agent_runs status succeeded / fallback / failed and a summary (lines changed, POs created, which need Owner approval). Fallback per §9.5: no key, API error, timeout, non-STOP finish or an invalid terminal call after 2 retries → Demand and Supplier make no changes, Order creates NO POs. Audit agent.run_started / agent.run_finished.
+6. Routes: POST /api/agents/run { planId, maxSkus? 1–30, default 15 } → insert agent_runs, return 202 { runId }, execute with after() from next/server (read the Next 16 docs for after first); 409 RUN_IN_PROGRESS if one is running for the plan; GET /api/agents/runs/[id] (run + steps); GET /api/agents/runs?planId=.
+7. Tests F11 (plan §14.1) with a fake Gemini client that scripts function calls: number instead of method → rejected; excluded offer → rejected; unknown tool → INVALID_TOOL_INPUT; create_purchase_orders twice with the same run id → the same POs; no key → status fallback, no POs. Plus one happy-path run end to end.
+8. Run it for real (with the key) on a plan under Seasonal surge if P24 is done, otherwise baseline: show me the steps per agent, every decision with accepted/rejected, the lines changed and the POs created. Then unset the key and show the fallback run.
+9. `npm run check` and `npm run build`. Commit: "stage 6: agent pipeline".
+```
+**You check:** a real run changes at least one line (with the agent's reason in the drawer and the audit log) and creates POs grouped by supplier; a rejected decision shows up as rejected, not applied; without the key the run ends "fallback" and nothing changes.
+
+### P23B — Agent run view
+
+```text
+Stage 6, step 4: make the agent pipeline visible. Follow implementationplan.md §9.5 and §10.3 (Run procurement agents).
+Design: follow implementationplan.md §10.1 (premium design system) exactly, and do its Visual QA step (screenshots at 1440×900 and 1024×768) before committing.
+
+1. components/agents/RunAgentsButton on the plan screen header (and on the Command Center for the latest plan): POST /api/agents/run, disabled while a run is active, toast on error (RUN_IN_PROGRESS, plan locked).
+2. components/agents/AgentRunPanel (Sheet, 640 px): three agent cards in order (Demand, Supplier, Order) with status waiting / thinking / done / fallback; each card shows its tool calls as a timeline (tool name, ok, ms, a one-line result) and its decisions table (SKU, decision, reason, accepted or rejected by the guardrail, with the guardrail's code); then the results: lines changed (links open the drawer), POs created (links to the PO, "Owner approval" badge when pending_approval).
+3. Live updates: poll GET /api/agents/runs/[id] every 2 s until the run finishes; then router.refresh() so the plan, Impact Card and supplier PO strip show the agents' changes. "Past runs" list in the panel (GET /api/agents/runs?planId=).
+4. Fallback is plain: "AI unavailable — no changes were made. Review the plan and approve manually."
+5. In the line drawer, show "Demand method chosen by the Demand Agent: … (reason)" and "Supplier chosen by the Supplier Agent: … (reason)" when present.
+6. Click through a real run in the browser; screenshot the panel mid-run and finished.
+7. `npm run check` and `npm run build`. Commit: "stage 6: agent run view".
+```
+**You check:** the trace shows real tool calls arriving live; the finished run's changes are visible in the plan, the drawer, the PO list and the Activity log; a second click while running is refused.
 
 ---
 
-## Stage 7 — Scenarios and polish (hours 25–27)
+## Stage 7 — Scenarios and polish (hours 37–39)
 
 ### P24 — Scenarios and ROI model
 
@@ -432,12 +486,12 @@ Stage 7, step 1: scenarios and the Data & Scenarios screen. Follow implementatio
 Design: follow implementationplan.md §10.1 (premium design system) exactly, and do its Visual QA step (screenshots at 1440×900 and 1024×768) before committing.
 
 1. lib/scenarios/apply.ts: implement all 5 scenarios as IN-MEMORY changes to the planning context, exactly as the §12 table says, using SKUs from data/synthetic/demo-cases.json. Never write scenario effects to the seed tables.
-2. lib/services/scenarios.ts: list, run (sets app_state.active_scenario_id, audit scenario.run), reset (baseline, audit scenario.reset). seasonal_surge multiplies the last 10 days of sales × 4 for analgesic, antibiotic and respiratory SKUs; check that at least one supplier PO then exceeds ₹4,00,000 and tune the multiplier in the scenario params if not.
+2. lib/services/scenarios.ts: list, run (sets app_state.active_scenario_id, audit scenario.run), reset (baseline, audit scenario.reset). Scenarios change the sales the ML forecast reads, so the forecast is recomputed live (plan §6.2a); do not retrain the model per scenario. seasonal_surge multiplies the last 10 days of sales × 4 for analgesic, antibiotic and respiratory SKUs; check that at least one supplier PO then exceeds ₹4,00,000 and tune the multiplier in the scenario params if not.
 3. Routes: GET /api/scenarios, POST /api/scenarios/[id]/run, POST /api/scenarios/reset.
-4. /data page: data summary (rows per table, as-of date, seed), the Data sources list from data_sources (name, link, label, what it informed), 5 scenario cards with Run/Reset, a "Recalculate current plan" button after Run, an Owner approval limit input (default ₹4,00,000; PATCH /api/settings; audit settings.approval_limit_changed), and components/scenarios/RoiModel with sliders for each problemstatement.md §11 assumption and live totals, labelled "Illustrative model — edit the assumptions".
+4. /data page: data summary (rows per table, as-of date, seed), keep the Demand model card from P16B (add a Retrain button that runs the training service and audits model.trained), the Data sources list from data_sources (name, link, label, what it informed), 5 scenario cards with Run/Reset, a "Recalculate current plan" button after Run, an Owner approval limit input (default ₹4,00,000; PATCH /api/settings; audit settings.approval_limit_changed), and components/scenarios/RoiModel with sliders for each problemstatement.md §11 assumption and live totals, labelled "Illustrative model — edit the assumptions".
 5. Show the active scenario chip in the TopBar.
 6. Unit tests for apply.ts (each scenario changes the expected field; baseline changes nothing).
-7. Verify stage 7 in §15: seasonal surge → recalculate → at least one supplier PO above ₹4,00,000 with the Owner approval badge; supplier delay re-ranks; Reset restores the baseline numbers. Show me before/after numbers (plan total and each supplier's PO total).
+7. Verify stage 7 in §15: seasonal surge → recalculate → the live ML forecast rises for the surged categories → at least one supplier PO above ₹4,00,000 with the Owner approval badge; supplier delay re-ranks; Reset restores the baseline numbers. Show me before/after numbers (plan total and each supplier's PO total).
 8. `npm run check` and `npm run build`. Commit: "stage 7: scenarios and ROI model".
 ```
 
@@ -459,9 +513,9 @@ List every change you made. `npm run check` and `npm run build`. Commit: "stage 
 
 ---
 
-## Stage 8 — Freeze and rehearse (hours 27–30)
+## Stage 8 — Freeze and rehearse (hours 39–42)
 
-**Hour 27: feature freeze. From here on, only FIX prompts.**
+**Hour 39: feature freeze. From here on, only FIX prompts.**
 
 ### P26 — Definition-of-done audit (STOP)
 
@@ -469,8 +523,8 @@ List every change you made. `npm run check` and `npm run build`. Commit: "stage 
 Stage 8, step 1: audit against the definition of done. Do not add features.
 
 1. Go through implementationplan.md §18 line by line. For each item, state PASS or FAIL with evidence (file + test name, or the exact manual step you ran and what you saw).
-2. Go through the §14.3 manual checklist the same way.
-3. Check the rules R1–R10 (§0.1): grep for float money maths outside lib/money.ts, DB or agent imports in "use client" files, PO inserts outside approval.ts, PO status changes to 'sent' outside sendPo, any email/HTTP call that could reach a supplier, audit inserts outside audit.ts, and Math.random in the engine or seed. Confirm no PO above ₹4,00,000 can reach 'sent' without an approvals row.
+2. Go through the §14.3 manual checklist the same way, including the demand-model and agent-pipeline items (backtest numbers match the stored metrics; an agent run's every step is in agent_steps and every change in audit_logs; fallback without the key changes nothing).
+3. Check the rules R1–R10 (§0.1): grep for float money maths outside lib/money.ts, DB or agent imports in "use client" files, PO inserts outside approval.ts, any AI tool other than the Order Agent's create_purchase_orders that reaches approval.ts, any AI tool that sends or Owner-approves a PO or changes the approval limit, I/O inside lib/ml, PO status changes to 'sent' outside sendPo, any email/HTTP call that could reach a supplier, audit inserts outside audit.ts, and Math.random in the engine or seed. Confirm no PO above ₹4,00,000 can reach 'sent' without an approvals row.
 4. List every FAIL, ordered by demo impact.
 
 STOP. Do not fix anything until I choose which FAILs to fix.
@@ -481,9 +535,9 @@ STOP. Do not fix anything until I choose which FAILs to fix.
 ```text
 Stage 8, step 2: prepare the demo environment.
 
-1. `npm run db:reset && npm run seed`. Confirm validation passes.
+1. `npm run db:reset && npm run seed`. Confirm validation passes and the demand model was trained (print its metrics).
 2. `npm run build`, then `npm run start`, and smoke-test every route at http://localhost:3000.
-3. Time "Create plan" three times and report the measured time-to-reviewable-plan (this is the real number for the pitch).
+3. Time "Create plan" three times and report the measured time-to-reviewable-plan (this is the real number for the pitch). Time one full agent run (15 SKUs) too.
 4. If a local Postgres is available, seed it the same way and confirm the dashboard works against it by swapping DATABASE_URL (backup for demo day). If not, tell me how to set it up (plan §3.2).
 5. Report anything that failed. Commit only if files changed: "stage 8: demo build".
 ```
@@ -494,10 +548,10 @@ Stage 8, step 2: prepare the demo environment.
 Stage 8, step 3: demo notes. Create docs/demo-notes.md (no code changes).
 
 Using implementationplan.md §17 and data/synthetic/demo-cases.json, write the exact click path for the 3–4 minute demo:
-- which SKU to open at each step (its brand name and SKU code), which supplier comparison to show, which bin to click, which scenario to run (Seasonal surge, so one supplier PO crosses ₹4,00,000), which line to edit to what quantity, and the approval moment: approve lines → the large PO is "Awaiting Owner approval" → Send is blocked → Owner approves → Send (simulated);
+- which SKU to open at each step (its brand name and SKU code), which supplier comparison to show, which bin to click, which scenario to run (Seasonal surge, so one supplier PO crosses ₹4,00,000), which line to edit to what quantity, the ML moment (a SKU whose drawer shows ML beating the average, and one where it did not), the agent moment (Run procurement agents → the live trace → which line each agent changed and why → the POs the Order Agent created), and the approval moment: the large PO is "Awaiting Owner approval" → Send is blocked → Owner approves → Send (simulated);
 - the expected numbers at each step, read from the running dashboard (not guessed);
 - one fallback line per step if something fails (e.g. "If the AI is slow, use Why?, which is deterministic");
-- the 3 questions judges are most likely to ask, with short honest answers (synthetic data, the forecast is a baseline, sending is simulated and nothing leaves the app, why there is no budget cap: the Owner controls spend through the ₹4,00,000 per-PO approval).
+- the 3 questions judges are most likely to ask, with short honest answers (synthetic data — the ML model is trained and backtested on it, and the accuracy shown is the measured holdout error; what the agents can and cannot do — they choose methods, suppliers and create POs within guardrails but cannot send or Owner-approve; sending is simulated and nothing leaves the app; why there is no budget cap: the Owner controls spend through the ₹4,00,000 per-PO approval).
 Commit: "stage 8: demo notes".
 ```
 Then rehearse the demo 3 times with a timer and record a backup video yourself.
@@ -524,16 +578,16 @@ What happened: <actual, including any error text>
 ### CUT — when behind schedule
 
 ```text
-We are behind schedule. It is hour <N> of 30 and the current stage is <stage>.
+We are behind schedule. It is hour <N> of about 42 and the current stage is <stage>.
 
 Using implementationplan.md §15.1 (cut order) and §18, tell me:
-1. what to cut now, in cut-order, to reach a working demo by hour 27;
+1. what to cut now, in cut-order, to reach a working demo by hour 39;
 2. the minimum remaining prompts from prompts.md (or shortened versions of them) to get there;
 3. what must not be cut.
 Do not change any code until I confirm.
 ```
 
-### STRETCH — only if ahead at hour 22
+### STRETCH — only if ahead at hour 27
 
 ```text
 We are ahead of schedule. Implement ONE P2 stretch item from implementationplan.md §15 Stage 8 ("P2 stretch"), in this order of preference:

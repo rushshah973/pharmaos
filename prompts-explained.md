@@ -2,7 +2,7 @@
 
 A plain-English companion to `prompts.md`. For every prompt: **what it does**, **what it creates or changes**, **what you will see when it is done**, and **why it matters** for the product or the demo. The prompts themselves (the text you paste) stay in `prompts.md`.
 
-**Status** — ✅ done (commit) · ⏭ next · ⬜ not started. Last updated after P13.
+**Status** — ✅ done (commit) · ⏭ next · ⬜ not started. Last updated after P16.
 
 | # | Prompt | Status |
 |---|---|---|
@@ -22,11 +22,14 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P13 | Plan services and API | ✅ `2296530` |
 | P14 | Command Center and plan list | ✅ `90d5ce4` |
 | P15 | Plan screen | ✅ `8d364b0` |
-| P16 | Line drawer and edit preview | ✅ |
-| P17 | Approval service | ⏭ |
-| P18–P28 | … | ⬜ |
+| P16 | Line drawer and edit preview | ✅ `9d4d4bd` |
+| P16B | ML demand model | ⏭ next |
+| P17 | Approval service | ⬜ after P16B |
+| P18–P28 | … (plus P22B, P23B after P23) | ⬜ |
 
 > Budget cap removed; ₹4,00,000 per-PO Owner approval added (after P13).
+>
+> Added after P16: ML demand model (P16B) and three-agent pipeline (P22B, P23B). The build now runs about 42 hours instead of 30, by choice.
 
 ---
 
@@ -35,10 +38,10 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 ```
 Stage 1  Data         P01 → P06   database, skeleton, reference patterns, 500 synthetic SKUs, demo cases
 Stage 2  Engine       P07 → P11   tests first, then the maths that decides what to buy
-Stage 3  Screens      P12 → P16   the dashboard: Command Center, plan, line details, edits
+Stage 3  Screens      P12 → P16B  the dashboard: Command Center, plan, line details, edits; then the ML demand model
 Stage 4  Approval     P17 → P18   human approval → POs, Owner sign-off above ₹4L, simulated send, audit trail
 Stage 5  Warehouse    P19 → P21   heatmaps, 2D grid, 3D scene
-Stage 6  AI           P22 → P23   Gemini explains and adjusts plans (never approves)
+Stage 6  AI           P22 → P23B  Gemini explains plans; then three agents (Demand, Supplier, Order) make guarded decisions and create POs (never send or Owner-approve)
 Stage 7  Scenarios    P24 → P25   disruptions, ROI model, polish
 Stage 8  Demo         P26 → P28   audit, clean build, demo notes
 ```
@@ -179,11 +182,18 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 - **You will see:** Complete evidence for any line; edits preview and save, and the preview warns when a supplier's PO would cross ₹4,00,000; invalid quantities (below MOQ, wrong pack multiple) are refused with the reason.
 - **Why it matters:** "Explain every rupee" — the trust moment for judges and owners.
 
+### P16B — ML demand model ⏭ next
+
+- **What it does:** Replaces "a weighted average of the last 7 and 28 days" with a real machine-learning forecast where — and only where — it is measurably better. One ridge-regression model learns from every SKU's sales at once: recent days, rolling averages, how steady or patchy sales are, the trend, the day of the week and the product category. It is trained on all but the last 14 days, then tested on those 14 days it never saw. For each SKU, PharmaOS uses the ML forecast only if its error on that test was clearly lower than the average's; otherwise it keeps the average and says so.
+- **Creates or changes:** `lib/ml/` (features, ridge solver, forecaster, backtest), `npm run train:forecast` (also run by the seed), the `003_ml_and_agents.sql` migration, the forecast inside the planning context, the drawer's dashed 14-day forecast and accuracy line, and a "Demand model" card on the Data page. Tests for every piece.
+- **You will see:** The training script prints the real errors (ML vs average); a line's drawer says, e.g., "ML error 18% vs average 27% on the last 14 days → using ML" — or the honest reverse.
+- **Why it matters:** Real ML, honestly measured: the model learns weekly patterns, growth and decline that the average ignores, and the dashboard never claims accuracy the test does not show. Scenarios change the forecast live because it reads the current sales.
+
 ---
 
 ## Stage 4 — Approval and audit
 
-### P17 — Approval service ⏭
+### P17 — Approval service ⬜ after P16B
 
 - **What it does:** Builds the only code allowed to create purchase orders: re-checks every rule with fresh data, groups approved lines by supplier and creates one PO per supplier inside one database transaction (a PO above ₹4,00,000 is held as "Awaiting Owner approval"), and makes a double click or retry harmless. Also adds the Owner's Approve / Reject for held POs and a simulated "Send to supplier" that refuses held POs. Adds Approve and Reject plan to the screen.
 - **Creates or changes:** `lib/services/approval.ts`, PO approve/reject/send in `purchase-orders.ts`, their routes, approval dialog, an optional integration test.
@@ -231,7 +241,7 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 - **What it does:** Connects Gemini. Gives it 19 safe, typed tools (look up sales, stock, batches, suppliers, plan…; one tool to recalculate a plan) and a strict system prompt. It runs Gemini's tool loop with a timeout, and falls back to the calculated explanation if anything fails.
 - **Creates or changes:** `lib/agents/tools.ts`, `prompts.ts`, `orchestrator.ts`, `/api/agent/chat`; `/explain` tries the AI first.
 - **You will see:** Test questions answered with numbers that come from the tools — once with the Gemini key, once without.
-- **Why it matters:** The AI explains and adjusts but can never approve, create or send a PO, and never invents a number.
+- **Why it matters:** This chat agent explains and can recalculate, but can never approve, create or send a PO, and never invents a number. (Creating POs is reserved for the guarded Order Agent in P22B.)
 
 ### P23 — Ask panel, Why? and plan summary ⬜
 
@@ -240,13 +250,27 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 - **You will see:** Natural-language answers with links to SKUs and bins, and a clear "calculated" label when the AI is off.
 - **Why it matters:** "Dashboard, not chatbot" — AI where it helps, and everything still works without it.
 
+### P22B — Agent pipeline: Demand, Supplier and Order agents ⬜
+
+- **What it does:** Builds three AI agents that take real decisions, one after another, for the most urgent lines of a plan. The **Demand Agent** looks at each SKU's sales and both forecasts (ML and average, with their measured errors) and picks which one to trust — it can only pick a method, never type a number. The **Supplier Agent** compares the offers and the supplier PO totals and may switch a supplier (faster, cheaper, fewer suppliers, or keeping a PO under the ₹4,00,000 Owner limit) — but only to an offer that passes every rule. The **Order Agent** checks the lines and creates the purchase orders through the same approval code a human uses. Every decision is checked by code before it takes effect; rejected decisions are recorded, not applied.
+- **Creates or changes:** `lib/agents/pipeline/` (shared tool loop, the three agents, the run), `/api/agents/run` and the run-status routes, the `agent_runs` / `agent_steps` trace, audit entries, and tests with a scripted fake Gemini.
+- **You will see:** A real run changes some lines (with the agent's reason) and creates POs grouped by supplier; one may need Owner approval. Without the Gemini key the run ends "fallback" and changes nothing.
+- **Why it matters:** This is the agentic core, and it is real: the agents decide, their decisions change the plan and create POs, and code guardrails keep them inside the rules. They can never send a PO, approve a large PO for the Owner, or change the limit.
+
+### P23B — Agent run view ⬜
+
+- **What it does:** Adds a "Run procurement agents" button and a live panel that shows the three agents working: which tools each one called, what came back, every decision with its reason and whether the guardrail accepted it, and the results — lines changed and POs created.
+- **Creates or changes:** `RunAgentsButton`, `AgentRunPanel`, past runs, agent reasons in the line drawer.
+- **You will see:** The trace filling in live; afterwards the plan, the PO list and the Activity log all show what the agents did.
+- **Why it matters:** Judges can watch the agents work and check every step — nothing is hidden or staged.
+
 ---
 
 ## Stage 7 — Scenarios and polish
 
 ### P24 — Scenarios and ROI model ⬜
 
-- **What it does:** Makes the five disruption scenarios work (seasonal surge, supplier delay, demand spike, expiry risk, baseline) without changing the stored data, and builds the Data & Scenarios page: data summary, list of reference sources, scenario cards, the Owner approval limit setting, and an editable ROI model.
+- **What it does:** Makes the five disruption scenarios work (seasonal surge, supplier delay, demand spike, expiry risk, baseline) without changing the stored data, and builds the Data & Scenarios page: data summary, list of reference sources, scenario cards, the Owner approval limit setting, and an editable ROI model. Scenarios change the sales the ML forecast reads, so the forecast moves with them.
 - **Creates or changes:** `lib/scenarios/apply.ts`, `lib/services/scenarios.ts`, scenario routes, `/data` page, `RoiModel`, scenario chip in the top bar.
 - **You will see:** Running "Seasonal surge" and recalculating pushes at least one supplier's PO above ₹4,00,000, so it shows the Owner approval badge; Reset restores everything.
 - **Why it matters:** The live disruption moment in the pitch, and an honest business case.
@@ -264,21 +288,21 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 
 ### P26 — Definition-of-done audit (STOP) ⬜
 
-- **What it does:** Checks every "done" item and every rule in the plan, with evidence, and lists anything that fails, most demo-critical first. Changes nothing.
+- **What it does:** Checks every "done" item and every rule in the plan, with evidence (including the ML backtest numbers and the agents' guardrails and trace), and lists anything that fails, most demo-critical first. Changes nothing.
 - **Creates or changes:** Nothing.
 - **You will see:** PASS/FAIL per item. It stops so you choose what to fix.
 - **Why it matters:** Catches problems before judges do.
 
 ### P27 — Demo build and clean seed ⬜
 
-- **What it does:** Re-seeds to a clean state, builds and runs the production version, smoke-tests every page, measures the real time to create a plan, and prepares a local-database backup.
+- **What it does:** Re-seeds to a clean state, builds and runs the production version, smoke-tests every page, measures the real time to create a plan and to run the agents, checks the demand model was trained, and prepares a local-database backup.
 - **Creates or changes:** Usually nothing.
 - **You will see:** A smoke-test report and the measured plan time for your pitch.
 - **Why it matters:** The demo runs on the same build you tested, with a backup ready.
 
 ### P28 — Demo notes ⬜
 
-- **What it does:** Writes the exact click path for the 3–4 minute demo: which SKU to open, which bin to click, which scenario to run, the Owner approval moment for the large PO, the numbers you will see, a fallback for each step, and honest answers to likely judge questions.
+- **What it does:** Writes the exact click path for the 3–4 minute demo: which SKU to open (one where ML wins, one where it does not), which bin to click, which scenario to run, the agent run and what each agent changed, the Owner approval moment for the large PO, the numbers you will see, a fallback for each step, and honest answers to likely judge questions.
 - **Creates or changes:** `docs/demo-notes.md`.
 - **You will see:** A script you can rehearse from.
 - **Why it matters:** A calm, rehearsed demo. Afterwards: rehearse 3 times and record a backup video.
@@ -290,5 +314,5 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 | Prompt | Use it when | What it does |
 |---|---|---|
 | **FIX** | Something is broken | Reproduces the problem, shows you the cause first, adds a failing test for calculation bugs, fixes it in the right place, re-checks and commits |
-| **CUT** | You are behind schedule | Uses the plan's cut order to tell you what to drop and the shortest path to a working demo by hour 27; changes nothing until you agree |
-| **STRETCH** | You are ahead at hour 22 | Adds one optional extra (ghost-carton polish, simulated put-away, or a pick path), then stops and asks before the next |
+| **CUT** | You are behind schedule | Uses the plan's cut order to tell you what to drop and the shortest path to a working demo by hour 39; changes nothing until you agree |
+| **STRETCH** | You are ahead at hour 27 | Adds one optional extra (ghost-carton polish, simulated put-away, or a pick path), then stops and asks before the next |

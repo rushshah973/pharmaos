@@ -7,21 +7,21 @@
 
 ## 1. Architecture in one paragraph
 
-PharmaOS is a **web-based dashboard**: a single Next.js web application that users open in a desktop browser (no mobile or desktop app). The browser renders the dashboard. Server components and route handlers call a **services layer**, which reads one consistent snapshot of the database, passes it through a **pure decision engine**, and writes results back in transactions. An **AI orchestrator** sits beside the API routes and reaches the same engine only through typed, read-mostly tools. It explains and adjusts plans but can never approve, create or send a purchase order (sending is simulated anyway). Postgres is the single source of truth for the plan screens, the PO screens and the 3D warehouse. Every number comes from deterministic, unit-tested code, and every change is written to an append-only audit log.
+PharmaOS is a **web-based dashboard**: a single Next.js web application that users open in a desktop browser (no mobile or desktop app). The browser renders the dashboard. Server components and route handlers call a **services layer**, which reads one consistent snapshot of the database, passes it through a **pure decision engine** (with a pure **ML demand model** for forecasts), and writes results back in transactions. **AI agents** sit beside the API routes and reach the same engine only through typed tools: the Ask PharmaOS agent explains and can recalculate; the three-agent **pipeline** (Demand, Supplier, Order) makes real decisions — forecast method, supplier, purchase-order creation — each checked by a code guardrail before it takes effect. No AI can send or Owner-approve a purchase order (sending is simulated anyway). Postgres is the single source of truth for the plan screens, the PO screens and the 3D warehouse. Every number comes from deterministic, unit-tested code, and every change is written to an append-only audit log.
 
 ### 1.1 Quality goals (in priority order)
 
 | # | Goal | What it means here | Main mechanisms |
 |---|---|---|---|
-| Q1 | **Correctness** | Quantities, prices, totals and scores are exactly right | Pure engine, decimal money, integer packs, fixture tests F1–F9 |
+| Q1 | **Correctness** | Quantities, prices, totals and scores are exactly right | Pure engine and ML model, decimal money, integer packs, fixture tests F1–F11 |
 | Q2 | **Trust and traceability** | Every recommendation can be explained and audited | `evidence_json`, reason codes, append-only `audit_logs`, provenance labels |
-| Q3 | **Human control** | Nothing is committed without a person | Approval-only PO creation, Owner approval for any PO above ₹4,00,000 before it can be sent, no LLM write tools for POs, sending simulated (nothing leaves the app) |
+| Q3 | **Human control** | Nothing is committed without a person | Approval-only PO creation, Owner approval for any PO above ₹4,00,000 before it can be sent, POs created only through `approveLines` (a human or the guarded Order Agent), no AI can send or Owner-approve, sending simulated (nothing leaves the app) |
 | Q4 | **Resilience on demo day** | The demo works if the AI, WebGL or network fails | Deterministic fallback, 2D grid, local Postgres option, backup video |
-| Q5 | **Buildable by one person in 30 hours** | Few moving parts | One app, one database, no queues, no microservices, no agent framework |
+| Q5 | **Buildable by one person in about 42 hours** (was 30; extended for the ML model and agent pipeline) | Few moving parts | One app, one database, no queues, no microservices, no agent framework |
 
 ### 1.2 Constraints
 
-- One builder, 30 hours, a hackathon demo (problemstatement §8).
+- One builder, about 42 hours (the original 30 plus the ML demand model and the agent pipeline), a hackathon demo (problemstatement §8).
 - One workflow only: intelligent procurement. No other modules (mentor feedback).
 - All data is synthetic demo data shaped by reference datasets. No reference row is copied (plan §5).
 - Web dashboard only, for desktop browsers (latest Chrome or Edge, 1280 px wide and up; usable on a tablet). No native mobile or desktop app.
@@ -72,14 +72,15 @@ flowchart TB
     subgraph next["Next.js 16 server (Node runtime)"]
         rsc["Server components<br/>app/(dashboard)/**/page.tsx<br/>Suspense + connection()"]
         api["Route handlers<br/>app/api/**/route.ts<br/>Zod-validated"]
-        agent["AI orchestrator<br/>lib/agents/*<br/>manual tool loop"]
+        agent["AI orchestrator + agent pipeline<br/>lib/agents/*<br/>manual tool loops"]
         svc["Services<br/>lib/services/*<br/>DB reads, transactions, audit"]
         engine["Decision engine<br/>lib/business-logic/*<br/>PURE functions"]
+        ml["Demand model<br/>lib/ml/*<br/>PURE ridge regression"]
         scen["Scenario applier<br/>lib/scenarios/apply.ts<br/>in-memory overrides"]
         dbc["DB client<br/>lib/db/client.ts (postgres.js pool)"]
     end
 
-    pg[("Postgres: 17 tables<br/>db/migrations/001_init.sql")]
+    pg[("Postgres: 21 tables<br/>db/migrations/001–003")]
     cl["Gemini API"]
 
     ui -- "fetch (mutations)" --> api
@@ -91,6 +92,8 @@ flowchart TB
     agent -- "models.generateContent" --> cl
     svc --> scen
     svc --> engine
+    svc --> ml
+    engine --> ml
     svc --> dbc
     dbc --> pg
 ```
@@ -102,9 +105,10 @@ flowchart TB
 | UI (client) | `components/**` | Render, collect input, call routes, `router.refresh()` | Compute totals, talk to DB or Gemini |
 | Pages (server) | `app/(dashboard)/**` | Read via services inside `<Suspense>`, pass props to client components | Mutate data |
 | API | `app/api/**/route.ts` | Parse and validate, call one service, map errors to HTTP | Contain business logic |
-| Agent | `lib/agents/` | Run the tool loop, enforce tool allow-list, fall back | Approve, reject or create POs; run SQL; state numbers not returned by tools |
+| Agent | `lib/agents/` | Run the tool loops, enforce each agent's tool allow-list, apply guardrails to agent decisions, log every step, fall back | Send or Owner-approve POs, reject plans, change the approval limit, run SQL, state numbers not returned by tools. Only the pipeline's Order Agent may create POs (through `approval.ts`) |
 | Services | `lib/services/` | Load context, call engine, run transactions, write audit | Re-implement engine maths |
 | Engine | `lib/business-logic/` | All maths and rules, deterministic | Import DB, network, `Date.now()` or `Math.random()` |
+| Demand model | `lib/ml/` | Features, ridge fit, recursive forecast, backtest, default-method rule — pure functions | Any I/O (training data comes in, coefficients go out, via `lib/services/forecast-model.ts` and `scripts/ml/train-forecast.ts`) |
 | Scenarios | `lib/scenarios/` | Apply scenario params to a loaded context, in memory | Write scenario effects into seed tables |
 | Data access | `lib/db/` | Pool and typed queries | Business decisions |
 
@@ -118,15 +122,18 @@ flowchart LR
     app_routes --> agents
     agents --> services
     services --> business_logic["business-logic"]
+    services --> ml["lib/ml"]
+    business_logic --> ml
     services --> scenarios
     services --> db["lib/db"]
     scenarios --> business_logic
     business_logic --> money["lib/money + config"]
 ```
 
-- `lib/business-logic` imports only `lib/money.ts`, `config.ts` and its own files.
+- `lib/business-logic` imports only `lib/money.ts`, `config.ts`, pure functions from `lib/ml` and its own files.
+- `lib/ml` imports nothing with I/O (no DB, network, clock or randomness); only `lib/services/forecast-model.ts` and `scripts/ml/train-forecast.ts` load data for it and store its output.
 - Nothing imports `lib/db`, `lib/services` or `lib/agents` from a `"use client"` file (R10: keys and pool stay on the server).
-- Only `lib/services/approval.ts` inserts into `purchase_orders` or `purchase_order_lines`.
+- Only `lib/services/approval.ts` inserts into `purchase_orders` or `purchase_order_lines`. It is called by the approve route (a human click) and by the pipeline's Order Agent tool `create_purchase_orders` (create only, audited as actor `agent`).
 - Only `lib/services/audit.ts` inserts into `audit_logs`.
 
 ---
@@ -135,7 +142,7 @@ flowchart LR
 
 | Concern | Files | Notes |
 |---|---|---|
-| Schema | `db/migrations/001_init.sql` | 17 tables, `po_number_seq`, append-only trigger, seeded `scenarios` + `app_state` |
+| Schema | `db/migrations/001_init.sql`, `002_approval_limit.sql`, `003_ml_and_agents.sql` | 21 tables, `po_number_seq`, append-only trigger, seeded `scenarios` + `app_state`; 003 adds the demand model and agent-run tables |
 | Migrations | `scripts/db/migrate.ts` | Applies `*.sql` once each, tracked in `schema_migrations`; `--reset` drops the public schema |
 | Seed | `scripts/seed/*` | Profile references → generate → inject demo cases → validate → write |
 | Money | `lib/money.ts` | `dec`, `roundMoney` (2 dp half-up), `roundUnit` (4 dp), `sumMoney`, `formatINR` |
@@ -144,7 +151,9 @@ flowchart LR
 | Tool contract | `lib/validation/tool-contract.ts` | `ToolResult<T>`: `{ ok, data | error, warnings, source_timestamp }` |
 | API schemas | `lib/validation/api.ts` | Zod schema per route |
 | Services | `lib/services/{context,as-of,dashboard,plans,approval,purchase-orders,warehouse,scenarios,audit,explain}.ts` | Plan §7 |
-| Agent | `lib/agents/{tools,prompts,orchestrator}.ts` | Plan §9 |
+| Agent | `lib/agents/{tools,prompts,orchestrator}.ts` | Plan §9.1–9.4 (Ask PharmaOS, Why?, summary) |
+| Agent pipeline | `lib/agents/pipeline/{loop,demand-agent,supplier-agent,order-agent,run}.ts` | Plan §9.5 |
+| Demand model | `lib/ml/{features,ridge,forecast,backtest}.ts`, `lib/services/forecast-model.ts`, `scripts/ml/train-forecast.ts` | Plan §6.2a |
 | Pages | `app/(dashboard)/{page,procurement,procurement/[planId],warehouse,purchase-orders,purchase-orders/[poId],activity,data}` | Plan §10 |
 | Routes | `app/api/**` | Plan §8 |
 | Warehouse UI | `components/warehouse3d/{WarehouseView,Scene3D,Grid2D,BinPanel,Legend,ModeSelect}.tsx` | Plan §11 |
@@ -174,6 +183,10 @@ erDiagram
     purchase_plans |o--o{ purchase_orders : "source plan"
     purchase_orders ||--o{ purchase_order_lines : "lines"
     purchase_recommendations |o--o| purchase_order_lines : "becomes (once)"
+    forecast_models ||--o{ sku_forecast_metrics : "backtest per SKU"
+    products ||--o{ sku_forecast_metrics : "measured for"
+    purchase_plans ||--o{ agent_runs : "agent runs"
+    agent_runs ||--o{ agent_steps : "trace"
     supplier_offers |o--o{ purchase_order_lines : "priced from"
     products ||--o{ warehouse_movements : "moved"
     inventory_locations |o--o{ warehouse_movements : "from / to"
@@ -191,6 +204,8 @@ Stand-alone tables: `approvals` (polymorphic `entity_type` + `entity_id`), `audi
 | Planning | `purchase_plans`, `purchase_recommendations` | `plans.ts`, `approval.ts` | Plan screens, agent tools |
 | Execution | `purchase_orders` (status `ready` / `pending_approval` / `approved` / `sent` / `rejected`, `sent_at`, `sent_by`), `purchase_order_lines`, `approvals` | `approval.ts`, `purchase-orders.ts` | PO screens |
 | History | `audit_logs`, `warehouse_movements` | `audit.ts`; P2 put-away simulation | Activity screen |
+| Demand model | `forecast_models`, `sku_forecast_metrics` | `forecast-model.ts` (via `npm run train:forecast`, also at the end of seed) | Context loader (live forecast), drawer, Data page |
+| Agent runs | `agent_runs`, `agent_steps` | `agent-runs.ts`, `lib/agents/pipeline/*` | Agent Run panel, past runs |
 
 ### 5.3 Invariants and where they are enforced
 
@@ -251,7 +266,7 @@ No I/O and no clock. The same input gives a deep-equal output (fixture F9). This
 
 ```mermaid
 flowchart TB
-    ctx["SKU context<br/>sales, batches + balances, open POs, offers, suppliers"] --> dem["demand.ts<br/>d7, d28, d̄, flags"]
+    ctx["SKU context<br/>sales, batches + balances, open POs, offers, suppliers, ML forecast"] --> dem["demand.ts<br/>d7, d28, baseline, ML, chosen d̄, flags"]
     ctx --> exp["expiry.ts<br/>FEFO sell-through, at-risk value, ineligible stock"]
     dem --> exp
     exp --> inv["inventory.ts<br/>stock position, cover, status (L_fastest)"]
@@ -553,10 +568,10 @@ flowchart LR
     end
     subgraph trusted["Trusted: server"]
         loop["orchestrator loop<br/>max 8 turns, 15 s timeout"]
-        allow["tool allow-list<br/>19 tools, Zod re-validation"]
+        allow["Ask agent tool allow-list<br/>19 tools, Zod re-validation<br/>(pipeline agents: see 9.4)"]
         ro["read tools<br/>search, sales, position, forecast, reorder,<br/>batches, exposure, return policy, offers, compare, prices,<br/>PO projection, plan, preview plan, validate, bins, heatmap, put-away"]
         rw["one write tool<br/>recalculate_plan (audited, actor agent)"]
-        none["NOT exposed<br/>approve · reject · create/update PO<br/>Owner-approve · send · SQL"]
+        none["NOT exposed to any AI<br/>send PO · Owner-approve PO · reject plan<br/>change approval limit · SQL"]
     end
     m <--> loop
     loop --> allow
@@ -570,7 +585,9 @@ flowchart LR
 | Guardrail | Enforced by |
 |---|---|
 | Model never produces numbers | System prompt plus architecture: all numbers come from tool results, and the UI renders figures from data, not from model text |
-| No PO creation or approval by AI | Those tools do not exist; only `approval.ts` writes POs, and only through the HTTP approve route |
+| No PO sending or Owner approval by AI | Those tools do not exist for any AI; only `approval.ts` writes POs. The Ask agent cannot create POs; the pipeline's Order Agent can (create only, idempotent with the run id, audited actor `agent`) |
+| Agent decisions are choices, not numbers | Demand Agent submits a method (`ml` / `baseline`), never a value; Supplier Agent submits an offer id that must pass every exclusion and hard stop; Order Agent POs go through `approveLines` and its hard stops. Rejected decisions are stored as `rejected_decision` steps |
+| Every agent action is traceable | `agent_steps` stores every tool call (input, output, ok, ms) and decision; mutations also go to `audit_logs` |
 | Valid tool inputs | JSON Schema from Zod as `parametersJsonSchema`, automatic function calling disabled, plus a Zod parse of every `functionCall.args` before the handler; failures go back as `ToolResult` errors in the `functionResponse` |
 | No product substitution, no safety calls | System prompt; no tool can change product identity |
 | Ambiguous products | `search_products` returns exact identity fields; the prompt requires asking the user |
@@ -580,7 +597,52 @@ flowchart LR
 
 ### 9.3 Where the AI appears
 
-Behind three dashboard entry points (problemstatement §9.7, "dashboard, not chatbot"): plan summary after creation, the **Why?** button per line, and the optional **Ask PharmaOS** side panel.
+Behind four dashboard entry points (problemstatement §9.7, "dashboard, not chatbot"): plan summary after creation, the **Why?** button per line, the optional **Ask PharmaOS** side panel, and **Run procurement agents** (the three-agent pipeline, §9.4 below).
+
+### 9.4 Agent pipeline (plan §9.5)
+
+Three agents — Demand, Supplier, Order — each with its own tools and one Zod-validated terminal `submit_*` tool. They hand off through the plan lines in the database, and every effect passes a code guardrail. Pitch: *the engine and the ML model calculate, three agents decide within guardrails, a human sends and the Owner approves large orders.*
+
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant UI as Plan screen
+    participant API as POST /api/agents/run
+    participant R as pipeline.runPipeline (after)
+    participant DA as Demand Agent
+    participant SA as Supplier Agent
+    participant OA as Order Agent
+    participant G as Gemini
+    participant S as services
+    participant DB as Postgres
+    U->>UI: Run procurement agents
+    UI->>API: { planId, maxSkus }
+    API->>DB: insert agent_runs (running)
+    API-->>UI: 202 { runId }
+    API->>R: after(), run in the background
+    R->>DA: top N proposed lines
+    loop tool calls (max 12 turns)
+        DA->>G: generateContent (demand tools only)
+        G-->>DA: functionCall get_demand_forecasts
+        DA->>S: tool handler (Zod-validated)
+        DA->>DB: insert agent_steps
+    end
+    DA->>S: submit_demand_decisions (method per SKU)
+    S->>DB: guardrail, re-analyse, update lines, audit agent.demand_decided
+    R->>SA: same lines
+    SA->>G: generateContent (supplier tools only)
+    SA->>S: submit_supplier_decisions (offer per SKU)
+    S->>DB: guardrail (exclusions, hard stops), editLine, audit line.edited
+    R->>OA: same lines
+    OA->>G: generateContent (order tools only)
+    OA->>S: create_purchase_orders (idempotencyKey = runId)
+    S->>DB: approveLines, POs ready or pending_approval, audit po.created
+    R->>DB: agent_runs status succeeded or fallback, summary
+    UI->>API: GET /api/agents/runs/[id] every 2 s
+    API-->>UI: run + steps (live trace)
+```
+
+Fallback: with no API key, an API error, a timeout, a non-`STOP` finish, or an invalid terminal call after 2 retries, the Demand and Supplier agents make no changes and the Order Agent creates no POs; the run ends `fallback` and the UI says "AI unavailable — review and approve manually".
 
 ---
 
@@ -628,7 +690,7 @@ Light surfaces (soft grey page, white cards), deep-teal primary, and fixed statu
 
 ## 11. API surface
 
-Twenty route handlers, grouped by service. Full contracts are in plan §8.
+Twenty-three route handlers, grouped by service. Full contracts are in plan §8.
 
 | Group | Routes | Service |
 |---|---|---|
@@ -640,9 +702,10 @@ Twenty route handlers, grouped by service. Full contracts are in plan §8.
 | Warehouse | `GET /api/warehouse/layout`, `GET …/heatmap`, `GET …/bins/[id]`, `GET /api/products/search` | `warehouse.ts` |
 | Scenarios | `GET /api/scenarios`, `POST …/[id]/run`, `POST …/reset` | `scenarios.ts` |
 | Agent | `POST /api/agent/chat` | `lib/agents/orchestrator.ts` |
+| Agent pipeline | `POST /api/agents/run`, `GET /api/agents/runs/[id]`, `GET /api/agents/runs?planId=` | `agent-runs.ts`, `lib/agents/pipeline/run.ts` |
 | Audit | `GET /api/audit` | `audit.ts` |
 
-Error envelope: `{ error: { code, message, details? } }`. 400 = validation, 404 = missing, 409 = locked (`LINE_LOCKED`, `PLAN_LOCKED`, `PO_LOCKED`) or `APPROVAL_REQUIRED`, 422 = hard stops at approval.
+Error envelope: `{ error: { code, message, details? } }`. 400 = validation, 404 = missing, 409 = locked (`LINE_LOCKED`, `PLAN_LOCKED`, `PO_LOCKED`), `APPROVAL_REQUIRED` or `RUN_IN_PROGRESS`, 422 = hard stops at approval.
 
 ---
 
@@ -683,7 +746,7 @@ All mutations go through `writeAudit({ actorType, actorId, action, entityType, e
 |---|---|
 | Secrets | `DATABASE_URL`, `GEMINI_API_KEY` only in server env; never imported by client files; `.env*` git-ignored (except `.env.example`) |
 | SQL injection | postgres.js tagged templates only; `sql.unsafe` reserved for migration files |
-| Untrusted model output | Validated tool inputs, read-mostly tools, no free-form writes |
+| Untrusted model output | Validated tool inputs, per-agent tool allow-lists, terminal decisions checked by code guardrails, no free-form writes, no send / Owner-approve tool |
 | Input size | Zod limits (e.g. chat message 1–2,000 chars, line arrays ≥ 1) |
 | Auth | None (demo). `DEMO_USER` recorded as approver. Adding auth later only changes how `userId` is obtained |
 | Data sensitivity | No patient or customer data; reference files git-ignored; all DB data synthetic |
@@ -717,7 +780,9 @@ Hackathon-level only: the `audit_logs` screen, a `toolCalls` list in agent respo
 
 | Failure | Effect without a fallback | Fallback |
 |---|---|---|
-| No `GEMINI_API_KEY` / API error / safety block / timeout | No explanations or chat | `explain.ts` deterministic text; UI note "AI unavailable" |
+| No `GEMINI_API_KEY` / API error / safety block / timeout | No explanations, chat or agent decisions | `explain.ts` deterministic text; UI note "AI unavailable"; an agent run ends `fallback` with no changes and no POs |
+| ML forecast worse than the average for a SKU | Worse quantities | Per-SKU default-method rule uses the baseline; both errors shown |
+| No demand model trained yet | No ML forecast | Every SKU uses the baseline; the Data page says "No model trained — run `npm run train:forecast`" |
 | WebGL missing or scene crash | No warehouse | Error boundary → `Grid2D`; table view |
 | Supabase or Wi-Fi down | No data | Local Postgres seeded identically (`DATABASE_URL` swap) |
 | Reference file missing at seed time | Profile incomplete | Generator defaults; seed still validates |
@@ -759,19 +824,21 @@ flowchart LR
 
 | # | Decision | Alternatives rejected | Reason |
 |---|---|---|---|
-| AD-1 | One Next.js app (UI + API + engine + agent) | Separate backend, microservices | Solo 30-hour build; one deploy; shared types |
+| AD-1 | One Next.js app (UI + API + engine + agent) | Separate backend, microservices | Solo build (about 42 h); one deploy; shared types |
 | AD-2 | Pure engine in `lib/business-logic` | Logic in routes / SQL / LLM | Testable, deterministic, reused by every caller |
 | AD-3 | postgres.js on plain Postgres | Supabase JS client, ORM | Real transactions with `FOR UPDATE`; minimal layers; portable to local Postgres |
 | AD-4 | Plain SQL migrations | ORM migrations | The schema is the contract; checks and triggers are explicit |
 | AD-5 | Decimal money + integer packs | JS numbers | No float drift in totals |
 | AD-6 | Server-recalculated totals, preview endpoint | Client-side totals | Browser is never the source of truth |
-| AD-7 | Approval-only PO creation with idempotency | Agent-created POs, client-side de-dupe | Human control; safe retries |
+| AD-7 | PO creation only through `approveLines`, idempotent; callable by a human or the Order Agent (create only) | Free agent writes, client-side de-dupe | One guarded path; safe retries; sending and Owner approval stay human |
 | AD-8 | Gemini (`@google/genai`) with a manual function-calling loop and an allow-list | Agent framework, SDK automatic function calling | Team's LLM choice; full control over allowed tools, validation, timeouts and fallback |
 | AD-9 | Scenarios applied in memory | Mutating seed tables | Instant reset; seed integrity |
 | AD-10 | Synthetic-only data from reference profiles | Loading public or team rows | Licence, provenance and honesty rules in the data acquisition plan |
 | AD-11 | Instanced 3D + 2D fallback on the same API | Separate 3D data model, heavy assets | One source of truth; performance; resilience |
 | AD-12 | Fixed as-of date | Wall clock | Reproducible demo numbers |
 | AD-13 | Reads via server components, mutations via routes + `router.refresh()` | Client data fetching libraries | Fewer moving parts; always-fresh server state |
+| AD-14 | Global ridge regression in TypeScript, used per SKU only where its backtest beats the baseline | Python LightGBM service, always-on ML | No second runtime; deterministic; honest per-SKU evidence |
+| AD-15 | Three role-specific agents with terminal submit tools and code guardrails, run in the background with a stored trace | One do-everything agent, an agent framework, agents that write freely | Real decisions with bounded effects; every step replayable and auditable |
 
 ---
 
@@ -780,9 +847,9 @@ flowchart LR
 | Principle (problemstatement §9) | Architectural mechanism |
 |---|---|
 | 1. Procurement first | One workflow; every module feeds `buildPlan`; no other domains in the schema |
-| 2. Deterministic numbers | Pure engine (§6), tool-only numbers for the AI (§9) |
+| 2. Deterministic numbers | Pure engine (§6) and pure demand model (`lib/ml`), tool-only numbers for the AI (§9) |
 | 3. Traceable | `evidence_json`, reason codes, `assumptions_json` config snapshot, audit log |
-| 4. Human in charge | Approval-only PO path (§7.3), Owner approval above ₹4,00,000, no AI write tools for POs, simulated sends only |
+| 4. Human in charge | One PO path (`approveLines`, §7.3) used by a human or the Order Agent; Owner approval above ₹4,00,000; no AI can send or Owner-approve; simulated sends only |
 | 5. One source of truth | Same context + engine for plan, heatmap and agent; Postgres only |
 | 6. Honest data | `data_source` + `data_sources`, `price_type`, no-copy validation, UI badge |
 | 7. Dashboard, not chatbot | AI behind buttons and a side panel; all workflows work without it |
@@ -796,4 +863,4 @@ These points are named so the current design does not block them. None of them i
 - **Customer data (phase D3):** an importer that writes `data_source = 'verified_customer_data'` into the same tables. No schema change is needed.
 - **Authentication:** replace `DEMO_USER` with a session user in services. Audit and approvals already store a user id.
 - **PO export to an ERP / real sending:** replace the simulated `sendPo` with a real email or ERP push; the `sent` status, `sent_at` and `sent_by` already exist.
-- **Scheduled morning plan:** a cron route calling `createPlan`. The engine is already pure and fast.
+- **Scheduled morning plan:** a cron route calling `createPlan` and then the agent pipeline. The engine is already pure and fast.
