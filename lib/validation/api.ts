@@ -1,5 +1,6 @@
 // Request schemas for the API routes (implementationplan.md §8).
 import { z } from "zod";
+import { HEATMAP_MODES } from "@/lib/business-logic/heatmap";
 
 export const analyzeBody = z
   .object({
@@ -70,3 +71,11 @@ const reason = z.string().trim().min(3, "Give a reason of at least 3 characters.
 export const rejectPlanBody = z.object({ reason }).strict();
 export const approvePoBody = z.object({ note: z.string().trim().max(500).optional() }).strict();
 export const rejectPoBody = z.object({ reason }).strict();
+
+/** GET /api/warehouse/heatmap?mode=&planId= — planId is required for the proposed mode (checked by the service). */
+export const heatmapQuery = z
+  .object({
+    mode: z.enum(HEATMAP_MODES, { error: `mode must be one of ${HEATMAP_MODES.join(", ")}.` }),
+    planId: z.uuid({ error: "planId must be a plan id." }).optional(),
+  })
+  .strict();

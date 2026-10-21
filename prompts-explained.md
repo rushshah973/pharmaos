@@ -26,8 +26,9 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P16B | ML demand model | ✅ |
 | P17 | Approval service | ✅ |
 | P18 | Purchase orders and Activity | ✅ |
-| P19 | Heatmap, put-away and warehouse API | ⏭ |
-| P20–P28 | … (plus P22B, P23B after P23) | ⬜ |
+| P19 | Heatmap, put-away and warehouse API | ✅ |
+| P20 | 2D grid and panels | ⏭ |
+| P21–P28 | … (plus P22B, P23B after P23) | ⬜ |
 
 > Budget cap removed; ₹4,00,000 per-PO Owner approval added (after P13).
 >
@@ -215,14 +216,14 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 
 ## Stage 5 — Warehouse
 
-### P19 — Heatmap, put-away and warehouse API ⏭
+### P19 — Heatmap, put-away and warehouse API ✅
 
 - **What it does:** Works out, for every bin, whether it holds stock at stockout risk, expiry risk or excess, and where newly ordered stock could go. Builds the server routes for the layout, heatmaps, bin details and product search.
 - **Creates or changes:** `heatmap.ts`, `putaway.ts` (+ tests), `lib/warehouse/geometry.ts`, `lib/services/warehouse.ts`, warehouse routes.
 - **You will see:** Spot checks showing that a stockout SKU's bin really is marked stockout.
 - **Why it matters:** The warehouse view uses the same engine as the plan, so a red bin and a stockout line can never disagree.
 
-### P20 — 2D grid and panels ⬜
+### P20 — 2D grid and panels ⏭
 
 - **What it does:** Builds the warehouse page as a 2D grid first (aisles, racks, shelves), with heatmap modes, a bin detail panel, a legend, product search and "Locate" links from the plan.
 - **Creates or changes:** `WarehouseView`, `Grid2D`, `BinPanel`, `Legend`, `ModeSelect`.
