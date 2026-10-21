@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSyncExternalStore } from "react";
+import { Suspense, useSyncExternalStore } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "cn";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -46,9 +46,12 @@ function subscribeNarrow(cb: () => void) {
 }
 
 export function Sidebar({ demoUser }: { demoUser: string }) {
-  const pathname = usePathname();
   const userCollapsed = useSyncExternalStore(subscribeCollapsed, readCollapsed, () => false);
-  const narrow = useSyncExternalStore(subscribeNarrow, () => window.matchMedia(NARROW).matches, () => false);
+  const narrow = useSyncExternalStore(
+    subscribeNarrow,
+    () => window.matchMedia(NARROW).matches,
+    () => false,
+  );
   const railMode = userCollapsed || narrow;
   const initials = demoUser
     .split(/[.\s_-]+/)
@@ -66,45 +69,21 @@ export function Sidebar({ demoUser }: { demoUser: string }) {
           <Logo wordmarkClassName="group-data-[collapsed=true]/sb:hidden max-lg:hidden" />
         </Link>
         <button
-            type="button"
-            onClick={() => writeCollapsed(true)}
-            className="group-data-[collapsed=true]/sb:hidden max-lg:hidden flex size-7 items-center justify-center rounded-md text-fg-3 transition-colors duration-150 hover:bg-surface-2 hover:text-fg-1"
-            aria-label="Collapse sidebar"
-          >
-            <PanelLeftClose className="size-4" strokeWidth={1.75} />
-          </button>
+          type="button"
+          onClick={() => writeCollapsed(true)}
+          className="group-data-[collapsed=true]/sb:hidden max-lg:hidden flex size-7 items-center justify-center rounded-md text-fg-3 transition-colors duration-150 hover:bg-surface-2 hover:text-fg-1"
+          aria-label="Collapse sidebar"
+        >
+          <PanelLeftClose className="size-4" strokeWidth={1.75} />
+        </button>
       </div>
 
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4 group-data-[collapsed=true]/sb:px-2.5 max-lg:px-2.5" aria-label="Main">
         <p className="micro-label mb-2 px-2.5 group-data-[collapsed=true]/sb:hidden max-lg:hidden">Workspace</p>
-        {NAV_ITEMS.map((item) => {
-          const active = isActive(pathname, item.href);
-          const Icon = item.icon;
-          return (
-            <Tooltip key={item.href} disabled={!railMode}>
-              <TooltipTrigger
-                render={
-                  <Link
-                    href={item.href}
-                    aria-current={active ? "page" : undefined}
-                    className={cn(
-                      "relative flex h-9 items-center gap-3 rounded-lg px-2.5 text-[13.5px] font-medium transition-colors duration-150",
-                      "group-data-[collapsed=true]/sb:justify-center group-data-[collapsed=true]/sb:px-0 max-lg:justify-center max-lg:px-0",
-                      active ? "bg-surface-3 text-fg-1" : "text-fg-2 hover:bg-surface-2 hover:text-fg-1",
-                    )}
-                  />
-                }
-              >
-                {active && <span className="absolute top-2 bottom-2 left-0 w-0.5 rounded-full bg-brand" aria-hidden />}
-                <Icon className={cn("size-4 shrink-0", active && "text-brand")} strokeWidth={1.75} aria-hidden />
-                <span className="truncate group-data-[collapsed=true]/sb:sr-only max-lg:sr-only">{item.label}</span>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={10}>
-                {item.label}
-              </TooltipContent>
-            </Tooltip>
-          );
-        })}
+        {/* The active link needs the URL, which is only known at request time: stream it in (Cache Components). */}
+        <Suspense fallback={<NavLinks pathname={null} railMode={railMode} />}>
+          <ActiveNavLinks railMode={railMode} />
+        </Suspense>
       </nav>
 
       <div className="space-y-3 border-t border-border p-3 group-data-[collapsed=true]/sb:flex group-data-[collapsed=true]/sb:flex-col group-data-[collapsed=true]/sb:items-center max-lg:flex max-lg:flex-col max-lg:items-center">
@@ -115,19 +94,58 @@ export function Sidebar({ demoUser }: { demoUser: string }) {
             {initials || "D"}
           </span>
           <span className="min-w-0 leading-tight group-data-[collapsed=true]/sb:hidden max-lg:hidden">
-              <span className="block truncate font-mono text-[12.5px] text-fg-1">{demoUser}</span>
-              <span className="block text-[11.5px] text-fg-3">Owner · demo account</span>
-            </span>
+            <span className="block truncate font-mono text-[12.5px] text-fg-1">{demoUser}</span>
+            <span className="block text-[11.5px] text-fg-3">Owner · demo account</span>
+          </span>
         </div>
         <button
-            type="button"
-            onClick={() => writeCollapsed(false)}
-            className="hidden group-data-[collapsed=true]/sb:flex max-lg:hidden! size-7 items-center justify-center rounded-md text-fg-3 transition-colors duration-150 hover:bg-surface-2 hover:text-fg-1"
-            aria-label="Expand sidebar"
-          >
-            <PanelLeftOpen className="size-4" strokeWidth={1.75} />
-          </button>
+          type="button"
+          onClick={() => writeCollapsed(false)}
+          className="hidden group-data-[collapsed=true]/sb:flex max-lg:hidden! size-7 items-center justify-center rounded-md text-fg-3 transition-colors duration-150 hover:bg-surface-2 hover:text-fg-1"
+          aria-label="Expand sidebar"
+        >
+          <PanelLeftOpen className="size-4" strokeWidth={1.75} />
+        </button>
       </div>
     </aside>
+  );
+}
+
+function ActiveNavLinks({ railMode }: { railMode: boolean }) {
+  return <NavLinks pathname={usePathname()} railMode={railMode} />;
+}
+
+function NavLinks({ pathname, railMode }: { pathname: string | null; railMode: boolean }) {
+  return (
+    <>
+      {NAV_ITEMS.map((item) => {
+        const active = pathname !== null && isActive(pathname, item.href);
+        const Icon = item.icon;
+        return (
+          <Tooltip key={item.href} disabled={!railMode}>
+            <TooltipTrigger
+              render={
+                <Link
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "relative flex h-9 items-center gap-3 rounded-lg px-2.5 text-[13.5px] font-medium transition-colors duration-150",
+                    "group-data-[collapsed=true]/sb:justify-center group-data-[collapsed=true]/sb:px-0 max-lg:justify-center max-lg:px-0",
+                    active ? "bg-surface-3 text-fg-1" : "text-fg-2 hover:bg-surface-2 hover:text-fg-1",
+                  )}
+                />
+              }
+            >
+              {active && <span className="absolute top-2 bottom-2 left-0 w-0.5 rounded-full bg-brand" aria-hidden />}
+              <Icon className={cn("size-4 shrink-0", active && "text-brand")} strokeWidth={1.75} aria-hidden />
+              <span className="truncate group-data-[collapsed=true]/sb:sr-only max-lg:sr-only">{item.label}</span>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={10}>
+              {item.label}
+            </TooltipContent>
+          </Tooltip>
+        );
+      })}
+    </>
   );
 }

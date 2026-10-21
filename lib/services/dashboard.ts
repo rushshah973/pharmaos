@@ -2,7 +2,8 @@
 // on the current context; spend and approvals come from the saved plans.
 import type postgres from "postgres";
 import { analyseSku } from "@/lib/business-logic/engine";
-import type { Money, SkuStatus } from "@/lib/business-logic/types";
+import { criticalityWeight } from "@/lib/business-logic/priority";
+import type { Criticality, Money, SkuStatus } from "@/lib/business-logic/types";
 import { getSql } from "@/lib/db/client";
 import { sumMoney } from "@/lib/money";
 import { resolvePlanningState } from "./as-of";
@@ -15,6 +16,7 @@ export type CriticalSku = {
   brandName: string;
   strength: string;
   packSize: number;
+  criticality: Criticality;
   status: SkuStatus;
   cover: number | null;
   leadTimeDays: number;
@@ -75,12 +77,20 @@ export async function getCommandCenter(sql: postgres.Sql = getSql()): Promise<Co
   const analysed = ctx.skus.map((s) => ({ product: s.product, a: analyseSku(s) }));
   const lineByProduct = new Map(planLines.map((l) => [l.product_id, l.id]));
 
-  // Critical: stockout risk, then below reorder point, then any SKU with stock at expiry risk; lowest cover first.
+  // Critical: stockout risk, then below reorder point, then any SKU with stock at expiry risk; lowest cover first,
+  // then the more critical medicine, then the longer wait for delivery.
   const severity = (x: (typeof analysed)[number]) =>
     SEVERITY[x.a.status] < 3 ? SEVERITY[x.a.status] : Number(x.a.expiry.atRiskValue) > 0 ? 2 : SEVERITY[x.a.status];
   const criticalSkus = analysed
     .filter((x) => severity(x) <= 2)
-    .sort((x, y) => severity(x) - severity(y) || (x.a.cover ?? Infinity) - (y.a.cover ?? Infinity) || x.a.sku.localeCompare(y.a.sku))
+    .sort(
+      (x, y) =>
+        severity(x) - severity(y) ||
+        (x.a.cover ?? Infinity) - (y.a.cover ?? Infinity) ||
+        criticalityWeight(y.product.criticality) - criticalityWeight(x.product.criticality) ||
+        y.a.leadFastest - x.a.leadFastest ||
+        x.a.sku.localeCompare(y.a.sku),
+    )
     .slice(0, CRITICAL_LIMIT)
     .map(({ product, a }) => ({
       productId: product.id,
@@ -88,6 +98,7 @@ export async function getCommandCenter(sql: postgres.Sql = getSql()): Promise<Co
       brandName: product.brandName,
       strength: product.strength,
       packSize: product.packSize,
+      criticality: product.criticality,
       status: a.status,
       cover: a.cover,
       leadTimeDays: a.leadFastest,

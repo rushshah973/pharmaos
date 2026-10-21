@@ -10,7 +10,9 @@ import { TopBarTitle } from "./TopBarTitle";
 export function TopBar() {
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-bg/80 px-8 backdrop-blur-md max-lg:px-6">
-      <TopBarTitle />
+      <Suspense fallback={<span className="h-5 w-40" aria-hidden />}>
+        <TopBarTitle />
+      </Suspense>
       <Suspense fallback={<TopBarFactsSkeleton />}>
         <TopBarFacts />
       </Suspense>

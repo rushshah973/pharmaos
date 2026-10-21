@@ -20,8 +20,9 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P11 | Context loader and debug plan | ✅ `2b2b280` |
 | P12 | Theme and shell | ✅ `6a1bb63` |
 | P13 | Plan services and API | ✅ `2296530` |
-| P14 | Command Center | ⏭ |
-| P15–P28 | … | ⬜ |
+| P14 | Command Center and plan list | ✅ |
+| P15 | Plan screen | ⏭ |
+| P16–P28 | … | ⬜ |
 
 > Budget cap removed; ₹4,00,000 per-PO Owner approval added (after P13).
 
@@ -155,14 +156,14 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 - **You will see:** The assistant testing each route and showing you the responses.
 - **Why it matters:** Totals are always recomputed on the server; the browser is never trusted with money.
 
-### P14 — Command Center and plan list ⏭
+### P14 — Command Center and plan list ✅
 
 - **What it does:** Builds the home screen: proposed spend, SKUs at stockout risk, rupees at expiry risk, lines waiting for a PO, POs waiting for the Owner's approval, the most critical SKUs, and the **Create Purchase Plan** button (no budget to enter). Also the list of past plans.
 - **Creates or changes:** `app/(dashboard)/page.tsx`, `components/dashboard/*`, `app/(dashboard)/procurement/page.tsx`.
 - **You will see:** Real numbers from the database and a working Create Purchase Plan dialog.
 - **Why it matters:** The opening of the demo ("this is what a stockist sees every morning").
 
-### P15 — Plan screen ⬜
+### P15 — Plan screen ⏭
 
 - **What it does:** Builds the main working screen: the Plan Impact Card, a strip showing each supplier's PO total (amber "Owner approval" badge above ₹4,00,000), the ranked table of what to buy, flags and reasons, defer/reject actions, a "Not in this plan" list with each line's risk, and a Recalculate button.
 - **Creates or changes:** `app/(dashboard)/procurement/[planId]/page.tsx`, `ImpactCard`, `SupplierPoStrip`, `PlanTable`, the "Not in this plan" list.

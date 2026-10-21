@@ -230,6 +230,37 @@ export async function getPlan(planId: string, sql: SqlHandle = getSql()): Promis
   return { ...summarize(plan, lines), lines };
 }
 
+export type PlanListItem = {
+  id: string;
+  status: PlanStatus;
+  createdAt: string;
+  proposedTotal: Money;
+  lines: number;
+  included: number;
+  posNeedingApproval: number;
+  scenarioId: string;
+  scenarioName: string;
+};
+
+/** Newest first. POs needing approval is the figure saved with the plan's last change. */
+export async function listPlans(limit = 50, sql: SqlHandle = getSql()): Promise<PlanListItem[]> {
+  return sql<PlanListItem[]>`
+    select
+      pp.id, pp.status,
+      to_char(pp.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as "createdAt",
+      pp.proposed_total::text as "proposedTotal",
+      (select count(*)::int from purchase_recommendations r where r.plan_id = pp.id) as lines,
+      (select count(*)::int from purchase_recommendations r
+        where r.plan_id = pp.id and r.in_basket and r.status in ('proposed', 'edited', 'approved_for_po')) as included,
+      coalesce((pp.impact_json->>'posNeedingApproval')::int, 0) as "posNeedingApproval",
+      pp.scenario_id as "scenarioId", s.name as "scenarioName"
+    from purchase_plans pp
+    join scenarios s on s.id = pp.scenario_id
+    order by pp.created_at desc
+    limit ${Math.min(Math.max(Math.trunc(limit), 1), 200)}
+  `;
+}
+
 /** One line with its full evidence_json (line drawer, explain). */
 export async function getLine(planId: string, lineId: string, sql: SqlHandle = getSql()): Promise<LineWithEvidence> {
   const [row] = await selectLines(sql, planId, { lineId, withEvidence: true });
