@@ -213,8 +213,10 @@ export type GenerateOptions = {
 // Constants from plan §5.5
 // ---------------------------------------------------------------------------
 
-const PRODUCT_COUNT = 200;
-const SALES_DAYS = 90;
+export const PRODUCT_COUNT = 500;
+export const SALES_DAYS = 90;
+/** Demo capacity proxy per bin, in packs (sized so 500 SKUs fit in 240 bins). */
+const BIN_CAPACITY = { min: 250, max: 1000 };
 const MEDIAN_PACKS_PER_DAY = 4;
 const MIN_PACKS_PER_DAY = 0.5;
 const MAX_PACKS_PER_DAY = 30;
@@ -331,11 +333,11 @@ export function generate(profile: Profile, asOf: string, seed = 42, options: Gen
 
   // ---- Manufacturers (fictional) ----
   const makerNames = new Set<string>();
-  const manufacturers = Array.from({ length: 12 }, () =>
+  const manufacturers = Array.from({ length: 20 }, () =>
     pickName(rng, () => `${rng.pick(MANUFACTURER_PARTS.first)} ${rng.pick(MANUFACTURER_PARTS.last)}`, makerNames, forbidden),
   );
 
-  // ---- Products (200) ----
+  // ---- Products (PRODUCT_COUNT) ----
   const categoryWeights = CATEGORIES.map((c) => [c, categoryShare?.[c] ?? 1] as const);
   const comboProbability = comboShare ? clamp(comboShare.combination, 0, 0.6) : 0.3;
   const brandNames = new Set<string>();
@@ -500,7 +502,7 @@ export function generate(profile: Profile, asOf: string, seed = 42, options: Gen
             width: 1,
             depth: 1,
             height: 0.6,
-            capacity_units: rng.int(100, 400),
+            capacity_units: rng.int(BIN_CAPACITY.min, BIN_CAPACITY.max),
             storage_class: storage,
             status: "active",
           });

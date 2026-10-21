@@ -319,7 +319,7 @@ sequenceDiagram
     end
 ```
 
-Target: under 3 seconds for 300 SKUs. The engine does no I/O, and context loading is a fixed number of queries.
+Target: under 3 seconds for 500 SKUs. The engine does no I/O, and context loading is a fixed number of queries.
 
 ### 7.2 Edit a line (preview, then save)
 
@@ -669,7 +669,7 @@ All mutations go through `writeAudit({ actorType, actorId, action, entityType, e
 
 | Path | Budget | How |
 |---|---|---|
-| Create plan (300 SKUs) | < 3 s | Fixed reads, in-memory engine, batched inserts |
+| Create plan (500 SKUs) | < 3 s | Fixed reads, in-memory engine, batched inserts |
 | Edit preview | < 500 ms | Single-SKU analysis |
 | Heatmap | < 500 ms | Context cached per request; 240 bins |
 | 3D scene | 60 fps idle-free | One instanced mesh, `frameloop="demand"` |

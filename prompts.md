@@ -129,7 +129,7 @@ Stage 1, phase D2a: synthetic data generator. Follow implementationplan.md §5.5
 
 1. scripts/seed/prng.ts: mulberry32(seed), and helpers int(min,max), float, pick, weighted pick, shuffle, poisson(lambda) (Knuth). Never use Math.random().
 2. scripts/seed/catalog.ts: keep CATEGORY_KEYWORDS and PTR_FROM_LISTED_FACTOR from P04 unchanged, and add short lists of common generic names per category (single and combination), brand-name syllables, fictional manufacturer and supplier name parts, and forms.
-3. scripts/seed/generate-synthetic.ts: export generate(profile, asOf, seed) returning in-memory rows for every table in the §5.5 table (products 200, suppliers 8, offers 1–3 per SKU, 90 days of sales, 240 bins, batches, balances, 15 open + 1 received + 1 cancelled POs with lines). Use profile.json where present, otherwise the defaults in §5.5. Every row: data_source = 'synthetic_demo'. Every offer: price_type = 'supplier_quote'. Money as strings.
+3. scripts/seed/generate-synthetic.ts: export generate(profile, asOf, seed) returning in-memory rows for every table in the §5.5 table (products 500, suppliers 8, offers 1–3 per SKU, 90 days of sales, 240 bins, batches, balances, 15 open + 1 received + 1 cancelled POs with lines). Use profile.json where present, otherwise the defaults in §5.5. Every row: data_source = 'synthetic_demo'. Every offer: price_type = 'supplier_quote'. Money as strings.
 4. Use faker.seed(42) and mulberry32(42). The as-of date for generation = DEMO_AS_OF_DATE, or today's UTC date if unset.
 5. Add a unit test tests/unit/generator.test.ts: the same seed gives deep-equal output; row counts match §5.5; every bin_code is unique; no sales date is after as-of.
 6. Run `npm run check`. Do not insert anything into the database yet.
@@ -149,7 +149,7 @@ Stage 1, phase D2b: demo cases, validation and seed. Follow implementationplan.m
 5. Run `npm run db:reset && npm run seed`. Show me the summary and demo-cases.json.
 6. Run `npm run check`. Commit: "stage 1: demo cases, validation and seed".
 ```
-**You check:** about 200 products, 240 bins and 18,000+ sales rows in Supabase. Every `data_source` is `synthetic_demo`.
+**You check:** 500 products, 240 bins and 45,000 sales rows in Supabase. Every `data_source` is `synthetic_demo`.
 
 ---
 

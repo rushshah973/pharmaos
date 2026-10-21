@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { generate, type Profile, type SyntheticDataset } from "@/scripts/seed/generate-synthetic";
+import { PRODUCT_COUNT, SALES_DAYS, generate, type Profile, type SyntheticDataset } from "@/scripts/seed/generate-synthetic";
 
 const AS_OF = "2026-10-21";
 const profile = JSON.parse(
@@ -25,10 +25,11 @@ describe("synthetic generator", () => {
   });
 
   it("produces the row counts in plan §5.5", () => {
-    expect(data.products).toHaveLength(200);
+    expect(PRODUCT_COUNT).toBe(500);
+    expect(data.products).toHaveLength(PRODUCT_COUNT);
     expect(data.suppliers).toHaveLength(8);
     expect(data.inventoryLocations).toHaveLength(240);
-    expect(data.salesHistory).toHaveLength(200 * 90);
+    expect(data.salesHistory).toHaveLength(PRODUCT_COUNT * SALES_DAYS);
     expect(data.purchaseOrders).toHaveLength(17);
     expect(data.purchaseOrders.filter((p) => p.status === "open")).toHaveLength(15);
     expect(data.purchaseOrders.filter((p) => p.status === "received")).toHaveLength(1);
@@ -152,7 +153,7 @@ describe("synthetic generator", () => {
     for (const p of other.products) expect(forbidden.has(p.brand_name.toLowerCase())).toBe(false);
 
     const bare: SyntheticDataset = generate({}, AS_OF, 42);
-    expect(bare.products).toHaveLength(200);
+    expect(bare.products).toHaveLength(PRODUCT_COUNT);
     expect(bare.meta.profileUsed).toEqual({ catalogue: false, sales: false });
   });
 });

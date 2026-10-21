@@ -318,11 +318,11 @@ Use `faker.seed(42)` and `prng.ts` (`mulberry32(42)`) everywhere; never `Math.ra
 
 | Table | Target size | How rows are generated |
 |---|---|---|
-| products | 200 SKUs | Forms, pack patterns and category mix from the profile (defaults: tablet, capsule, syrup, injection, ointment, drops; analgesic, antibiotic, antidiabetic, cardiac, gastro, respiratory, vitamins, dermatology); 10% `cool`, 5% `cold_chain`; criticality 10% life_saving, 30% chronic, 45% acute, 15% otc; `ptr` sampled from the category's **PTR-estimate** quantiles (listed price × 0.80, section 5.4; default ₹15–₹900); category assigned from the profile's `categoryShare` (composition keyword map, `other` excluded); `unit_margin` = 8–10% of ptr; `shelf_life_days` 540–1095; GST 5% or 12% |
+| products | 500 SKUs (`PRODUCT_COUNT`) | Forms, pack patterns and category mix from the profile (defaults: tablet, capsule, syrup, injection, ointment, drops; analgesic, antibiotic, antidiabetic, cardiac, gastro, respiratory, vitamins, dermatology); 10% `cool`, 5% `cold_chain`; criticality 10% life_saving, 30% chronic, 45% acute, 15% otc; `ptr` sampled from the category's **PTR-estimate** quantiles (listed price × 0.80, section 5.4; default ₹15–₹900); category assigned from the profile's `categoryShare` (composition keyword map, `other` excluded); `unit_margin` = 8–10% of ptr; `shelf_life_days` 540–1095; GST 5% or 12% |
 | suppliers | 8 (`SUP-01`…`SUP-08`) | 6 approved, 1 `pending`, 1 `blocked`; lead time 1–10 days; reliability 60–98; payment terms 15, 21, 30, 45 or 60 days; one approved supplier with null reliability (tests "missing data scores 0") |
 | supplier_offers | 1–3 per SKU | `price_type = 'supplier_quote'`; `unit_price` = ptr × 0.78–0.90 (stockist buys below PTR); MOQ ∈ {1, 5, 10, 20}; pack_multiple ∈ {1, 5, 10}; available 50–2,000; lead time = supplier default ± 1 (min 1); freight ₹0–₹1.50 per pack; schemes on ~15% of offers (`10+1`, `20+3`, `5+1`); `quoted_at` = as-of − 1…20 days (≈10% older than 14 days = stale); `valid_until` = `quoted_at` + 7…30 days (≈5% already expired) |
 | sales_history | 90 days ending on as-of, every product (zero days included as rows) | Demand **shape** from `dailyDemandQuantiles` (its spread relative to its median), **rescaled** so each SKU's base demand sits at a stockist level: median 4 packs/day, clamped to 0.5–30 packs/day (the sample's absolute level comes from 5 drugs across 5 states and an unknown unit, so it is not used). Weekly shape from `weekdayFactors` (flat if missing). Profile per SKU: 40% stable (Poisson), 20% intermittent (zero-day share from the profile, default 60%), 15% growing (+1%/day), 15% declining (−1%/day), 10% spike (last 5 days × 3) |
-| inventory_locations | 240 bins | Aisles A–E; each aisle has a left and right rack row; 6 racks per row; 4 shelves per rack (5 × 2 × 6 × 4 = 240). `bin_code` = `A-L-03-2` (aisle-side-rack-shelf). Coordinates: `x = aisleIndex × 4 + (side === 'L' ? -1 : 1)`, `z = rackIndex × 1.2`, `y = (shelf − 1) × 0.7`. Aisle E = `cold_chain` + `cool`; the rest `ambient`. Capacity 100–400 packs. 4 bins `inactive` |
+| inventory_locations | 240 bins | Aisles A–E; each aisle has a left and right rack row; 6 racks per row; 4 shelves per rack (5 × 2 × 6 × 4 = 240). `bin_code` = `A-L-03-2` (aisle-side-rack-shelf). Coordinates: `x = aisleIndex × 4 + (side === 'L' ? -1 : 1)`, `z = rackIndex × 1.2`, `y = (shelf − 1) × 0.7`. Aisle E = `cold_chain` + `cool`; the rest `ambient`. Capacity 250–1,000 packs (demo proxy, sized so 500 SKUs fit at ~70% fill). 4 bins `inactive` |
 | batches | 1–3 per SKU | `batch_number` = `B` + 6 chars; `received_date` 10–300 days before as-of; `expiry_date`: a **short-dated share** = the profile's share of `expiryDaysLeftQuantiles` below the 90-day risk window, capped at 15% (default 10%), gets 60–150 days after as-of; all other batches get 151–900 days (the sample's 23–358-day range is too short to use directly); `unit_cost` = offer price ± 3%; quality: 3 `quarantine`, 1 `recalled`, 2 already expired, rest `released`; return policy 40% returnable, 30% non-returnable, 30% unknown |
 | inventory_balances | Each batch in 1–2 bins of a matching storage class (ambient → aisles A–D, cool → E right, cold_chain → E left; never an inactive bin) | `on_hand_qty` sized so days of cover spreads from 0 to 90 days, capped so no bin exceeds `capacity_units`; `reserved_qty` 0–10% of on hand; 3 balances with `location_id = null` (unmapped) |
 | purchase_orders + lines | 15 `open`, 1 `received`, 1 `cancelled` | `open` POs have `expected_delivery_date` = as-of + 1…20 days (some beyond the 14-day horizon, to test exclusion); `po_number` = `EXT-0001`… |
@@ -574,7 +574,7 @@ One function that reads, with a fixed set of queries, everything the engine need
 2. `asOf = resolveAsOfDate()`; scenario = `app_state.active_scenario_id`.
 3. `result = buildPlan(context, budget)`.
 4. In one transaction: insert `purchase_plans` (totals, `assumptions_json` = ENGINE_CONFIG + asOf + scenario, `impact_json`), insert all recommendation rows, write audit `plan.created`.
-5. Return the plan id. Target: < 3 s for 300 SKUs.
+5. Return the plan id. Target: < 3 s for 500 SKUs.
 
 ### 7.3 `editLine(planId, lineId, change, { preview })`
 
@@ -920,7 +920,7 @@ Stage 0 (setup) is already done, which gives about 1 hour of slack. Hours are cu
 - [ ] Phase D2: `scripts/seed/prng.ts`, `catalog.ts`, `generate-synthetic.ts`, `inject-demo-cases.ts`, `validate.ts`, `write.ts`, `index.ts` (section 5).
 - [ ] `lib/services/as-of.ts`, `lib/services/audit.ts`.
 
-Verify: `profile.json` contains no names or rows; `npm run db:reset && npm run seed` prints the summary with validation passed; Supabase shows ~200 products, 240 bins, 18,000+ sales rows; `npm run check` passes.
+Verify: `profile.json` contains no names or rows; `npm run db:reset && npm run seed` prints the summary with validation passed; Supabase shows 500 products, 240 bins, 45,000 sales rows; `npm run check` passes.
 
 ### Stage 2 — Calculation engine (hours 3–9) · P0
 
