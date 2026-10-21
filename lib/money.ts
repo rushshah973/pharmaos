@@ -29,12 +29,16 @@ export function toMoneyString(value: MoneyInput): string {
   return roundMoney(value).toFixed(2);
 }
 
-/** Indian-style rupee display, e.g. 200000 -> "₹2,00,000.00". UI only. */
-export function formatINR(value: MoneyInput): string {
+/**
+ * Indian-style rupee display, e.g. 200000 -> "₹2,00,000.00". UI only.
+ * `{ paise: false }` rounds to whole rupees ("₹2,00,000") for KPI tiles and the top bar.
+ */
+export function formatINR(value: MoneyInput, opts: { paise?: boolean } = {}): string {
+  const dp = opts.paise === false ? 0 : 2;
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(roundMoney(value).toNumber());
+    minimumFractionDigits: dp,
+    maximumFractionDigits: dp,
+  }).format(new D(value).toDecimalPlaces(dp, Decimal.ROUND_HALF_UP).toNumber());
 }

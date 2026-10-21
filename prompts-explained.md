@@ -18,8 +18,9 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P09 | Ordering, suppliers, totals, priority | ✅ `afa8ee2` |
 | P10 | Basket, impact, validation, engine | ✅ `c3600d1` |
 | P11 | Context loader and debug plan | ✅ `2b2b280` |
-| P12 | Theme and shell | ⏭ |
-| P13–P28 | … | ⬜ |
+| P12 | Theme and shell | ✅ |
+| P13 | Plan services and API | ⏭ |
+| P14–P28 | … | ⬜ |
 
 ---
 
@@ -137,14 +138,14 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 
 ## Stage 3 — Procurement UI
 
-### P12 — Theme and shell ⏭
+### P12 — Theme and shell ✅
 
 - **What it does:** Gives the dashboard its premium look (plan §10.1: layered dark surfaces, one teal accent, refined type and spacing, logo mark): dark navy and teal, the left sidebar with six sections, the top bar with the "Synthetic demo data" badge, budget and date, and placeholder pages for every section.
 - **Creates or changes:** `app/globals.css`, `app/layout.tsx`, `components/layout/*`, placeholder pages.
 - **You will see:** A professional web dashboard where every sidebar link works; the sidebar shrinks to icons at tablet width.
 - **Why it matters:** First impression for judges, and the frame every later screen sits in.
 
-### P13 — Plan services and API ⬜
+### P13 — Plan services and API ⏭
 
 - **What it does:** Builds the server side of planning: create a plan, read it, edit a line (with a preview before saving), refuse edits that would go over budget, recalculate with a new budget, and the calculated "Why?" explanation.
 - **Creates or changes:** `lib/validation/api.ts`, `lib/services/plans.ts`, `dashboard.ts`, `explain.ts`, and the matching `app/api/...` routes.
