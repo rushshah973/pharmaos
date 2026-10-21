@@ -7,3 +7,13 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## PharmaOS project rules
+
+- Read `problemstatement.md` and `implementationplan.md` before writing code. Build one stage at a time (section 15 of the plan) and do not add features, tables or endpoints that are not in the plan.
+- All quantity, price, total and score maths lives in `lib/business-logic/` as pure, unit-tested functions. Money goes through `lib/money.ts` (decimal.js), never JS floats. Quantities are integer packs.
+- Only `lib/services/approval.ts` creates purchase orders, inside one transaction, idempotently. The LLM never gets a tool that approves or creates POs, and nothing is ever sent to a supplier.
+- Every mutation writes an `audit_logs` row. Every page that reads the database wraps its data component in `<Suspense>` and calls `await connection()` first (Cache Components is on).
+- shadcn components here use Base UI (style `base-nova`): compose with the `render` prop, not `asChild`. Read the file in `components/ui/` before using a component.
+- Reference datasets in `data/reference/` are for learning patterns only (section 5 of the plan). Never copy their rows, names or prices into the database; every row is `data_source = 'synthetic_demo'`. Generate data only in stage 1, phase by phase.
+- Run `npm run check` before every commit.

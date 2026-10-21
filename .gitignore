@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# PharmaOS data
+/data/reference/*
+!/data/reference/README.md
+!/data/reference/sources.json
+!/data/reference/profile.json
+/data/synthetic/*.csv
+!.env.example
