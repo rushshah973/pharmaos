@@ -99,9 +99,11 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
     [pathname],
   );
 
-  /** Fetches the proposed heatmap; the caller sets the loading state. */
+  /** Fetches the proposed heatmap once at a time (dev strict mode runs effects twice); the caller sets the loading state. */
+  const proposedInFlight = useRef(false);
   const fetchProposed = useCallback(() => {
-    if (!planId) return;
+    if (!planId || proposedInFlight.current) return;
+    proposedInFlight.current = true;
     fetch(`/api/warehouse/heatmap?mode=proposed&planId=${planId}`)
       .then(async (r) => {
         const j = await r.json();
@@ -109,7 +111,8 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
         setHeatmaps((h) => ({ ...h, proposed: j as HeatmapView }));
         setProposedState("idle");
       })
-      .catch(() => setProposedState("error"));
+      .catch(() => setProposedState("error"))
+      .finally(() => (proposedInFlight.current = false));
   }, [planId]);
 
   // Opened with ?mode=proposed: fetch it once.

@@ -65,7 +65,7 @@ export function Sidebar({ demoUser }: { demoUser: string }) {
       className="group/sb sticky top-0 flex h-screen print:hidden w-60 shrink-0 flex-col border-r border-border bg-surface-1 transition-[width] duration-200 ease-out data-[collapsed=true]:w-16 max-lg:w-16"
     >
       <div className="flex h-14 items-center justify-between border-b border-border px-4 group-data-[collapsed=true]/sb:justify-center group-data-[collapsed=true]/sb:px-0 max-lg:justify-center max-lg:px-0">
-        <Link href="/" aria-label="PharmaOS home" className="rounded-md">
+        <Link href="/" prefetch={false} aria-label="PharmaOS home" className="rounded-md">
           <Logo wordmarkClassName="group-data-[collapsed=true]/sb:hidden max-lg:hidden" />
         </Link>
         <button
@@ -127,6 +127,9 @@ function NavLinks({ pathname, railMode }: { pathname: string | null; railMode: b
               render={
                 <Link
                   href={item.href}
+                  // Every page reads the remote database; prefetching all six from the sidebar fills the
+                  // connection pool and delays the page the user is actually on.
+                  prefetch={false}
                   aria-current={active ? "page" : undefined}
                   className={cn(
                     "relative flex h-9 items-center gap-3 rounded-lg px-2.5 text-[13.5px] font-medium transition-colors duration-150",
