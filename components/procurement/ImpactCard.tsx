@@ -1,10 +1,11 @@
+import { ChevronDown } from "lucide-react";
 import { CountUp } from "@/components/dashboard/CountUp";
 import type { ImpactCard as Impact } from "@/lib/business-logic/types";
 import { formatINR } from "@/lib/money";
 
 /**
  * Plan Impact Card (§6.10): every field, large numbers, one line of explanation each.
- * Three headline figures, then the supporting ones.
+ * Three headline figures; the supporting ones fold away under "Show details" so the plan reads at a glance.
  */
 export function ImpactCard({ impact, approvalLimit }: { impact: Impact; approvalLimit: string }) {
   const per100 = impact.lossPreventedPerRupee === null ? null : impact.lossPreventedPerRupee * 100;
@@ -32,7 +33,17 @@ export function ImpactCard({ impact, approvalLimit }: { impact: Impact; approval
         </Headline>
       </div>
 
-      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-5 border-t border-border pt-5 md:grid-cols-3 xl:grid-cols-5">
+      <details className="group mt-6 border-t border-border pt-4">
+        <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 text-[12.5px] text-fg-2 transition-colors hover:text-fg-1 [&::-webkit-details-marker]:hidden">
+          <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" aria-hidden />
+          <span className="group-open:hidden">Show details</span>
+          <span className="hidden group-open:inline">Hide details</span>
+          <span className="text-fg-3">
+            · {impact.poCount} supplier PO{impact.poCount === 1 ? "" : "s"}
+            {impact.posNeedingApproval > 0 ? `, ${impact.posNeedingApproval} need the Owner` : ""}
+          </span>
+        </summary>
+      <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-5 md:grid-cols-3 xl:grid-cols-5">
         <Stat label="Margin protected" value={formatINR(impact.marginProtected, { paise: false })}>
           Margin kept by not running out
         </Stat>
@@ -57,6 +68,7 @@ export function ImpactCard({ impact, approvalLimit }: { impact: Impact; approval
           {formatINR(impact.excludedRisk, { paise: false })} of loss left uncovered
         </Stat>
       </dl>
+      </details>
     </section>
   );
 }

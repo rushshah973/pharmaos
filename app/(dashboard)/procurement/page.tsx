@@ -9,14 +9,15 @@ import { CreatePlanDialog } from "@/components/procurement/CreatePlanDialog";
 import { PlansTable, PlansTableSkeleton } from "@/components/procurement/PlansTable";
 import { type PlanListItem, listPlans } from "@/lib/services/plans";
 
-export const metadata: Metadata = { title: "Procurement" };
+export const metadata: Metadata = { title: "Plans" };
 
 export default function ProcurementPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Procurement"
-        description="Explainable purchase plans, ranked by loss prevented per rupee. Open one to review, edit and approve its lines."
+        step={2}
+        title="Reorder plans"
+        description="Each plan lists what to order today, most urgent first, with the reason for every line. Open one to review and approve it."
         action={<CreatePlanDialog />}
       />
       <Suspense fallback={<PlansTableSkeleton />}>

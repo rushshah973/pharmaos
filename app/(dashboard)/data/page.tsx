@@ -23,7 +23,7 @@ export const metadata: Metadata = { title: "Data & Scenarios" };
 export default function DataPage() {
   return (
     <div className="space-y-6">
-      <PageHeader title="Data & Scenarios" description="Stress the plan with what-if scenarios, set the Owner approval limit, and see where the demo data and its demand model come from." />
+      <PageHeader step={1} title="Data & AI" description="How demand is forecast, what-if scenarios to stress the plan, and the Owner approval limit." />
       <Suspense fallback={<ScenarioSkeleton />}>
         <ScenarioSection />
       </Suspense>

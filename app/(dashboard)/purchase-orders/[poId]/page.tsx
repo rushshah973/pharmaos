@@ -7,6 +7,7 @@ import { ErrorState } from "@/components/layout/ErrorState";
 import { PoActions } from "@/components/purchase-orders/PoActions";
 import { PoStatusPill } from "@/components/purchase-orders/PoStatusPill";
 import { PoTimeline } from "@/components/purchase-orders/PoTimeline";
+import { WorkflowStepper } from "@/components/workflow/WorkflowSteps";
 import { ServiceError } from "@/lib/api/errors";
 import { formatDateTime, formatDisplayDate } from "@/lib/format/date";
 import { formatINR } from "@/lib/money";
@@ -42,7 +43,8 @@ async function Po({ params }: { params: PageProps<"/purchase-orders/[poId]">["pa
   return (
     <div className="space-y-5">
       {/* The back link to all purchase orders is the shell's breadcrumb, above. */}
-      <div className="flex flex-wrap items-center justify-end gap-3 print:hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+        <WorkflowStepper current={po.status === "sent" || po.status === "received" ? 4 : 3} />
         <PoActions poId={po.id} poNumber={po.poNumber} status={po.status} pharmaos={pharmaos} />
       </div>
 

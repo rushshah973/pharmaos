@@ -4,13 +4,22 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 /** "Create Purchase Plan" (§10.3): optional priority text → POST /api/procurement/analyze → the new plan. */
-export function CreatePlanDialog({ variant = "default" }: { variant?: "default" | "outline" }) {
+export function CreatePlanDialog({
+  variant = "default",
+  label = "Create Purchase Plan",
+  className,
+}: {
+  variant?: "default" | "outline";
+  label?: string;
+  className?: string;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [priorities, setPriorities] = useState("");
@@ -40,9 +49,9 @@ export function CreatePlanDialog({ variant = "default" }: { variant?: "default" 
 
   return (
     <Dialog open={open} onOpenChange={(next) => !pending && setOpen(next)}>
-      <DialogTrigger render={<Button variant={variant} className="h-9 px-4" />}>
+      <DialogTrigger render={<Button variant={variant} className={cn("h-9 px-4", className)} />}>
         <Sparkles className="size-4" strokeWidth={1.75} aria-hidden />
-        Create Purchase Plan
+        {label}
       </DialogTrigger>
       <DialogContent
         showCloseButton={!pending}

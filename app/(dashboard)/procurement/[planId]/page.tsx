@@ -90,7 +90,8 @@ async function Plan({ params }: { params: PageProps<"/procurement/[planId]">["pa
   return (
     <div className="space-y-6 pb-2">
       <PageHeader
-        title="Purchase plan"
+        step={2}
+        title="Reorder plan"
         description={
           <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
             <PlanStatusPill status={plan.status} />

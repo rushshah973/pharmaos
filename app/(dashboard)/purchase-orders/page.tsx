@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/layout/EmptyState";
 import { ErrorState } from "@/components/layout/ErrorState";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { PoStatusPill } from "@/components/purchase-orders/PoStatusPill";
-import { PoWorkflow, poNextStep } from "@/components/purchase-orders/PoWorkflow";
+import { poNextStep } from "@/components/purchase-orders/PoWorkflow";
 import { formatDateTime, formatDisplayDate } from "@/lib/format/date";
 import { formatINR } from "@/lib/money";
 import { resolvePlanningState } from "@/lib/services/as-of";
@@ -20,7 +20,7 @@ const FILTERS: { id: PoFilter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "awaiting", label: "Awaiting Owner approval" },
   { id: "ready", label: "Ready to send" },
-  { id: "sent", label: "Sent (simulated)" },
+  { id: "sent", label: "On the way" },
   { id: "external", label: "Earlier purchases" },
 ];
 
@@ -28,8 +28,9 @@ export default function PurchaseOrdersPage({ searchParams }: PageProps<"/purchas
   return (
     <div className="space-y-6">
       <PageHeader
+        step={3}
         title="Purchase orders"
-        description="One PO per supplier, created when plan lines are approved. POs above the Owner approval limit wait for the Owner; sending is simulated — nothing is emailed."
+        description="One order per supplier, created when you approve a plan. Orders above the approval limit wait for the Owner; sending is simulated, nothing is emailed."
       />
       <Suspense fallback={<ListSkeleton />}>
         <PoList searchParams={searchParams} />
@@ -53,7 +54,6 @@ async function PoList({ searchParams }: Pick<PageProps<"/purchase-orders">, "sea
   }
   return (
     <>
-      <PoWorkflow pipeline={data.pipeline} approvalLimit={formatINR(data.approvalLimit, { paise: false })} />
       <nav className="flex flex-wrap gap-2" aria-label="Filter purchase orders">
         {FILTERS.map((f) => (
           <Link
@@ -67,6 +67,8 @@ async function PoList({ searchParams }: Pick<PageProps<"/purchase-orders">, "sea
           >
             {f.label}
             {f.id === "awaiting" && data.awaiting > 0 && <span className="num rounded-full bg-expiry-bg px-1.5 text-[11px] text-expiry">{data.awaiting}</span>}
+            {f.id === "ready" && data.pipeline.ready > 0 && <span className="num rounded-full bg-white/10 px-1.5 text-[11px] text-fg-1">{data.pipeline.ready}</span>}
+            {f.id === "sent" && data.pipeline.sent > 0 && <span className="num rounded-full bg-white/10 px-1.5 text-[11px] text-fg-1">{data.pipeline.sent}</span>}
           </Link>
         ))}
       </nav>

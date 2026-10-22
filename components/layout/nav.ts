@@ -12,12 +12,12 @@ export type NavItem = { href: string; label: string; icon: LucideIcon };
 
 // The six dashboard sections (implementationplan.md §10.2).
 export const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Command Center", icon: LayoutDashboard },
-  { href: "/procurement", label: "Procurement", icon: ClipboardList },
-  { href: "/warehouse", label: "3D Warehouse", icon: Boxes },
-  { href: "/purchase-orders", label: "Purchase Orders", icon: FileText },
-  { href: "/activity", label: "Activity Log", icon: Activity },
-  { href: "/data", label: "Data & Scenarios", icon: Database },
+  { href: "/", label: "Today", icon: LayoutDashboard },
+  { href: "/procurement", label: "Plans", icon: ClipboardList },
+  { href: "/warehouse", label: "Warehouse", icon: Boxes },
+  { href: "/purchase-orders", label: "Orders", icon: FileText },
+  { href: "/activity", label: "Activity", icon: Activity },
+  { href: "/data", label: "Data & AI", icon: Database },
 ];
 
 export function isActive(pathname: string, href: string) {
