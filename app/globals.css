@@ -85,15 +85,15 @@
    label; excess is pink so it never reads as the accent). */
 :root,
 .dark {
-  --bg: #07061a;
+  --bg: #1a1450;
   /* Opaque fallbacks (sticky table cells, menus): close to the average colour of a glass card on the canvas. */
-  --surface-1: #100e26;
-  --surface-2: #17142f;
-  --surface-3: #211d3d;
+  --surface-1: #211a5c;
+  --surface-2: #2a2268;
+  --surface-3: #352c78;
   --border-strong: rgba(255, 255, 255, 0.13);
   --text-1: #f4f4f5;
-  --text-2: #a1a1aa;
-  --text-3: #66666e;
+  --text-2: #c3bedb;
+  --text-3: #9690b8;
   --brand: #a597ff; /* violet accent ("--accent" in the plan; named brand to avoid shadcn's --accent) */
   --brand-strong: #7b68ff;
   --brand-glow: rgba(157, 140, 255, 0.14);
@@ -109,7 +109,7 @@
   --neutral-bg: rgba(161, 161, 170, 0.1);
   --proposed: rgba(255, 141, 77, 0.35);
   /* Glass */
-  --glass: linear-gradient(160deg, rgba(255, 255, 255, 0.085) 0%, rgba(255, 255, 255, 0.035) 38%, rgba(255, 255, 255, 0.02) 100%);
+  --glass: linear-gradient(160deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.05) 38%, rgba(255, 255, 255, 0.03) 100%);
   --glass-border: rgba(255, 255, 255, 0.09);
   /* A light edge: brightest at the top-left (where the light comes from), fading round the pane. Painted as the
      border-box layer of a two-layer background so it works with backdrop-filter and rounded corners. */
@@ -180,11 +180,11 @@
     z-index: -1;
     pointer-events: none;
     background:
-      radial-gradient(140% 100% at 50% 136%, rgba(18, 10, 64, 0.95) 0%, rgba(52, 34, 170, 0.55) 44%, rgba(104, 84, 255, 0.55) 49.2%, rgba(214, 205, 255, 0.75) 49.8%, rgba(124, 104, 255, 0.28) 50.5%, rgba(124, 104, 255, 0.08) 54%, rgba(124, 104, 255, 0) 60%),
-      radial-gradient(70% 55% at 50% -4%, rgba(98, 74, 255, 0.34) 0%, rgba(70, 50, 200, 0.12) 45%, rgba(70, 50, 200, 0) 75%),
-      radial-gradient(16% 70% at 6% 30%, rgba(120, 100, 255, 0.1) 0%, rgba(120, 100, 255, 0) 70%),
-      radial-gradient(16% 70% at 94% 30%, rgba(120, 100, 255, 0.1) 0%, rgba(120, 100, 255, 0) 70%),
-      linear-gradient(180deg, #07061a 0%, #0c0a28 55%, #120c3a 100%);
+      radial-gradient(140% 100% at 50% 136%, rgba(46, 30, 140, 0.95) 0%, rgba(84, 62, 220, 0.6) 44%, rgba(104, 84, 255, 0.55) 49.2%, rgba(214, 205, 255, 0.75) 49.8%, rgba(124, 104, 255, 0.28) 50.5%, rgba(124, 104, 255, 0.08) 54%, rgba(124, 104, 255, 0) 60%),
+      radial-gradient(75% 60% at 50% -6%, rgba(140, 118, 255, 0.5) 0%, rgba(110, 86, 240, 0.2) 45%, rgba(110, 86, 240, 0) 75%),
+      radial-gradient(18% 75% at 6% 30%, rgba(150, 130, 255, 0.18) 0%, rgba(150, 130, 255, 0) 70%),
+      radial-gradient(18% 75% at 94% 30%, rgba(150, 130, 255, 0.18) 0%, rgba(150, 130, 255, 0) 70%),
+      linear-gradient(180deg, #1c1552 0%, #2a1f78 50%, #3a2a9c 100%);
   }
   /* Stars: two seeded tiles of different sizes (small faint ones, fewer bright ones) so the field never visibly repeats. */
   body::after {
@@ -224,7 +224,7 @@
   .surface {
     background:
       var(--glass) padding-box,
-      linear-gradient(rgba(13, 11, 34, 0.5), rgba(13, 11, 34, 0.5)) padding-box,
+      linear-gradient(rgba(40, 30, 110, 0.32), rgba(40, 30, 110, 0.32)) padding-box,
       var(--glass-edge) border-box;
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
@@ -238,7 +238,7 @@
       radial-gradient(90% 120% at 0% 0%, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0) 55%) padding-box,
       radial-gradient(70% 90% at 100% 0%, rgba(157, 140, 255, 0.14) 0%, rgba(157, 140, 255, 0) 60%) padding-box,
       var(--glass) padding-box,
-      linear-gradient(rgba(13, 11, 34, 0.45), rgba(13, 11, 34, 0.45)) padding-box,
+      linear-gradient(rgba(40, 30, 110, 0.28), rgba(40, 30, 110, 0.28)) padding-box,
       var(--glass-edge) border-box;
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
@@ -251,7 +251,7 @@
     background:
       linear-gradient(160deg, rgba(0, 0, 0, 0) 15%, rgba(110, 88, 255, 0.36) 60%, rgba(40, 22, 140, 0.2) 90%) padding-box,
       radial-gradient(80% 80% at 100% 100%, rgba(157, 140, 255, 0.28) 0%, rgba(157, 140, 255, 0) 70%) padding-box,
-      linear-gradient(rgba(14, 10, 42, 0.62), rgba(14, 10, 42, 0.62)) padding-box,
+      linear-gradient(rgba(36, 24, 110, 0.5), rgba(36, 24, 110, 0.5)) padding-box,
       linear-gradient(140deg, rgba(228, 222, 255, 0.5) 0%, rgba(157, 140, 255, 0.16) 35%, rgba(157, 140, 255, 0.06) 65%, rgba(196, 184, 255, 0.42) 100%) border-box;
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
@@ -274,7 +274,7 @@
   .glass-pill {
     background:
       linear-gradient(rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.03)) padding-box,
-      linear-gradient(rgba(13, 11, 34, 0.4), rgba(13, 11, 34, 0.4)) padding-box,
+      linear-gradient(rgba(40, 30, 110, 0.25), rgba(40, 30, 110, 0.25)) padding-box,
       var(--glass-edge) border-box;
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
