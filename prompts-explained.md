@@ -29,7 +29,7 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P19 | Heatmap, put-away and warehouse API | ✅ |
 | P20 | 2D grid and panels | ✅ |
 | P21 | 3D scene | ✅ |
-| P22 | Tools and orchestrator | ⏭ |
+| P22 | Tools and orchestrator | ⏭ (live Gemini test pending: GEMINI_API_KEY is empty) |
 | P23–P28 | … (plus P22B, P23B after P23) | ⬜ |
 
 > Budget cap removed; ₹4,00,000 per-PO Owner approval added (after P13).

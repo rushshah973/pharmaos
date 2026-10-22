@@ -79,3 +79,11 @@ export const heatmapQuery = z
     planId: z.uuid({ error: "planId must be a plan id." }).optional(),
   })
   .strict();
+
+/** POST /api/agent/chat — Ask PharmaOS. */
+export const chatBody = z
+  .object({
+    message: z.string().trim().min(1, "Type a question.").max(2000, "Keep the question under 2000 characters."),
+    planId: z.uuid().optional(),
+  })
+  .strict();
