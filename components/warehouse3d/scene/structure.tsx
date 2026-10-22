@@ -59,7 +59,8 @@ function Instanced({
 }
 
 /** Blue uprights, orange beams, frame bracing, base plates and yellow column guards. */
-export function Racks({ aisleCount, racks }: { aisleCount: number; racks: number }) {
+/** `dim` turns the racking to plain grey steel so at-risk racks stand out in the risk modes. */
+export function Racks({ aisleCount, racks, dim = false }: { aisleCount: number; racks: number; dim?: boolean }) {
   const parts = useMemo(() => {
     const uprights: Inst[] = [];
     const beams: Inst[] = [];
@@ -104,9 +105,9 @@ export function Racks({ aisleCount, racks }: { aisleCount: number; racks: number
 
   return (
     <group>
-      <Instanced items={parts.uprights} color="#1e4fa8" metalness={0.45} roughness={0.38} />
-      <Instanced items={parts.beams} color="#f07a1a" metalness={0.35} roughness={0.42} />
-      <Instanced items={parts.braces} color="#2a5cb8" metalness={0.45} roughness={0.4} castShadow={false} />
+      <Instanced items={parts.uprights} color={dim ? "#5b6472" : "#1e4fa8"} metalness={0.45} roughness={0.38} />
+      <Instanced items={parts.beams} color={dim ? "#737b88" : "#f07a1a"} metalness={0.35} roughness={0.42} />
+      <Instanced items={parts.braces} color={dim ? "#5b6472" : "#2a5cb8"} metalness={0.45} roughness={0.4} castShadow={false} />
       <Instanced items={parts.plates} color="#334155" metalness={0.6} roughness={0.4} castShadow={false} />
       <Instanced items={parts.guards} color="#facc15" metalness={0.2} roughness={0.5} />
     </group>
@@ -161,7 +162,8 @@ export function AisleSigns({ aisles, subs, z }: { aisles: string[]; subs: string
 }
 
 /** The hall: epoxy floor with reflections and safety markings, walls, dock doors, columns and high-bay lights. */
-export function Hall({ aisleCount, racks, aisles }: { aisleCount: number; racks: number; aisles: string[] }) {
+/** `dim` greys the yellow safety markings so they never compete with the risk colours. */
+export function Hall({ aisleCount, racks, aisles, dim = false }: { aisleCount: number; racks: number; aisles: string[]; dim?: boolean }) {
   const { hall, racks: rk } = useMemo(() => hallBounds(aisleCount, racks), [aisleCount, racks]);
   const w = hall.x1 - hall.x0;
   const d = hall.z1 - hall.z0;
@@ -240,8 +242,8 @@ export function Hall({ aisleCount, racks, aisles }: { aisleCount: number; racks:
         <planeGeometry args={[w, d]} />
         <MeshReflectorMaterial
           map={tex.floor}
-          resolution={1024}
-          blur={[300, 80]}
+          resolution={512}
+          blur={[200, 60]}
           mixBlur={0.9}
           mixStrength={0.9}
           mirror={0.25}
@@ -253,7 +255,15 @@ export function Hall({ aisleCount, racks, aisles }: { aisleCount: number; racks:
           roughness={0.75}
         />
       </mesh>
-      <Instanced items={markings} color="#facc15" metalness={0} roughness={0.6} castShadow={false} emissive="#facc15" emissiveIntensity={0.15} />
+      <Instanced
+        items={markings}
+        color={dim ? "#d4d8de" : "#facc15"}
+        metalness={0}
+        roughness={0.6}
+        castShadow={false}
+        emissive={dim ? "#000000" : "#facc15"}
+        emissiveIntensity={dim ? 0 : 0.15}
+      />
 
       {aisles.map((a, i) => (
         <mesh key={a} rotation-x={-Math.PI / 2} position={[walkwayX(i), 0.006, rk.z1 + 3.9]} raycast={() => null}>

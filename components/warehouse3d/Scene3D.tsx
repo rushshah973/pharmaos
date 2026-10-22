@@ -8,7 +8,7 @@
 // frameloop="demand": nothing renders while the scene is idle.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { CameraControls, Environment, Lightformer } from "@react-three/drei";
+import { AdaptiveDpr, BakeShadows, CameraControls, Environment, Lightformer } from "@react-three/drei";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { ChevronDown, Eye, Footprints, Map as MapIcon, Maximize2, Minimize2, MapPin, RotateCcw } from "lucide-react";
@@ -80,6 +80,8 @@ export default function Scene3D(props: Scene3DProps) {
   const hovered = hover ? slots[hover.index] : undefined;
   const hoverHeat = hovered ? heat.get(hovered.bin.id) : undefined;
   const tone = SCENE_TONE[mode];
+  // In the risk modes everything that is not at risk fades to grey, so the coloured racks carry the picture.
+  const dim = mode !== "normal";
   const hotBays = useMemo(() => {
     const s = new Set<string>();
     for (const slot of slots) {
@@ -141,12 +143,17 @@ export default function Scene3D(props: Scene3DProps) {
       <Canvas
         frameloop="demand"
         shadows
-        dpr={[1, 2]}
+        dpr={[1, 1.75]}
+        // Drop the pixel ratio while the camera moves (CameraControls reports it), so zoom and orbit stay smooth.
+        performance={{ min: 0.55, debounce: 250 }}
         camera={{ position: [24, 18, 24], fov: 45, near: 0.2, far: 400 }}
         gl={{ antialias: false, powerPreference: "high-performance", toneMappingExposure: 1.05 }}
         onPointerMissed={() => setHover(null)}
       >
         <color attach="background" args={[BG]} />
+        <AdaptiveDpr pixelated={false} />
+        {/* Nothing in the hall moves: render the shadow map once instead of every frame. */}
+        <BakeShadows />
         <Lights center={bounds.center} />
         <Environment resolution={256} frames={1}>
           <Lightformer form="rect" intensity={2.4} color="#ffffff" scale={[40, 6, 1]} position={[0, 14, 0]} rotation-x={Math.PI / 2} />
@@ -154,9 +161,9 @@ export default function Scene3D(props: Scene3DProps) {
           <Lightformer form="rect" intensity={0.8} color="#fff7ed" scale={[30, 8, 1]} position={[20, 6, 10]} rotation-y={-Math.PI / 2} />
         </Environment>
 
-        <Hall aisleCount={layout.aisles.length} racks={racks} aisles={layout.aisles} />
-        <Racks aisleCount={layout.aisles.length} racks={racks} />
-        <Loads slots={slots} />
+        <Hall aisleCount={layout.aisles.length} racks={racks} aisles={layout.aisles} dim={dim} />
+        <Racks aisleCount={layout.aisles.length} racks={racks} dim={dim} />
+        <Loads slots={slots} dim={dim} />
         <HeatOverlay slots={slots} bays={bays} heat={heat} mode={mode} />
         <RackLabels bays={bays} hot={hotBays} tone={tone} />
         <AisleSigns aisles={layout.aisles} subs={subs} z={bounds.racks.z1 + 1.2} />
@@ -173,7 +180,7 @@ export default function Scene3D(props: Scene3DProps) {
         />
 
         <CameraRig controlsRef={controls} shot={shot} slotById={slotById} bounds={bounds} aisleOf={selected?.aisleIndex ?? 0} />
-        <EffectComposer multisampling={4}>
+        <EffectComposer multisampling={2}>
           <Bloom mipmapBlur luminanceThreshold={1} luminanceSmoothing={0.2} intensity={0.9} radius={0.65} />
           <Vignette eskil={false} offset={0.25} darkness={0.45} />
         </EffectComposer>
@@ -523,10 +530,10 @@ function CameraRig({
     <CameraControls
       ref={controlsRef}
       makeDefault
-      smoothTime={0.35}
-      draggingSmoothTime={0.12}
+      smoothTime={0.3}
+      draggingSmoothTime={0.15}
       dollyToCursor
-      dollySpeed={0.7}
+      dollySpeed={0.4}
       truckSpeed={1.6}
       minDistance={0.8}
       maxDistance={110}

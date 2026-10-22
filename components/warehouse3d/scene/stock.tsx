@@ -18,8 +18,9 @@ import { kraftCarton, palletWood, pharmaCarton } from "./textures";
 
 /** Bright, saturated tones for a lit scene (the legend uses the matching UI tokens). */
 export const SCENE_TONE: Record<HeatmapMode, string> = { stockout: "#ef4444", expiry: "#f59e0b", excess: "#8b5cf6", normal: "#64748b", proposed: "#06b6d4" };
-const FILL_OPACITY: Record<Severity, number> = { 0: 0, 1: 0.16, 2: 0.26, 3: 0.36 };
-const GLOW: Record<Severity, number> = { 0: 0, 1: 1.25, 2: 1.9, 3: 2.8 };
+/** Tint strength of an at-risk bin (multiplies the mode colour; above 1 glows through bloom). */
+const FILL: Record<Severity, number> = { 0: 0, 1: 0.8, 2: 1.2, 3: 1.7 };
+const GLOW: Record<Severity, number> = { 0: 0, 1: 1.6, 2: 2.3, 3: 3.2 };
 /** Normal mode shows fill through the stock itself; only nearly full bins get a frame. */
 const showSeverity = (mode: HeatmapMode, s: Severity) => (mode === "normal" ? s >= 3 : s > 0);
 
@@ -32,7 +33,8 @@ function hash(s: string): number {
 }
 
 /** Pallets and cartons for every non-empty bin: up to 2 pallets × 3 layers × 4 cartons, filled by fill %. */
-export function Loads({ slots }: { slots: Slot[] }) {
+/** `dim` mutes the stock (grey cartons) so at-risk bins stand out in the risk modes. */
+export function Loads({ slots, dim = false }: { slots: Slot[]; dim?: boolean }) {
   const tex = useMemo(() => ({ red: pharmaCarton("#dc2626", "Paracetamol"), blue: pharmaCarton("#2563eb", "Amoxicillin"), kraft: kraftCarton(), wood: palletWood() }), []);
   useEffect(() => () => Object.values(tex).forEach((t) => t.dispose()), [tex]);
 
@@ -69,22 +71,22 @@ export function Loads({ slots }: { slots: Slot[] }) {
 
   return (
     <group>
-      <Textured items={data.pallets} map={tex.wood} roughness={0.9} />
-      <Textured items={data.cartons[0]} map={tex.red} roughness={0.7} />
-      <Textured items={data.cartons[1]} map={tex.blue} roughness={0.7} />
-      <Textured items={data.cartons[2]} map={tex.kraft} roughness={0.88} />
+      <Textured items={data.pallets} map={tex.wood} roughness={0.9} tint={dim ? "#7c828c" : "#ffffff"} />
+      <Textured items={data.cartons[0]} map={tex.red} roughness={0.7} tint={dim ? "#858b95" : "#ffffff"} />
+      <Textured items={data.cartons[1]} map={tex.blue} roughness={0.7} tint={dim ? "#858b95" : "#ffffff"} />
+      <Textured items={data.cartons[2]} map={tex.kraft} roughness={0.88} tint={dim ? "#7c828c" : "#ffffff"} />
     </group>
   );
 }
 
-function Textured({ items, map, roughness }: { items: Inst[]; map: THREE.Texture; roughness: number }) {
+function Textured({ items, map, roughness, tint }: { items: Inst[]; map: THREE.Texture; roughness: number; tint: string }) {
   const ref = useRef<THREE.InstancedMesh>(null);
   useInstances(ref, items);
   if (items.length === 0) return null;
   return (
     <instancedMesh ref={ref} args={[undefined, undefined, items.length]} castShadow receiveShadow>
       <boxGeometry />
-      <meshStandardMaterial map={map} roughness={roughness} metalness={0} />
+      <meshStandardMaterial map={map} color={tint} roughness={roughness} metalness={0} />
     </instancedMesh>
   );
 }
@@ -155,7 +157,7 @@ function GlowBars({ items, colors }: { items: Inst[]; colors: THREE.Color[] }) {
   );
 }
 
-/** Tinted glowing frames on highlighted bins and glowing floor outlines under their bays. */
+/** At-risk bins: a solid glowing tint and frame; their rack: a full-height glowing frame and a glowing floor patch. */
 export function HeatOverlay({ slots, bays, heat, mode }: { slots: Slot[]; bays: Bay[]; heat: Map<string, BinHeat>; mode: HeatmapMode }) {
   const fillRef = useRef<THREE.InstancedMesh>(null);
   const invalidate = useThree((s) => s.invalidate);
@@ -169,28 +171,36 @@ export function HeatOverlay({ slots, bays, heat, mode }: { slots: Slot[]; bays: 
     for (const s of hot) {
       const sev = heat.get(s.bin.id)!.severity;
       fills.push({ p: s.center.toArray() as THREE.Vector3Tuple, s: [SLOT.x + 0.04, SLOT.y + 0.02, SLOT.z + 0.04] });
-      fillColors.push({ c: tone.clone(), o: FILL_OPACITY[sev] });
-      for (const b of edgeBars(s.center, { x: SLOT.x + 0.06, y: SLOT.y + 0.04, z: SLOT.z + 0.06 }, sev === 3 ? 0.045 : 0.03)) {
+      fillColors.push({ c: tone.clone(), o: FILL[sev] });
+      for (const b of edgeBars(s.center, { x: SLOT.x + 0.06, y: SLOT.y + 0.04, z: SLOT.z + 0.06 }, sev === 3 ? 0.07 : 0.05)) {
         bars.push(b);
         barColors.push(tone.clone().multiplyScalar(GLOW[sev]));
       }
     }
-    // Floor outline under every bay with a highlighted bin.
+    // Every bay with a highlighted bin: a glowing frame around the whole rack (floor to top), a tinted floor
+    // patch and a glowing floor outline, so an at-risk rack reads from across the hall.
     const hotBays = new Set(hot.map((s) => s.bayKey));
     for (const bay of bays) {
       if (!hotBays.has(bay.key)) continue;
       const maxSev = Math.max(...bay.slots.map((s) => heat.get(s.bin.id)?.severity ?? 0)) as Severity;
-      const c = new THREE.Vector3(bay.x, 0.012, bay.z);
-      const w = BAY.depth + 0.5;
-      const l = BAY_PITCH + 0.3;
+      const glow = tone.clone().multiplyScalar(GLOW[maxSev]);
+      const frameC = new THREE.Vector3(bay.x, (RACK_HEIGHT + 0.1) / 2, bay.z);
+      for (const b of edgeBars(frameC, { x: BAY.depth + 0.3, y: RACK_HEIGHT + 0.1, z: BAY_PITCH + 0.05 }, maxSev === 3 ? 0.08 : 0.06)) {
+        bars.push(b);
+        barColors.push(glow.clone());
+      }
+      const w = BAY.depth + 0.9;
+      const l = BAY_PITCH + 0.5;
+      fills.push({ p: [bay.x, 0.01, bay.z], s: [w, 0.01, l] });
+      fillColors.push({ c: tone.clone(), o: FILL[maxSev] * 0.9 });
       for (const [px, pz, sx, sz] of [
-        [c.x, c.z - l / 2, w, 0.07],
-        [c.x, c.z + l / 2, w, 0.07],
-        [c.x - w / 2, c.z, 0.07, l],
-        [c.x + w / 2, c.z, 0.07, l],
+        [bay.x, bay.z - l / 2, w, 0.12],
+        [bay.x, bay.z + l / 2, w, 0.12],
+        [bay.x - w / 2, bay.z, 0.12, l],
+        [bay.x + w / 2, bay.z, 0.12, l],
       ]) {
-        bars.push({ p: [px, 0.012, pz], s: [sx, 0.012, sz] });
-        barColors.push(tone.clone().multiplyScalar(GLOW[maxSev] * 0.9));
+        bars.push({ p: [px, 0.014, pz], s: [sx, 0.014, sz] });
+        barColors.push(glow.clone());
       }
     }
     return { fills, fillColors, bars, barColors, hotBays };
@@ -200,7 +210,7 @@ export function HeatOverlay({ slots, bays, heat, mode }: { slots: Slot[]; bays: 
   useLayoutEffect(() => {
     const mesh = fillRef.current;
     if (!mesh) return;
-    built.fillColors.forEach((f, i) => mesh.setColorAt(i, f.c.clone().multiplyScalar(0.4 + f.o * 2.2)));
+    built.fillColors.forEach((f, i) => mesh.setColorAt(i, f.c.clone().multiplyScalar(f.o)));
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     invalidate();
   }, [built, invalidate]);
@@ -210,7 +220,7 @@ export function HeatOverlay({ slots, bays, heat, mode }: { slots: Slot[]; bays: 
       {built.fills.length > 0 && (
         <instancedMesh key={`f${built.fills.length}`} ref={fillRef} args={[undefined, undefined, built.fills.length]} renderOrder={2} raycast={() => null}>
           <boxGeometry />
-          <meshBasicMaterial transparent opacity={0.3} depthWrite={false} toneMapped={false} />
+          <meshBasicMaterial transparent opacity={0.55} depthWrite={false} toneMapped={false} />
         </instancedMesh>
       )}
       <GlowBars items={built.bars} colors={built.barColors} />
