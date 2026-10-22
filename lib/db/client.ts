@@ -9,21 +9,24 @@ const globalForDb = globalThis as unknown as { pharmaosSql?: Sql };
 export function getSql(): Sql {
   if (globalForDb.pharmaosSql) return globalForDb.pharmaosSql;
 
-  const url = process.env.DATABASE_URL;
-  if (!url) {
+  const raw = process.env.DATABASE_URL;
+  if (!raw) {
     throw new Error("DATABASE_URL is not set. Copy .env.example to .env.local and fill it in.");
   }
 
   // Supabase's session pooler (port 5432) gives each app connection its own database client and allows only
-  // pool_size of them at once (15 on the free tier). A long-lived local server keeps 4. On Vercel every
-  // function instance has its own pool, so each keeps at most 2 and lets idle ones go after 5 s and every
-  // one go after a minute; otherwise a few instances fill the pooler (EMAXCONNSESSION) and pages fail.
-  // Do not use the transaction pooler (port 6543): postgres.js queries get stuck on it mid-query.
-  // Prepared statements stay on: without them every parameterised query costs an extra round trip.
+  // pool_size of them at once (15 on the free tier). That suits a long-lived local server (4 connections) and
+  // the scripts, with prepared statements on (each parameterised query is one round trip).
+  // On Vercel it does not: Vercel freezes idle function instances, so idle_timeout never fires and their
+  // connections stay pinned until the pooler is full (EMAXCONNSESSION, 22 Oct). There the app uses the
+  // transaction pooler instead (same host, port 6543), which holds a database client only for the length of
+  // a transaction; it needs prepare: false. Set DATABASE_POOLER=session to opt out.
   const serverless = Boolean(process.env.VERCEL);
+  const url = serverless && process.env.DATABASE_POOLER !== "session" ? transactionPoolerUrl(raw) : raw;
+  const transactionMode = /:6543(\/|$)/.test(url);
   const sql = postgres(url, {
     max: serverless ? 2 : 4,
-    prepare: true,
+    prepare: !transactionMode,
     idle_timeout: serverless ? 5 : 20,
     ...(serverless ? { max_lifetime: 60 } : {}),
     // Give up connecting after 15 s, so a dead pooled connection never hangs a request.
@@ -32,4 +35,16 @@ export function getSql(): Sql {
 
   globalForDb.pharmaosSql = sql;
   return sql;
+}
+
+/** The Supabase pooler URL on the transaction port (6543); any other URL is returned unchanged. */
+export function transactionPoolerUrl(raw: string): string {
+  try {
+    const u = new URL(raw);
+    if (!u.hostname.endsWith(".pooler.supabase.com") || (u.port || "5432") !== "5432") return raw;
+    u.port = "6543";
+    return u.toString();
+  } catch {
+    return raw;
+  }
 }

@@ -212,7 +212,7 @@ pharmaos/
 ### 3.2 You do once (15 minutes, start of stage 1)
 
 1. Create a Supabase project (free tier). Region: Mumbai (`ap-south-1`) for latency.
-2. Connect (top of the project) → **Session pooler** (port **5432**). Copy it. Do **not** use the transaction pooler (port 6543): several queries sent in parallel (as `loadPlanningContext` does) hang on it. The app keeps prepared statements on (`prepare: true`, supported in session mode): without them each parameterised query costs an extra round trip and stops pipelining. The session pooler allows 15 clients in total; the app pool uses 4, so scripts run alongside `npm run dev` should use ≤ 4.
+2. Connect (top of the project) → **Session pooler** (port **5432**). Copy it. Locally and in scripts the app uses it as is, with prepared statements on (`prepare: true`). The session pooler allows 15 clients in total; the app pool uses 4, so scripts run alongside `npm run dev` should use ≤ 4. **On Vercel** the app switches the same URL to the transaction pooler (port **6543**, `prepare: false`; `lib/db/client.ts`): Vercel freezes idle function instances before their idle timeout fires, so in session mode their connections stay pinned until the 15 slots are full (EMAXCONNSESSION). The transaction pooler holds a database client only for one transaction. Tested 22 Oct: parallel queries, 20k-row reads and `sql.begin` all work on it. `DATABASE_POOLER=session` opts out.
 3. `cp .env.example .env.local` and set `DATABASE_URL` (replace `[YOUR-PASSWORD]`).
 4. Set `GEMINI_API_KEY` if you have one (from Google AI Studio, aistudio.google.com/apikey; optional until stage 6).
 5. `npm run db:migrate` → expect `Applied 001_init.sql`, `Applied 002_approval_limit.sql` and `Migrations up to date.`

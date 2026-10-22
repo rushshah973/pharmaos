@@ -1,14 +1,14 @@
 import { connection, NextResponse } from "next/server";
-import { getSql } from "@/lib/db/client";
+import { getSql, transactionPoolerUrl } from "@/lib/db/client";
 
 // GET /api/health — is the database reachable from this deployment? Reports which host/port the app is
-// configured for and the database error code and message, never the password or the full connection string.
+// configured for (on Vercel: the transaction pooler port it switches to) and the database error code and message, never the password or the full connection string.
 export async function GET() {
   await connection();
   const raw = process.env.DATABASE_URL?.trim() ?? "";
   let target: { host: string; port: string; user: string } | null = null;
   try {
-    const u = new URL(raw);
+    const u = new URL(process.env.VERCEL && process.env.DATABASE_POOLER !== "session" ? transactionPoolerUrl(raw) : raw);
     target = { host: u.hostname, port: u.port || "5432", user: u.username };
   } catch {
     target = null;
