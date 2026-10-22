@@ -6,6 +6,9 @@ import { explainLine } from "@/lib/services/explain";
 import { getLine } from "@/lib/services/plans";
 import { uuid } from "@/lib/validation/api";
 
+// Up to 8 Gemini calls (30 s each, one retry on the backup model): leave the whole function budget.
+export const maxDuration = 300;
+
 // POST /api/purchase-plans/[id]/lines/[lineId]/explain — the agent first (grounded in tool results for this
 // line), then the deterministic explanation from the line's evidence if the AI is unavailable or fails.
 export async function POST(_req: Request, ctx: RouteContext<"/api/purchase-plans/[id]/lines/[lineId]/explain">) {

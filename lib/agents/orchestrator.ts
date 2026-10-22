@@ -3,7 +3,7 @@
 // The model turn is appended EXACTLY as returned (keeps thoughtSignature parts); all function responses go back in
 // ONE user turn, in call order, with matching id and name. Any failure → a deterministic answer (source
 // 'deterministic'): missing key, ApiError (429 / 5xx), network or timeout, a non-STOP finish reason, or 8 turns.
-import { DEFAULT_GEMINI_MODEL, withRetry } from "./retry";
+import { CALL_TIMEOUT_MS, DEFAULT_GEMINI_MODEL, modelChain, withRetry } from "./retry";
 import { ApiError, type Content, FinishReason, FunctionCallingConfigMode, GoogleGenAI, type Part } from "@google/genai";
 import { formatINR } from "@/lib/money";
 import { resolvePlanningState } from "@/lib/services/as-of";
@@ -13,7 +13,6 @@ import { SYSTEM_PROMPT } from "./prompts";
 import { FUNCTION_DECLARATIONS, type Reference, runTool } from "./tools";
 
 const MAX_TURNS = 8;
-const TIMEOUT_MS = 15_000;
 
 export type AgentReply = {
   reply: string;
@@ -38,18 +37,20 @@ export async function runAgent({ message, planId }: { message: string; planId?: 
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) return fallback("GEMINI_API_KEY is not set");
   const ai = new GoogleGenAI({ apiKey }); // server only
-  const model = process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
+  const models = modelChain(process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL);
+  let active = 0; // stays on the backup model once it has answered
 
   const { asOf } = await resolvePlanningState();
   const contents: Content[] = [{ role: "user", parts: [{ text: `${message}\n\nContext: planId=${planId ?? "none"}, asOf=${asOf}` }] }];
 
   try {
     for (let turn = 0; turn < MAX_TURNS; turn++) {
-      // One quick retry on a transient error: the person is waiting for the answer.
+      // One quick retry on a transient error, on the backup model: the person is waiting for the answer.
       const response = await withRetry(
-        () =>
-          ai.models.generateContent({
-            model,
+        (attempt) => {
+          const i = Math.min(active + attempt, models.length - 1);
+          return ai.models.generateContent({
+            model: models[i],
             contents,
             config: {
               systemInstruction: SYSTEM_PROMPT,
@@ -57,9 +58,13 @@ export async function runAgent({ message, planId }: { message: string; planId?: 
               toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
               automaticFunctionCalling: { disable: true },
               maxOutputTokens: 8192,
-              httpOptions: { timeout: TIMEOUT_MS },
+              httpOptions: { timeout: CALL_TIMEOUT_MS },
             },
-          }),
+          }).then((r) => {
+            active = i;
+            return r;
+          });
+        },
         [1000],
       );
       const candidate = response.candidates?.[0];

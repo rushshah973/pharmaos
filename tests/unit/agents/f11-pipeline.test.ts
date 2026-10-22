@@ -14,6 +14,7 @@ import type { RunContext } from "@/lib/agents/pipeline/context";
 import { applyDemandDecisions } from "@/lib/agents/pipeline/demand-agent";
 import { type ModelClient, type ModelResponse, runAgentLoop } from "@/lib/agents/pipeline/loop";
 import { applySupplierDecisions } from "@/lib/agents/pipeline/supplier-agent";
+import { BACKUP_GEMINI_MODEL } from "@/lib/agents/retry";
 
 type Call = { id: string; name: string; args: Record<string, unknown> };
 const response = (calls: Call[], finishReason = "STOP"): ModelResponse => ({
@@ -23,17 +24,19 @@ const response = (calls: Call[], finishReason = "STOP"): ModelResponse => ({
 
 function fake(script: (ModelResponse | Error)[]) {
   const seen: Content[][] = [];
+  const models: string[] = [];
   let i = 0;
   const client: ModelClient = {
     generateContent: async (req) => {
       seen.push(structuredClone(req.contents));
+      models.push(req.model);
       const next = script[i++];
       if (!next) throw new Error("script exhausted");
       if (next instanceof Error) throw next;
       return next;
     },
   };
-  return { client, seen };
+  return { client, seen, models };
 }
 
 function memoryLog() {
@@ -51,10 +54,10 @@ const terminal = {
 const echo = { name: "echo", description: "echo", schema: z.object({ x: z.number() }), handler: async ({ x }: { x: number }) => ({ x }) };
 
 function loop(script: (ModelResponse | Error)[]) {
-  const { client, seen } = fake(script);
+  const { client, seen, models } = fake(script);
   const { steps, sink } = memoryLog();
-  const run = runAgentLoop({ agent: "demand", client, model: "fake", systemPrompt: "s", userMessage: "u", tools: [echo], terminal, log: sink, retryDelaysMs: [0, 0] });
-  return { run, steps, seen };
+  const run = runAgentLoop({ agent: "demand", client, model: "primary-model", systemPrompt: "s", userMessage: "u", tools: [echo], terminal, log: sink, retryDelaysMs: [0, 0] });
+  return { run, steps, seen, models };
 }
 
 describe("F11 shared agent loop", () => {
@@ -114,6 +117,13 @@ describe("F11 shared agent loop", () => {
     const { run, seen } = loop([new ApiError({ message: "deadline", status: 504 }), response([{ id: "t", name: "submit_test", args: { value: "ok" } }])]);
     expect((await run).status).toBe("done");
     expect(seen).toHaveLength(2);
+  });
+
+  it("retries an overloaded model (503) or a client timeout on the backup model, and stays on it", async () => {
+    const timeout = Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
+    const { run, models } = loop([new ApiError({ message: "high demand", status: 503 }), response([{ id: "a", name: "echo", args: { x: 1 } }]), timeout, response([{ id: "t", name: "submit_test", args: { value: "ok" } }])]);
+    expect((await run).status).toBe("done");
+    expect(models).toEqual(["primary-model", BACKUP_GEMINI_MODEL, BACKUP_GEMINI_MODEL, BACKUP_GEMINI_MODEL]);
   });
 
   it("does not retry a non-transient error (e.g. 400 bad request)", async () => {

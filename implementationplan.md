@@ -825,7 +825,7 @@ Notes:
 
 - **Trigger:** "Run procurement agents" on the plan screen (and on the Command Center for the latest plan) → `POST /api/agents/run { planId, maxSkus? }` → inserts `agent_runs` (status `running`) and returns `{ runId }` immediately; the run executes in the background with `after()` from `next/server`. One running run per plan (409 `RUN_IN_PROGRESS`). The UI polls `GET /api/agents/runs/[id]` every 2 s.
 - **SKU selection:** the top N plan lines by rank with status `proposed` (not edited, deferred, rejected or on a PO). N = `maxSkus` (1–30, default 15).
-- **Loop:** each agent is one Gemini session running the same manual function-calling loop as 9.4 (mode `AUTO`, automatic function calling disabled, `candidate.content` appended unchanged, all functionResponses in one user turn in call order, every `call.args` Zod-validated, max 12 turns, 15 s timeout per call). It handles **all** selected SKUs, sees **only its own tools**, and must finish by calling exactly **one terminal `submit_*` tool** whose arguments are Zod-validated. Agents hand off through the database (the plan lines), not through free text: the Demand Agent's chosen forecast is saved on each line first, so the Supplier Agent compares offers for that forecast and the Order Agent orders the resulting quantities. Every tool call and decision is written to `agent_steps` (input, output, ok, ms).
+- **Loop:** each agent is one Gemini session running the same manual function-calling loop as 9.4 (mode `AUTO`, automatic function calling disabled, `candidate.content` appended unchanged, all functionResponses in one user turn in call order, every `call.args` Zod-validated, max 12 turns, 30 s deadline per call; a transient error or timeout is retried on the backup model `gemini-flash-latest`). It handles **all** selected SKUs, sees **only its own tools**, and must finish by calling exactly **one terminal `submit_*` tool** whose arguments are Zod-validated. Agents hand off through the database (the plan lines), not through free text: the Demand Agent's chosen forecast is saved on each line first, so the Supplier Agent compares offers for that forecast and the Order Agent orders the resulting quantities. Every tool call and decision is written to `agent_steps` (input, output, ok, ms).
 
 | Agent | Tools | Terminal tool | Guardrail (code) | Effect |
 |---|---|---|---|---|
@@ -1179,7 +1179,7 @@ P2 stretch (only if ahead at hour 27): ghost cartons polish, simulated put-away 
 | Engine bugs show wrong numbers on stage | Fixtures F1–F9 written before the code; debug-plan script; `evidence_json` shows every step |
 | Next 16 caching surprises | Suspense + `connection()` pattern on every page (1.1); `npm run build` at the end of every stage |
 | Base UI component APIs differ from Radix examples | Read the component file in `components/ui/` before use |
-| LLM slow / down / refuses | 15 s timeout, deterministic fallback, AI is never on the critical path |
+| LLM slow / down / refuses | 30 s deadline per call, retry on the backup model, then deterministic fallback, AI is never on the critical path |
 | WebGL fails on the demo laptop | 2D grid with the same data and panel |
 | Supabase/Wi-Fi issue during judging | Local Postgres fallback (3.2) seeded the same way; backup video |
 | Running out of time | Stage order, freeze at hour 39, cut order 15.1 |

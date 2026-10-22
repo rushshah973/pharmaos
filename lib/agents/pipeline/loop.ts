@@ -1,18 +1,17 @@
 // The shared agent loop for the procurement pipeline (implementationplan.md §9.5): the same Gemini rules as Ask
 // PharmaOS (§9.4) — mode AUTO, automatic function calling disabled, candidate.content appended unchanged, all
 // functionResponses in ONE user turn in call order with matching id and name, every call.args Zod-validated,
-// max 12 turns, 15 s per call, transient Gemini errors (429/5xx) retried twice — but each agent sees only its own tools plus ONE terminal submit_* tool, and must
+// max 12 turns, 30 s per call, transient Gemini errors (429/5xx, timeouts) retried twice on the backup model — but each agent sees only its own tools plus ONE terminal submit_* tool, and must
 // finish by calling it. Every tool call goes to agent_steps. An invalid terminal call (or a reply with no call) is
 // sent back as an error up to 2 times; after that, or on any API failure, the agent returns a fallback.
 import { ApiError, type Content, type FunctionCall, type FunctionDeclaration, FinishReason, FunctionCallingConfigMode, GoogleGenAI, type Part } from "@google/genai";
 import { z } from "zod";
 import { ServiceError } from "@/lib/api/errors";
 import { type ToolResult, toolError, toolOk } from "@/lib/validation/tool-contract";
-import { RETRY_DELAYS_MS, withRetry } from "../retry";
+import { CALL_TIMEOUT_MS, modelChain, RETRY_DELAYS_MS, withRetry } from "../retry";
 import type { AgentName, StepSink } from "@/lib/services/agent-runs";
 
 export const MAX_TURNS = 12;
-export const TIMEOUT_MS = 15_000;
 export const TERMINAL_RETRIES = 2;
 
 /** The slice of the Gemini SDK the loop uses; tests pass a scripted fake. */
@@ -77,6 +76,10 @@ export async function runAgentLoop<R>(args: {
   const functionDeclarations = [...tools.map((t) => declaration(t.name, t.description, t.schema)), declaration(terminal.name, terminal.description, terminal.declared)];
   const contents: Content[] = [{ role: "user", parts: [{ text: userMessage }] }];
   let terminalErrors = 0;
+  // Once the backup model answers, the rest of this agent's turns stay on it (its replies carry its own
+  // thought signatures, and the overload usually lasts).
+  const models = modelChain(model);
+  let active = 0;
 
   const fallback = async (reason: string, turns: number): Promise<AgentOutcome<R>> => {
     await log.add({ agent, kind: "fallback", output: { reason }, ok: false });
@@ -87,9 +90,10 @@ export async function runAgentLoop<R>(args: {
     let response: ModelResponse;
     try {
       response = await withRetry(
-        () =>
-          client.generateContent({
-            model,
+        (attempt) => {
+          const i = Math.min(active + attempt, models.length - 1);
+          return client.generateContent({
+            model: models[i],
             contents,
             config: {
               systemInstruction: systemPrompt,
@@ -97,11 +101,15 @@ export async function runAgentLoop<R>(args: {
               toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
               automaticFunctionCalling: { disable: true },
               maxOutputTokens: 8192,
-              httpOptions: { timeout: TIMEOUT_MS },
+              httpOptions: { timeout: CALL_TIMEOUT_MS },
             },
-          }),
+          }).then((r) => {
+            active = i;
+            return r;
+          });
+        },
         args.retryDelaysMs ?? RETRY_DELAYS_MS,
-        (err, attempt) => console.warn(`[agent ${agent}] Gemini ${(err as ApiError).status}, retry ${attempt}`),
+        (err, attempt) => console.warn(`[agent ${agent}] Gemini ${err instanceof ApiError ? err.status : "timeout"}, retry ${attempt} on ${models[Math.min(active + attempt, models.length - 1)]}`),
       );
     } catch (err) {
       if (err instanceof ApiError) return fallback(`Gemini API error ${err.status}`, turn);
