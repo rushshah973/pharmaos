@@ -10,6 +10,7 @@ import { analyseSku, buildPlan } from "@/lib/business-logic/engine";
 import { computeImpact } from "@/lib/business-logic/impact";
 import { lineTotals, planTotal, supplierTotals } from "@/lib/business-logic/totals";
 import type {
+  DemandMethod,
   HardStopCode,
   ImpactCard,
   LineTotals,
@@ -471,12 +472,34 @@ function schemeFree(offer: OfferInput, qty: number): number {
   return p > 0 && f > 0 ? Math.floor(qty / p) * f : 0;
 }
 
-/** Fresh context and analysis for one SKU (the active scenario applies, as in a full plan). */
-async function analyseOne(sql: SqlHandle, productId: string, state: PlanningState): Promise<{ sku: SkuContext; analysis: SkuAnalysis }> {
+export type DemandOverride = { method: DemandMethod; reason: string };
+
+/**
+ * Fresh context and analysis for one SKU (the active scenario applies, as in a full plan). `override` is a Demand
+ * Agent decision saved on the line: the engine then uses that method's daily demand instead of the default rule.
+ */
+export async function analyseOne(
+  sql: SqlHandle,
+  productId: string,
+  state: PlanningState,
+  override?: DemandOverride | null,
+): Promise<{ sku: SkuContext; analysis: SkuAnalysis }> {
   const ctx = await loadPlanningContext(sql, state.asOf, state.scenarioId, productId);
   const sku = ctx.skus[0];
   if (!sku) throw new ServiceError("INVALID_SKU", 400, "The product is no longer active.");
+  if (override) {
+    if (!sku.forecast) throw new ServiceError("NO_ML_FORECAST", 400, "This SKU has no ML forecast, so only the average can be used.");
+    sku.forecast = { ...sku.forecast, override };
+  }
   return { sku, analysis: analyseSku(sku) };
+}
+
+/** The Demand Agent's decision saved on a line (evidence_json.demandDecision), if any. */
+async function lineOverride(sql: SqlHandle, lineId: string): Promise<DemandOverride | null> {
+  const [row] = await sql<{ d: { method?: DemandMethod; reason?: string } | null }[]>`
+    select evidence_json->'demandDecision' as d from purchase_recommendations where id = ${lineId}
+  `;
+  return row?.d?.method ? { method: row.d.method, reason: row.d.reason ?? "" } : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -560,7 +583,14 @@ export async function editLine(
   planId: string,
   lineId: string,
   change: LineChange,
-  opts: { preview?: boolean; actor?: Actor } = {},
+  opts: {
+    preview?: boolean;
+    actor?: Actor;
+    /** Why the change was made (audit reason); the Supplier Agent passes its own. */
+    reason?: string;
+    /** Extra evidence to merge into the line (e.g. evidence.supplierDecision). */
+    evidence?: Record<string, unknown>;
+  } = {},
   sql: postgres.Sql = getSql(),
 ): Promise<EditResult> {
   const actor = opts.actor ?? defaultActor();
@@ -591,8 +621,8 @@ export async function editLine(
       after.deferReason = change.reason;
       action = change.status === "deferred" ? "line.deferred" : "line.rejected";
     } else {
-      // qty, offer or restore: re-check against fresh data for this SKU.
-      const { sku, analysis } = await analyseOne(tx, before.productId, state);
+      // qty, offer or restore: re-check against fresh data for this SKU, with the Demand Agent's method if one is saved.
+      const { sku, analysis } = await analyseOne(tx, before.productId, state, change.kind === "restore" ? null : await lineOverride(tx, lineId));
       const { asOf } = state;
       const supplierOf = (o: OfferInput) => sku.suppliers[o.supplierId];
       const engineOfferId = analysis.chosen?.offerId ?? null;
@@ -684,7 +714,7 @@ export async function editLine(
           status = ${after.status},
           defer_reason = ${after.deferReason},
           user_note = ${after.userNote},
-          evidence_json = evidence_json || ${tx.json((evidencePatch ?? {}) as postgres.JSONValue)},
+          evidence_json = evidence_json || ${tx.json({ ...(evidencePatch ?? {}), ...(opts.evidence ?? {}) } as postgres.JSONValue)},
           updated_at = now()
         where id = ${lineId}
       `.execute(),
@@ -698,7 +728,7 @@ export async function editLine(
           entityId: lineId,
           before: { ...pick(before), planTotal: plan.proposed_total },
           after: { ...pick(after), planTotal: total },
-          reason: change.kind === "status" ? change.reason : null,
+          reason: change.kind === "status" ? change.reason : (opts.reason ?? null),
         },
         tx,
       ),
@@ -868,5 +898,125 @@ export async function rejectPlan(planId: string, reason: string, actor: Actor = 
       selectLines(tx, planId),
     ]);
     return summarize(saved!, rows.map(toLineView));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Demand Agent decision (§9.5): re-plan one line with the chosen forecast method
+// ---------------------------------------------------------------------------
+
+export type DemandDecisionResult = {
+  changed: boolean;
+  before: { method: string; avgDailyDemand: number | null; qty: number; offerId: string | null; supplierCode: string | null; lineTotal: Money; inBasket: boolean };
+  after: { method: string; avgDailyDemand: number | null; qty: number; offerId: string | null; supplierCode: string | null; lineTotal: Money; inBasket: boolean };
+};
+
+/**
+ * Re-analyses one proposed line with the Demand Agent's method (the agent chooses a method, never a number) and saves
+ * the result: chosen offer, quantity, totals, reasons and evidence.demandDecision; plan totals and an audit row
+ * (actor agent / demand-agent, action agent.demand_decided) in the same transaction. Same method as now → no change.
+ */
+export async function applyDemandDecision(
+  planId: string,
+  lineId: string,
+  decision: { method: DemandMethod; reason: string },
+  actor: Actor = { type: "agent", id: "demand-agent" },
+  sql: postgres.Sql = getSql(),
+): Promise<DemandDecisionResult> {
+  return sql.begin(async (tx) => {
+    const [plan, lineRows, state, [ev]] = await Promise.all([
+      selectPlan(tx, planId, true),
+      selectLines(tx, planId),
+      resolvePlanningState(tx),
+      tx<{ method: string | null; d: number | null }[]>`
+        select evidence_json->'demand'->>'method' as method, (evidence_json->'demand'->>'avgDailyDemand')::float8 as d
+        from purchase_recommendations where id = ${lineId}
+      `.execute(),
+    ]);
+    if (!plan) throw notFound("Plan", planId);
+    if (LOCKED_PLAN.has(plan.status)) throw new ServiceError("PLAN_LOCKED", 409, `The plan is ${plan.status}.`);
+    const lines = lineRows.map(toLineView);
+    const before = lines.find((l) => l.id === lineId);
+    if (!before) throw notFound("Line", lineId);
+    if (before.status !== "proposed") throw new ServiceError("LINE_LOCKED", 409, `The line is ${before.status}; the Demand Agent only changes proposed lines.`);
+
+    const snap = (method: string, d: number | null, l: LineView) => ({
+      method,
+      avgDailyDemand: d,
+      qty: l.qty,
+      offerId: l.offerId,
+      supplierCode: l.supplierCode,
+      lineTotal: l.totals.lineTotal,
+      inBasket: l.inBasket,
+    });
+    const beforeSnap = snap(ev?.method ?? "baseline", ev?.d ?? null, before);
+    if ((ev?.method ?? "baseline") === decision.method) return { changed: false, before: beforeSnap, after: beforeSnap };
+
+    const { sku, analysis: a } = await analyseOne(tx, before.productId, state, decision);
+    const offer = a.chosen ? sku.offers.find((o) => o.id === a.chosen!.offerId) : undefined;
+    const buy = !!(a.candidate && offer && a.totals && a.qty > 0);
+    const supplier = offer ? sku.suppliers[offer.supplierId] : undefined;
+    const totals = buy ? a.totals! : ZERO_TOTALS;
+    const after: LineView = {
+      ...before,
+      skuStatus: a.status,
+      cover: a.cover,
+      offerId: buy ? offer!.id : before.offerId,
+      supplierId: buy ? offer!.supplierId : before.supplierId,
+      supplierCode: buy ? (supplier?.code ?? before.supplierCode) : before.supplierCode,
+      supplierName: buy ? (supplier?.name ?? before.supplierName) : before.supplierName,
+      qty: buy ? a.qty : 0,
+      freeQty: buy ? a.freeQty : 0,
+      unitPrice: buy ? offer!.unitPrice : before.unitPrice,
+      totals,
+      inBasket: buy,
+      reasons: a.reasons,
+      warnings: a.warnings,
+      priority: a.priority,
+    };
+    after.counted = isCounted(after);
+    const demandDecision = { method: decision.method, reason: decision.reason, by: "demand-agent", avgDailyDemand: a.demand.avgDailyDemand };
+    const evidence = { ...lineEvidence(a), demandDecision };
+    const nextLines = lines.map((l) => (l.id === lineId ? after : l));
+    const total = totalOf(nextLines);
+    const impact = impactFromLines(nextLines, plan.approval_limit, plan.impact);
+    const afterSnap = snap(decision.method, a.demand.avgDailyDemand, after);
+
+    await Promise.all([
+      tx`
+        update purchase_recommendations set
+          selected_offer_id = ${after.offerId},
+          selected_supplier_id = ${after.supplierId},
+          suggested_qty = ${after.qty},
+          free_qty = ${after.freeQty},
+          unit_price = ${after.unitPrice},
+          line_subtotal = ${totals.lineSubtotal},
+          line_tax = ${totals.lineTax},
+          line_freight = ${totals.lineFreight},
+          line_total = ${totals.lineTotal},
+          priority_score = ${after.priority},
+          in_basket = ${after.inBasket},
+          reason_codes = ${after.reasons as string[]}::text[],
+          warnings = ${tx.json(after.warnings)},
+          evidence_json = ${tx.json(evidence as unknown as postgres.JSONValue)},
+          updated_at = now()
+        where id = ${lineId}
+      `.execute(),
+      updatePlanTotals(tx, planId, { total, impact }),
+      writeAudit(
+        {
+          actorType: actor.type,
+          actorId: actor.id,
+          action: "agent.demand_decided",
+          entityType: "recommendation",
+          entityId: lineId,
+          before: { ...beforeSnap, planTotal: plan.proposed_total },
+          after: { ...afterSnap, planTotal: total },
+          reason: decision.reason,
+        },
+        tx,
+      ),
+    ]);
+    return { changed: true, before: beforeSnap, after: afterSnap };
   });
 }

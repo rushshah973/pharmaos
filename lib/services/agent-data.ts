@@ -9,6 +9,7 @@ import type { SkuAnalysis, SkuContext } from "@/lib/business-logic/types";
 import { type PlanningState, resolvePlanningState } from "./as-of";
 import type { SqlHandle } from "./audit";
 import { loadPlanningContext } from "./context";
+import { analyseOne } from "./plans";
 
 export type SkuFacts = { state: PlanningState; sku: SkuContext; analysis: SkuAnalysis };
 
@@ -110,4 +111,22 @@ export async function binIdForCode(code: string, sql: SqlHandle = getSql()): Pro
   const [row] = await sql<{ id: string }[]>`select id from inventory_locations where upper(bin_code) = upper(${code.trim()})`;
   if (!row) throw new ServiceError("BIN_NOT_FOUND", 404, `No bin with code ${code}.`);
   return row.id;
+}
+
+/**
+ * A plan line re-analysed with the forecast method saved on it (the Demand Agent's decision, else the default
+ * rule): every offer's quantity, availability check, urgency rule, scheme and totals use that forecast.
+ */
+export async function analyseLine(planId: string, lineId: string, sql: SqlHandle = getSql()) {
+  const [[line], state] = await Promise.all([
+    sql<{ productId: string; status: string; offerId: string | null; qty: number; d: { method?: "ml" | "baseline"; reason?: string } | null }[]>`
+      select product_id as "productId", status, selected_offer_id as "offerId", suggested_qty as qty, evidence_json->'demandDecision' as d
+      from purchase_recommendations where id = ${lineId} and plan_id = ${planId}
+    `.execute(),
+    resolvePlanningState(sql),
+  ]);
+  if (!line) throw new ServiceError("LINE_NOT_FOUND", 404, `Line ${lineId} is not in this plan.`);
+  const override = line.d?.method ? { method: line.d.method, reason: line.d.reason ?? "" } : null;
+  const { sku, analysis } = await analyseOne(sql, line.productId, state, override);
+  return { line, sku, analysis, override, state };
 }

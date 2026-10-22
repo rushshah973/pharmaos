@@ -87,3 +87,11 @@ export const chatBody = z
     planId: z.uuid().optional(),
   })
   .strict();
+
+/** POST /api/agents/run — the three-agent pipeline on a plan's top N proposed lines. */
+export const runAgentsBody = z
+  .object({
+    planId: z.uuid(),
+    maxSkus: z.number().int().min(1).max(30).default(15),
+  })
+  .strict();

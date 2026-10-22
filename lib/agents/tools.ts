@@ -343,6 +343,15 @@ export const TOOLS: Tool[] = [
 
 const BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 
+/** A tool's handler, for the pipeline agents that share a tool with Ask PharmaOS (data only, no ToolResult wrapper). */
+export async function callToolHandler(name: string, args: unknown): Promise<unknown> {
+  const t = BY_NAME.get(name);
+  if (!t) throw new ServiceError("INVALID_TOOL_INPUT", 400, `Unknown tool ${name}.`);
+  const parsed = t.schema.safeParse(args);
+  if (!parsed.success) throw new ServiceError("INVALID_TOOL_INPUT", 400, parsed.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; "));
+  return (await t.handler(parsed.data as never)).data;
+}
+
 /** Gemini declarations: name, description and the Zod schema as JSON Schema (without the $schema keyword). */
 export const FUNCTION_DECLARATIONS: FunctionDeclaration[] = TOOLS.map((t) => {
   const { $schema: _drop, ...schema } = z.toJSONSchema(t.schema) as Record<string, unknown>;
