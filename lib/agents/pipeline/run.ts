@@ -7,6 +7,7 @@ import { resolvePlanningState } from "@/lib/services/as-of";
 import { type AgentName, StepLog, finishRun, getRun, selectRunLines, setRunSkus } from "@/lib/services/agent-runs";
 import type { RunContext } from "./context";
 import { type DemandSummary, runDemandAgent } from "./demand-agent";
+import { DEFAULT_GEMINI_MODEL } from "../retry";
 import { type ModelClient, geminiClient } from "./loop";
 import { type OrderSummary, runOrderAgent } from "./order-agent";
 import { type SupplierSummary, runSupplierAgent } from "./supplier-agent";
@@ -30,7 +31,7 @@ export async function runPipeline(runId: string, deps: { client?: ModelClient | 
       return await finishRun(runId, "fallback", `${AI_UNAVAILABLE} The agents made no changes and created no purchase orders.`);
     }
 
-    const ctx: RunContext = { runId, planId: run.planId, asOf: state.asOf, lines, client, model: deps.model ?? (process.env.GEMINI_MODEL?.trim() || "gemini-flash-latest"), log };
+    const ctx: RunContext = { runId, planId: run.planId, asOf: state.asOf, lines, client, model: deps.model ?? (process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL), log };
 
     const demand = await runDemandAgent(ctx);
     if (demand.status === "fallback") {

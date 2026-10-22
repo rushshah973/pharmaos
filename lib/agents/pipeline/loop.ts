@@ -1,13 +1,14 @@
 // The shared agent loop for the procurement pipeline (implementationplan.md §9.5): the same Gemini rules as Ask
 // PharmaOS (§9.4) — mode AUTO, automatic function calling disabled, candidate.content appended unchanged, all
 // functionResponses in ONE user turn in call order with matching id and name, every call.args Zod-validated,
-// max 12 turns, 15 s per call — but each agent sees only its own tools plus ONE terminal submit_* tool, and must
+// max 12 turns, 15 s per call, transient Gemini errors (429/5xx) retried twice — but each agent sees only its own tools plus ONE terminal submit_* tool, and must
 // finish by calling it. Every tool call goes to agent_steps. An invalid terminal call (or a reply with no call) is
 // sent back as an error up to 2 times; after that, or on any API failure, the agent returns a fallback.
 import { ApiError, type Content, type FunctionCall, type FunctionDeclaration, FinishReason, FunctionCallingConfigMode, GoogleGenAI, type Part } from "@google/genai";
 import { z } from "zod";
 import { ServiceError } from "@/lib/api/errors";
 import { type ToolResult, toolError, toolOk } from "@/lib/validation/tool-contract";
+import { RETRY_DELAYS_MS, withRetry } from "../retry";
 import type { AgentName, StepSink } from "@/lib/services/agent-runs";
 
 export const MAX_TURNS = 12;
@@ -68,6 +69,8 @@ export async function runAgentLoop<R>(args: {
   tools: AgentTool[];
   terminal: Terminal<R>;
   log: StepSink;
+  /** Backoff before retrying a transient Gemini error (429/5xx); tests pass zeros. */
+  retryDelaysMs?: readonly number[];
 }): Promise<AgentOutcome<R>> {
   const { agent, client, model, systemPrompt, userMessage, tools, terminal, log } = args;
   const byName = new Map(tools.map((t) => [t.name, t]));
@@ -83,18 +86,23 @@ export async function runAgentLoop<R>(args: {
   for (let turn = 1; turn <= MAX_TURNS; turn++) {
     let response: ModelResponse;
     try {
-      response = await client.generateContent({
-        model,
-        contents,
-        config: {
-          systemInstruction: systemPrompt,
-          tools: [{ functionDeclarations }],
-          toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
-          automaticFunctionCalling: { disable: true },
-          maxOutputTokens: 8192,
-          httpOptions: { timeout: TIMEOUT_MS },
-        },
-      });
+      response = await withRetry(
+        () =>
+          client.generateContent({
+            model,
+            contents,
+            config: {
+              systemInstruction: systemPrompt,
+              tools: [{ functionDeclarations }],
+              toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
+              automaticFunctionCalling: { disable: true },
+              maxOutputTokens: 8192,
+              httpOptions: { timeout: TIMEOUT_MS },
+            },
+          }),
+        args.retryDelaysMs ?? RETRY_DELAYS_MS,
+        (err, attempt) => console.warn(`[agent ${agent}] Gemini ${(err as ApiError).status}, retry ${attempt}`),
+      );
     } catch (err) {
       if (err instanceof ApiError) return fallback(`Gemini API error ${err.status}`, turn);
       const msg = err instanceof Error ? err.message : String(err);

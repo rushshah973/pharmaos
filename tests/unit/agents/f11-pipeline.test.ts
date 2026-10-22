@@ -53,7 +53,7 @@ const echo = { name: "echo", description: "echo", schema: z.object({ x: z.number
 function loop(script: (ModelResponse | Error)[]) {
   const { client, seen } = fake(script);
   const { steps, sink } = memoryLog();
-  const run = runAgentLoop({ agent: "demand", client, model: "fake", systemPrompt: "s", userMessage: "u", tools: [echo], terminal, log: sink });
+  const run = runAgentLoop({ agent: "demand", client, model: "fake", systemPrompt: "s", userMessage: "u", tools: [echo], terminal, log: sink, retryDelaysMs: [0, 0] });
   return { run, steps, seen };
 }
 
@@ -103,10 +103,23 @@ describe("F11 shared agent loop", () => {
     expect(thrice.steps.at(-1)?.kind).toBe("fallback");
   });
 
-  it("falls back on a non-STOP finish and on an API error", async () => {
+  it("falls back on a non-STOP finish, and on an API error that persists after 2 retries", async () => {
     expect((await loop([response([{ id: "a", name: "echo", args: { x: 1 } }], "MAX_TOKENS")]).run).status).toBe("fallback");
-    const api = await loop([new ApiError({ message: "busy", status: 503 })]).run;
+    const busy = () => new ApiError({ message: "busy", status: 503 });
+    const api = await loop([busy(), busy(), busy()]).run;
     expect(api).toMatchObject({ status: "fallback", reason: "Gemini API error 503" });
+  });
+
+  it("retries a transient Gemini error (504 deadline expired) and the agent still finishes", async () => {
+    const { run, seen } = loop([new ApiError({ message: "deadline", status: 504 }), response([{ id: "t", name: "submit_test", args: { value: "ok" } }])]);
+    expect((await run).status).toBe("done");
+    expect(seen).toHaveLength(2);
+  });
+
+  it("does not retry a non-transient error (e.g. 400 bad request)", async () => {
+    const { run, seen } = loop([new ApiError({ message: "bad", status: 400 }), response([{ id: "t", name: "submit_test", args: { value: "ok" } }])]);
+    expect(await run).toMatchObject({ status: "fallback", reason: "Gemini API error 400" });
+    expect(seen).toHaveLength(1);
   });
 });
 

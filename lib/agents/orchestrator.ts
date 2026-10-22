@@ -3,6 +3,7 @@
 // The model turn is appended EXACTLY as returned (keeps thoughtSignature parts); all function responses go back in
 // ONE user turn, in call order, with matching id and name. Any failure → a deterministic answer (source
 // 'deterministic'): missing key, ApiError (429 / 5xx), network or timeout, a non-STOP finish reason, or 8 turns.
+import { DEFAULT_GEMINI_MODEL, withRetry } from "./retry";
 import { ApiError, type Content, FinishReason, FunctionCallingConfigMode, GoogleGenAI, type Part } from "@google/genai";
 import { formatINR } from "@/lib/money";
 import { resolvePlanningState } from "@/lib/services/as-of";
@@ -37,25 +38,30 @@ export async function runAgent({ message, planId }: { message: string; planId?: 
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) return fallback("GEMINI_API_KEY is not set");
   const ai = new GoogleGenAI({ apiKey }); // server only
-  const model = process.env.GEMINI_MODEL?.trim() || "gemini-flash-latest";
+  const model = process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
 
   const { asOf } = await resolvePlanningState();
   const contents: Content[] = [{ role: "user", parts: [{ text: `${message}\n\nContext: planId=${planId ?? "none"}, asOf=${asOf}` }] }];
 
   try {
     for (let turn = 0; turn < MAX_TURNS; turn++) {
-      const response = await ai.models.generateContent({
-        model,
-        contents,
-        config: {
-          systemInstruction: SYSTEM_PROMPT,
-          tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
-          toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
-          automaticFunctionCalling: { disable: true },
-          maxOutputTokens: 8192,
-          httpOptions: { timeout: TIMEOUT_MS },
-        },
-      });
+      // One quick retry on a transient error: the person is waiting for the answer.
+      const response = await withRetry(
+        () =>
+          ai.models.generateContent({
+            model,
+            contents,
+            config: {
+              systemInstruction: SYSTEM_PROMPT,
+              tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
+              toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
+              automaticFunctionCalling: { disable: true },
+              maxOutputTokens: 8192,
+              httpOptions: { timeout: TIMEOUT_MS },
+            },
+          }),
+        [1000],
+      );
       const candidate = response.candidates?.[0];
       const finish = candidate?.finishReason;
       if (!candidate?.content) return fallback("the model returned no content");
