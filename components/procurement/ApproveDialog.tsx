@@ -10,10 +10,12 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { ApiError, apiCall, errorMessage } from "@/lib/api/client";
 import { supplierTotals } from "@/lib/business-logic/totals";
 import { formatINR, sumMoney } from "@/lib/money";
-import type { ApproveResult } from "@/lib/services/approval";
+import type { AlreadyOnOrder, ApproveResult } from "@/lib/services/approval";
 import type { LineView } from "@/lib/services/plans";
 
 type Failure = { lineId: string; sku: string; codes: string[] };
+
+const PO_STATUS: Record<string, string> = { ready: "Ready to send", pending_approval: "awaiting Owner approval", approved: "Owner approved", sent: "sent · simulated" };
 
 /**
  * Approve selected lines into purchase orders (§10.3). A fresh idempotency key is made each time the dialog
@@ -39,6 +41,7 @@ export function ApproveDialog({
   const [key, setKey] = useState("");
   const [pending, setPending] = useState(false);
   const [failures, setFailures] = useState<Failure[]>([]);
+  const [onOrder, setOnOrder] = useState<AlreadyOnOrder[]>([]);
 
   const pos = useMemo(() => {
     const names = new Map(lines.map((l) => [l.supplierId, { code: l.supplierCode ?? "", name: l.supplierName ?? "" }]));
@@ -55,6 +58,7 @@ export function ApproveDialog({
     if (next) {
       setKey(crypto.randomUUID());
       setFailures([]);
+      setOnOrder([]);
     }
     setOpen(next);
   }
@@ -85,6 +89,8 @@ export function ApproveDialog({
     } catch (err) {
       if (err instanceof ApiError && err.code === "HARD_STOP") {
         setFailures(((err.details as { failures?: Failure[] })?.failures ?? []) as Failure[]);
+      } else if (err instanceof ApiError && err.code === "ALREADY_ON_ORDER") {
+        setOnOrder((err.details as { conflicts?: AlreadyOnOrder[] })?.conflicts ?? []);
       } else {
         toast.error("Could not approve the lines", { description: errorMessage(err) });
       }
@@ -144,6 +150,34 @@ export function ApproveDialog({
                 ))}
               </ul>
               <p className="mt-1 text-fg-2">Deselect or edit them, then approve again.</p>
+            </div>
+          )}
+          {onOrder.length > 0 && (
+            <div role="alert" className="mx-6 mt-3 rounded-lg border border-expiry/30 bg-expiry-bg px-3 py-2.5 text-[12.5px] text-fg-1">
+              <p className="font-medium text-expiry">Already on order — nothing was approved:</p>
+              <ul className="mt-1 space-y-1">
+                {onOrder.map((c) => (
+                  <li key={c.lineId}>
+                    <span className="font-mono">{c.sku}</span> is on{" "}
+                    {c.pos.map((p, i) => (
+                      <span key={p.poId}>
+                        {i > 0 && " and "}
+                        <Link href={`/purchase-orders/${p.poId}`} className="font-mono text-brand hover:underline">
+                          {p.poNumber}
+                        </Link>{" "}
+                        <span className="text-fg-2">
+                          ({PO_STATUS[p.status] ?? p.status}, {p.qty} packs)
+                        </span>
+                      </span>
+                    ))}{" "}
+                    from another plan.{" "}
+                    <span className="text-fg-2">
+                      {c.stillNeeded > 0 ? `It needs only ${c.stillNeeded} more packs, not ${c.qty}.` : "It needs no more."}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-fg-2">Deselect {onOrder.length === 1 ? "it" : "them"}, or Recalculate this plan to update the quantities.</p>
             </div>
           )}
           <div className="mt-5 flex items-center justify-end gap-2 border-t border-border px-6 py-4">

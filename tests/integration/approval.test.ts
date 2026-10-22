@@ -6,7 +6,7 @@ import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ServiceError } from "@/lib/api/errors";
 import { approveLines } from "@/lib/services/approval";
-import { createPlan, getPlan, rejectPlan } from "@/lib/services/plans";
+import { createPlan, getPlan, recalculatePlan, rejectPlan } from "@/lib/services/plans";
 import { approvePo, sendPo } from "@/lib/services/purchase-orders";
 
 config({ path: ".env.local", quiet: true });
@@ -146,6 +146,53 @@ describe.skipIf(!url)("approval (integration)", () => {
         expect(atLimit.purchaseOrders[0].status).toBe("ready");
       } finally {
         await setLimit(originalLimit);
+      }
+    },
+    T,
+  );
+
+  it(
+    "cross-plan: a SKU already on another plan's PO cannot be approved again (ALREADY_ON_ORDER names the PO); Recalculate fixes the plan",
+    async (t) => {
+      const made: string[] = [];
+      try {
+        // Two plans made before any approval propose the same lines.
+        const a = await freshPlan();
+        const b = await freshPlan();
+        made.push(a.planId, b.planId);
+        if (a.groups.length === 0) return t.skip(); // nothing left to buy in this database
+        const lineA = a.groups[0][0];
+        const lineB = b.lines.find((l) => l.productId === lineA.productId)!;
+        expect(lineB).toBeDefined();
+
+        const { purchaseOrders } = await approveLines(a.planId, [lineA.id], crypto.randomUUID(), actor, sql);
+        const poNumber = purchaseOrders[0].poNumber;
+
+        let err: ServiceError | undefined;
+        await approveLines(b.planId, [lineB.id], crypto.randomUUID(), actor, sql).catch((e) => (err = e));
+        expect(err?.code).toBe("ALREADY_ON_ORDER");
+        expect(err?.status).toBe(409);
+        expect(err?.message).toContain(lineB.sku);
+        expect(err?.message).toContain(poNumber);
+        const [conflict] = (err?.details as { conflicts: { lineId: string; pos: { poNumber: string }[]; stillNeeded: number }[] }).conflicts;
+        expect(conflict.lineId).toBe(lineB.id);
+        expect(conflict.pos.map((p) => p.poNumber)).toContain(poNumber);
+        // Nothing was written for plan B.
+        const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from purchase_orders where source_plan_id = ${b.planId}`;
+        expect(n).toBe(0);
+
+        // After Recalculate, plan B no longer asks for more than it still needs for that SKU.
+        const after = await recalculatePlan(b.planId, { actor }, sql);
+        const again = after.lines.find((l) => l.productId === lineA.productId && l.counted);
+        expect(!again || again.qty <= conflict.stillNeeded).toBe(true);
+        expect(after.alreadyOnOrder.some((i) => i.poNumber === poNumber)).toBe(true);
+      } finally {
+        if (made.length) {
+          const pos = await sql<{ id: string }[]>`select id::text from purchase_orders where source_plan_id = any(${made}::uuid[])`;
+          await sql`delete from approvals where entity_id = any(${pos.map((p) => p.id)}::uuid[])`;
+          await sql`delete from purchase_orders where id = any(${pos.map((p) => p.id)}::uuid[])`;
+          await sql`delete from purchase_plans where id = any(${made}::uuid[])`;
+        }
       }
     },
     T,

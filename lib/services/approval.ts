@@ -7,6 +7,7 @@
 import type postgres from "postgres";
 import { ServiceError, notFound } from "@/lib/api/errors";
 import { addDays } from "@/lib/business-logic/dates";
+import { analyseSku } from "@/lib/business-logic/engine";
 import { lineTotals, needsOwnerApproval } from "@/lib/business-logic/totals";
 import type { HardStopCode, LineTotals, Money, OfferInput } from "@/lib/business-logic/types";
 import { hardStops } from "@/lib/business-logic/validation";
@@ -44,7 +45,14 @@ type LineRow = {
   in_basket: boolean;
   status: string;
   on_po: boolean;
+  d: { method?: "ml" | "baseline"; reason?: string } | null;
 };
+
+/** A PO line from ANOTHER plan, not yet received, for a SKU being approved. */
+type OnOrder = { product_id: string; po_id: string; po_number: string; status: string; qty: number };
+export type AlreadyOnOrder = { lineId: string; sku: string; qty: number; stillNeeded: number; pos: { poId: string; poNumber: string; status: string; qty: number }[] };
+
+const PO_STATUS_TEXT: Record<string, string> = { ready: "Ready to send", pending_approval: "awaiting Owner approval", approved: "Owner approved", sent: "sent" };
 
 async function posForIds(sql: postgres.TransactionSql | postgres.Sql, poIds: string[], approvalLimit: Money): Promise<CreatedPo[]> {
   const rows = await sql<
@@ -105,7 +113,8 @@ export async function approveLines(
     // 3. The selected lines must be buyable, proposed or edited, and not on a PO already.
     const lines = await tx<LineRow[]>`
       select r.id, r.product_id, p.sku, r.selected_offer_id as offer_id, r.suggested_qty as qty, r.free_qty, r.in_basket, r.status,
-        exists (select 1 from purchase_order_lines l where l.recommendation_id = r.id) as on_po
+        exists (select 1 from purchase_order_lines l where l.recommendation_id = r.id) as on_po,
+        r.evidence_json->'demandDecision' as d
       from purchase_recommendations r join products p on p.id = r.product_id
       where r.plan_id = ${planId} and r.id = any(${ids}::uuid[])
       for update of r
@@ -124,8 +133,39 @@ export async function approveLines(
     }
 
     // 4. Re-check every line against FRESH data and every hard stop.
-    const ctx = await loadPlanningContext(tx, state.asOf, state.scenarioId, [...new Set(lines.map((l) => l.product_id))], { excludePlanId: planId });
+    // Serialise approvals per SKU across plans (sorted, so two plans can never deadlock), then read what other
+    // plans already have on order: their stock is in the fresh context below.
+    const productIds = [...new Set(lines.map((l) => l.product_id))].sort();
+    await tx`select pg_advisory_xact_lock(hashtext('po-sku:' || x)) from unnest(${productIds}::text[]) as x`;
+    const [ctx, onOrder] = await Promise.all([
+      loadPlanningContext(tx, state.asOf, state.scenarioId, productIds, { excludePlanId: planId }),
+      tx<OnOrder[]>`
+        select l.product_id, po.id as po_id, po.po_number, po.status, l.quantity_packs as qty
+        from purchase_order_lines l join purchase_orders po on po.id = l.po_id
+        where l.product_id = any(${productIds}::uuid[]) and po.source_plan_id is not null and po.source_plan_id <> ${planId}
+          and po.status in ('ready', 'pending_approval', 'approved', 'sent')
+        order by po.po_number
+      `.execute(),
+    ]);
     const skuById = new Map(ctx.skus.map((s) => [s.product.id, s]));
+
+    // 4a. A SKU already on another plan's PO may only get a top-up: what the engine still needs with that stock
+    // counted. A line worked out before that PO existed asks for more, so it is blocked (never ordered twice).
+    const onOrderBy = new Map<string, OnOrder[]>();
+    for (const o of onOrder) onOrderBy.set(o.product_id, [...(onOrderBy.get(o.product_id) ?? []), o]);
+    const conflicts: AlreadyOnOrder[] = [];
+    for (const line of lines) {
+      const pos = onOrderBy.get(line.product_id);
+      const sku = skuById.get(line.product_id);
+      if (!pos || !sku) continue;
+      const method = line.d?.method;
+      const a = analyseSku(method && sku.forecast ? { ...sku, forecast: { ...sku.forecast, override: { method, reason: line.d?.reason ?? "" } } } : sku);
+      const stillNeeded = a.candidate && a.chosen ? a.qty : 0;
+      if (line.qty > stillNeeded) {
+        conflicts.push({ lineId: line.id, sku: line.sku, qty: line.qty, stillNeeded, pos: pos.map((o) => ({ poId: o.po_id, poNumber: o.po_number, status: o.status, qty: o.qty })) });
+      }
+    }
+    if (conflicts.length > 0) throw new ServiceError("ALREADY_ON_ORDER", 409, alreadyOnOrderMessage(conflicts), { conflicts });
     const failures: { lineId: string; sku: string; codes: HardStopCode[] }[] = [];
     const priced: { line: LineRow; offer: OfferInput; totals: LineTotals; supplierId: string; lead: number }[] = [];
     for (const line of lines) {
@@ -287,4 +327,13 @@ export async function approveLines(
 
     return { purchaseOrders: await posForIds(tx, created.map((c) => c.id), state.approvalLimit), alreadyProcessed: false };
   });
+}
+
+/** "PHX-0001 is already on PO-… (Ready to send, 28 packs) from another plan; with that stock counted it needs no more." */
+export function alreadyOnOrderMessage(conflicts: AlreadyOnOrder[]): string {
+  const one = (c: AlreadyOnOrder) =>
+    `${c.sku} is already on ${c.pos.map((p) => `${p.poNumber} (${PO_STATUS_TEXT[p.status] ?? p.status}, ${p.qty} packs)`).join(" and ")} from another plan; ` +
+    (c.stillNeeded > 0 ? `with that stock counted it needs only ${c.stillNeeded} more packs, not ${c.qty}.` : `with that stock counted it needs no more.`);
+  const fix = "Deselect it, or Recalculate this plan to update the quantity.";
+  return conflicts.length === 1 ? `${one(conflicts[0])} ${fix}` : `${conflicts.length} lines are already on order: ${conflicts.map(one).join(" ")} Deselect them, or Recalculate this plan to update the quantities.`;
 }
