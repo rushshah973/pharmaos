@@ -79,41 +79,39 @@
 }
 
 /* Dark is the only theme; :root and .dark carry the same values.
-   Glass design system: a deep indigo night sky (star field, a violet haze from the top, a planet horizon glowing at
-   the bottom, faint dashed guide lines), frosted violet-tinted glass cards, thin type with a soft white-to-lavender
-   gradient on titles, one violet accent (brand), white pill buttons, and the four status colours (always with a
-   label; excess is pink so it never reads as the accent). */
+   Glass design system: near-black canvas with a warm and a cool ambient glow, frosted glass cards, thin type,
+   one warm accent (brand) for focus and highlights, and the four status colours (always with a label). */
 :root,
 .dark {
-  --bg: #1a1450;
+  --bg: #08080a;
   /* Opaque fallbacks (sticky table cells, menus): close to the average colour of a glass card on the canvas. */
-  --surface-1: #211a5c;
-  --surface-2: #2a2268;
-  --surface-3: #352c78;
+  --surface-1: #121214;
+  --surface-2: #19191c;
+  --surface-3: #232327;
   --border-strong: rgba(255, 255, 255, 0.13);
   --text-1: #f4f4f5;
-  --text-2: #c3bedb;
-  --text-3: #9690b8;
-  --brand: #a597ff; /* violet accent ("--accent" in the plan; named brand to avoid shadcn's --accent) */
-  --brand-strong: #7b68ff;
-  --brand-glow: rgba(157, 140, 255, 0.14);
+  --text-2: #a1a1aa;
+  --text-3: #66666e;
+  --brand: #ff8d4d; /* warm copper accent ("--accent" in the plan; named brand to avoid shadcn's --accent) */
+  --brand-strong: #f97316;
+  --brand-glow: rgba(255, 141, 77, 0.12);
   --stockout: #ff5c5c;
   --stockout-bg: rgba(255, 92, 92, 0.12);
   --expiry: #f2c94c;
   --expiry-bg: rgba(242, 201, 76, 0.12);
-  --excess: #f472b6;
-  --excess-bg: rgba(244, 114, 182, 0.12);
+  --excess: #a78bfa;
+  --excess-bg: rgba(167, 139, 250, 0.12);
   --healthy: #4ade80;
   --healthy-bg: rgba(74, 222, 128, 0.11);
   --neutral: #a1a1aa;
   --neutral-bg: rgba(161, 161, 170, 0.1);
   --proposed: rgba(255, 141, 77, 0.35);
   /* Glass */
-  --glass: linear-gradient(160deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.05) 38%, rgba(255, 255, 255, 0.03) 100%);
+  --glass: linear-gradient(160deg, rgba(255, 255, 255, 0.085) 0%, rgba(255, 255, 255, 0.035) 38%, rgba(255, 255, 255, 0.02) 100%);
   --glass-border: rgba(255, 255, 255, 0.09);
   /* A light edge: brightest at the top-left (where the light comes from), fading round the pane. Painted as the
      border-box layer of a two-layer background so it works with backdrop-filter and rounded corners. */
-  --glass-edge: linear-gradient(140deg, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0.06) 30%, rgba(157, 140, 255, 0.06) 65%, rgba(157, 140, 255, 0.28) 100%);
+  --glass-edge: linear-gradient(140deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.06) 30%, rgba(255, 255, 255, 0.03) 65%, rgba(255, 255, 255, 0.14) 100%);
   --glass-blur: blur(28px) saturate(170%);
   --shadow-pop: 0 24px 60px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
   --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 0 24px rgba(255, 255, 255, 0.02), 0 30px 60px -30px rgba(0, 0, 0, 0.85),
@@ -171,8 +169,7 @@
     line-height: 20px;
     letter-spacing: -0.003em;
   }
-  /* Night sky, fixed behind the app: indigo deepening downward, a violet haze from the top, faint side columns of
-     light, and a planet whose glowing rim rises just above the bottom edge of the screen. */
+  /* Ambient canvas: a warm glow top-right, a cool green-teal glow bottom-left, and fine grain, fixed behind the app. */
   body::before {
     content: "";
     position: fixed;
@@ -180,38 +177,24 @@
     z-index: -1;
     pointer-events: none;
     background:
-      radial-gradient(140% 100% at 50% 136%, rgba(46, 30, 140, 0.95) 0%, rgba(84, 62, 220, 0.6) 44%, rgba(104, 84, 255, 0.55) 49.2%, rgba(214, 205, 255, 0.75) 49.8%, rgba(124, 104, 255, 0.28) 50.5%, rgba(124, 104, 255, 0.08) 54%, rgba(124, 104, 255, 0) 60%),
-      radial-gradient(75% 60% at 50% -6%, rgba(140, 118, 255, 0.5) 0%, rgba(110, 86, 240, 0.2) 45%, rgba(110, 86, 240, 0) 75%),
-      radial-gradient(18% 75% at 6% 30%, rgba(150, 130, 255, 0.18) 0%, rgba(150, 130, 255, 0) 70%),
-      radial-gradient(18% 75% at 94% 30%, rgba(150, 130, 255, 0.18) 0%, rgba(150, 130, 255, 0) 70%),
-      linear-gradient(180deg, #1c1552 0%, #2a1f78 50%, #3a2a9c 100%);
+      radial-gradient(55% 50% at 88% -6%, rgba(255, 128, 56, 0.24) 0%, rgba(255, 128, 56, 0) 70%),
+      radial-gradient(40% 40% at 104% 42%, rgba(255, 170, 110, 0.09) 0%, rgba(255, 170, 110, 0) 70%),
+      radial-gradient(50% 55% at -6% 104%, rgba(56, 170, 130, 0.18) 0%, rgba(56, 170, 130, 0) 70%),
+      radial-gradient(38% 38% at 18% 22%, rgba(120, 110, 220, 0.08) 0%, rgba(120, 110, 220, 0) 70%),
+      radial-gradient(40% 40% at 55% 60%, rgba(120, 130, 150, 0.06) 0%, rgba(120, 130, 150, 0) 70%),
+      var(--bg);
   }
-  /* Stars: two seeded tiles of different sizes (small faint ones, fewer bright ones) so the field never visibly repeats. */
   body::after {
     content: "";
     position: fixed;
     inset: 0;
     z-index: -1;
     pointer-events: none;
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='420'%20height='420'%3E%3Ccircle%20cx='136'%20cy='63'%20r='0.64'%20fill='rgb(199,210,255)'%20fill-opacity='0.28'/%3E%3Ccircle%20cx='40'%20cy='245'%20r='0.76'%20fill='white'%20fill-opacity='0.35'/%3E%3Ccircle%20cx='182'%20cy='29'%20r='0.39'%20fill='rgb(199,210,255)'%20fill-opacity='0.44'/%3E%3Ccircle%20cx='52'%20cy='94'%20r='0.63'%20fill='rgb(199,210,255)'%20fill-opacity='0.68'/%3E%3Ccircle%20cx='246'%20cy='21'%20r='0.45'%20fill='white'%20fill-opacity='0.50'/%3E%3Ccircle%20cx='122'%20cy='61'%20r='0.40'%20fill='white'%20fill-opacity='0.39'/%3E%3Ccircle%20cx='43'%20cy='240'%20r='0.43'%20fill='white'%20fill-opacity='0.29'/%3E%3Ccircle%20cx='237'%20cy='260'%20r='0.57'%20fill='white'%20fill-opacity='0.49'/%3E%3Ccircle%20cx='196'%20cy='388'%20r='0.51'%20fill='white'%20fill-opacity='0.36'/%3E%3Ccircle%20cx='294'%20cy='103'%20r='0.61'%20fill='white'%20fill-opacity='0.49'/%3E%3Ccircle%20cx='306'%20cy='121'%20r='0.79'%20fill='rgb(217,210,255)'%20fill-opacity='0.30'/%3E%3Ccircle%20cx='69'%20cy='144'%20r='0.77'%20fill='white'%20fill-opacity='0.44'/%3E%3Ccircle%20cx='321'%20cy='241'%20r='0.74'%20fill='white'%20fill-opacity='0.39'/%3E%3Ccircle%20cx='250'%20cy='244'%20r='0.56'%20fill='white'%20fill-opacity='0.63'/%3E%3Ccircle%20cx='199'%20cy='279'%20r='0.38'%20fill='rgb(199,210,255)'%20fill-opacity='0.57'/%3E%3Ccircle%20cx='417'%20cy='345'%20r='0.48'%20fill='white'%20fill-opacity='0.42'/%3E%3Ccircle%20cx='9'%20cy='194'%20r='0.43'%20fill='white'%20fill-opacity='0.30'/%3E%3Ccircle%20cx='92'%20cy='121'%20r='0.68'%20fill='rgb(217,210,255)'%20fill-opacity='0.43'/%3E%3Ccircle%20cx='34'%20cy='189'%20r='0.60'%20fill='rgb(217,210,255)'%20fill-opacity='0.65'/%3E%3Ccircle%20cx='363'%20cy='117'%20r='0.54'%20fill='rgb(217,210,255)'%20fill-opacity='0.41'/%3E%3Ccircle%20cx='402'%20cy='63'%20r='0.43'%20fill='white'%20fill-opacity='0.35'/%3E%3Ccircle%20cx='5'%20cy='349'%20r='0.43'%20fill='white'%20fill-opacity='0.38'/%3E%3Ccircle%20cx='176'%20cy='155'%20r='0.60'%20fill='rgb(199,210,255)'%20fill-opacity='0.68'/%3E%3Ccircle%20cx='399'%20cy='275'%20r='0.68'%20fill='rgb(199,210,255)'%20fill-opacity='0.46'/%3E%3Ccircle%20cx='165'%20cy='168'%20r='0.40'%20fill='white'%20fill-opacity='0.54'/%3E%3Ccircle%20cx='80'%20cy='414'%20r='0.55'%20fill='rgb(199,210,255)'%20fill-opacity='0.30'/%3E%3Ccircle%20cx='22'%20cy='0'%20r='0.42'%20fill='white'%20fill-opacity='0.30'/%3E%3Ccircle%20cx='258'%20cy='30'%20r='0.44'%20fill='white'%20fill-opacity='0.42'/%3E%3Ccircle%20cx='401'%20cy='253'%20r='0.56'%20fill='rgb(217,210,255)'%20fill-opacity='0.30'/%3E%3Ccircle%20cx='417'%20cy='196'%20r='0.57'%20fill='white'%20fill-opacity='0.29'/%3E%3Ccircle%20cx='315'%20cy='311'%20r='0.57'%20fill='rgb(199,210,255)'%20fill-opacity='0.56'/%3E%3Ccircle%20cx='10'%20cy='399'%20r='0.59'%20fill='rgb(199,210,255)'%20fill-opacity='0.32'/%3E%3Ccircle%20cx='384'%20cy='318'%20r='0.48'%20fill='white'%20fill-opacity='0.54'/%3E%3Ccircle%20cx='292'%20cy='110'%20r='0.52'%20fill='white'%20fill-opacity='0.33'/%3E%3Ccircle%20cx='224'%20cy='327'%20r='0.50'%20fill='white'%20fill-opacity='0.35'/%3E%3Ccircle%20cx='339'%20cy='344'%20r='0.68'%20fill='rgb(199,210,255)'%20fill-opacity='0.35'/%3E%3Ccircle%20cx='207'%20cy='307'%20r='0.80'%20fill='rgb(217,210,255)'%20fill-opacity='0.61'/%3E%3Ccircle%20cx='109'%20cy='291'%20r='0.78'%20fill='white'%20fill-opacity='0.45'/%3E%3Ccircle%20cx='401'%20cy='153'%20r='0.45'%20fill='white'%20fill-opacity='0.35'/%3E%3Ccircle%20cx='142'%20cy='203'%20r='0.79'%20fill='white'%20fill-opacity='0.52'/%3E%3Ccircle%20cx='201'%20cy='274'%20r='0.71'%20fill='white'%20fill-opacity='0.29'/%3E%3Ccircle%20cx='382'%20cy='329'%20r='0.69'%20fill='white'%20fill-opacity='0.47'/%3E%3Ccircle%20cx='182'%20cy='267'%20r='0.39'%20fill='rgb(217,210,255)'%20fill-opacity='0.68'/%3E%3Ccircle%20cx='195'%20cy='312'%20r='0.39'%20fill='white'%20fill-opacity='0.32'/%3E%3Ccircle%20cx='12'%20cy='248'%20r='0.56'%20fill='rgb(199,210,255)'%20fill-opacity='0.55'/%3E%3Ccircle%20cx='347'%20cy='412'%20r='0.65'%20fill='rgb(199,210,255)'%20fill-opacity='0.41'/%3E%3Ccircle%20cx='230'%20cy='9'%20r='0.71'%20fill='white'%20fill-opacity='0.58'/%3E%3Ccircle%20cx='221'%20cy='392'%20r='0.55'%20fill='white'%20fill-opacity='0.64'/%3E%3Ccircle%20cx='12'%20cy='89'%20r='0.58'%20fill='white'%20fill-opacity='0.59'/%3E%3Ccircle%20cx='109'%20cy='176'%20r='0.41'%20fill='white'%20fill-opacity='0.66'/%3E%3Ccircle%20cx='377'%20cy='278'%20r='0.72'%20fill='rgb(199,210,255)'%20fill-opacity='0.48'/%3E%3Ccircle%20cx='55'%20cy='64'%20r='0.58'%20fill='white'%20fill-opacity='0.64'/%3E%3Ccircle%20cx='256'%20cy='326'%20r='0.42'%20fill='rgb(199,210,255)'%20fill-opacity='0.31'/%3E%3Ccircle%20cx='305'%20cy='234'%20r='0.50'%20fill='rgb(199,210,255)'%20fill-opacity='0.48'/%3E%3Ccircle%20cx='203'%20cy='326'%20r='0.75'%20fill='white'%20fill-opacity='0.28'/%3E%3Ccircle%20cx='116'%20cy='324'%20r='0.58'%20fill='white'%20fill-opacity='0.50'/%3E%3Ccircle%20cx='186'%20cy='257'%20r='0.58'%20fill='white'%20fill-opacity='0.48'/%3E%3Ccircle%20cx='190'%20cy='224'%20r='0.57'%20fill='rgb(199,210,255)'%20fill-opacity='0.67'/%3E%3Ccircle%20cx='368'%20cy='396'%20r='0.47'%20fill='white'%20fill-opacity='0.50'/%3E%3Ccircle%20cx='353'%20cy='58'%20r='0.40'%20fill='white'%20fill-opacity='0.45'/%3E%3Ccircle%20cx='282'%20cy='180'%20r='0.45'%20fill='white'%20fill-opacity='0.39'/%3E%3Ccircle%20cx='377'%20cy='65'%20r='0.67'%20fill='white'%20fill-opacity='0.55'/%3E%3Ccircle%20cx='106'%20cy='58'%20r='0.56'%20fill='white'%20fill-opacity='0.59'/%3E%3Ccircle%20cx='167'%20cy='205'%20r='0.80'%20fill='white'%20fill-opacity='0.62'/%3E%3Ccircle%20cx='297'%20cy='418'%20r='0.53'%20fill='white'%20fill-opacity='0.44'/%3E%3Ccircle%20cx='134'%20cy='303'%20r='0.36'%20fill='rgb(217,210,255)'%20fill-opacity='0.50'/%3E%3Ccircle%20cx='295'%20cy='161'%20r='0.58'%20fill='white'%20fill-opacity='0.38'/%3E%3Ccircle%20cx='47'%20cy='386'%20r='0.45'%20fill='white'%20fill-opacity='0.64'/%3E%3Ccircle%20cx='112'%20cy='17'%20r='0.70'%20fill='white'%20fill-opacity='0.37'/%3E%3Ccircle%20cx='344'%20cy='357'%20r='0.65'%20fill='rgb(217,210,255)'%20fill-opacity='0.68'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='900'%20height='900'%3E%3Ccircle%20cx='134'%20cy='827'%20r='1.14'%20fill='white'%20fill-opacity='0.74'/%3E%3Ccircle%20cx='251'%20cy='720'%20r='0.91'%20fill='white'%20fill-opacity='0.84'/%3E%3Ccircle%20cx='845'%20cy='571'%20r='1.28'%20fill='white'%20fill-opacity='0.40'/%3E%3Ccircle%20cx='60'%20cy='776'%20r='1.07'%20fill='rgb(199,210,255)'%20fill-opacity='0.54'/%3E%3Ccircle%20cx='376'%20cy='824'%20r='1.17'%20fill='white'%20fill-opacity='0.37'/%3E%3Ccircle%20cx='844'%20cy='872'%20r='0.96'%20fill='white'%20fill-opacity='0.45'/%3E%3Ccircle%20cx='566'%20cy='478'%20r='0.92'%20fill='white'%20fill-opacity='0.60'/%3E%3Ccircle%20cx='243'%20cy='723'%20r='1.40'%20fill='white'%20fill-opacity='0.37'/%3E%3Ccircle%20cx='660'%20cy='496'%20r='0.91'%20fill='rgb(217,210,255)'%20fill-opacity='0.61'/%3E%3Ccircle%20cx='96'%20cy='737'%20r='1.06'%20fill='rgb(217,210,255)'%20fill-opacity='0.62'/%3E%3Ccircle%20cx='873'%20cy='277'%20r='0.93'%20fill='white'%20fill-opacity='0.48'/%3E%3Ccircle%20cx='749'%20cy='636'%20r='1.18'%20fill='white'%20fill-opacity='0.57'/%3E%3Ccircle%20cx='884'%20cy='753'%20r='0.81'%20fill='white'%20fill-opacity='0.69'/%3E%3Ccircle%20cx='388'%20cy='50'%20r='1.20'%20fill='rgb(199,210,255)'%20fill-opacity='0.56'/%3E%3Ccircle%20cx='603'%20cy='254'%20r='0.95'%20fill='rgb(217,210,255)'%20fill-opacity='0.51'/%3E%3Ccircle%20cx='167'%20cy='242'%20r='0.80'%20fill='white'%20fill-opacity='0.55'/%3E%3Ccircle%20cx='875'%20cy='492'%20r='0.95'%20fill='white'%20fill-opacity='0.88'/%3E%3Ccircle%20cx='196'%20cy='165'%20r='1.00'%20fill='white'%20fill-opacity='0.40'/%3E%3Ccircle%20cx='452'%20cy='181'%20r='1.10'%20fill='white'%20fill-opacity='0.35'/%3E%3Ccircle%20cx='735'%20cy='129'%20r='1.15'%20fill='white'%20fill-opacity='0.57'/%3E%3Ccircle%20cx='274'%20cy='210'%20r='1.15'%20fill='white'%20fill-opacity='0.64'/%3E%3Ccircle%20cx='592'%20cy='644'%20r='1.33'%20fill='white'%20fill-opacity='0.56'/%3E%3Ccircle%20cx='649'%20cy='445'%20r='0.97'%20fill='white'%20fill-opacity='0.69'/%3E%3Ccircle%20cx='39'%20cy='752'%20r='1.34'%20fill='rgb(199,210,255)'%20fill-opacity='0.70'/%3E%3Ccircle%20cx='125'%20cy='471'%20r='1.10'%20fill='white'%20fill-opacity='0.81'/%3E%3Ccircle%20cx='744'%20cy='526'%20r='1.34'%20fill='white'%20fill-opacity='0.73'/%3E%3C/svg%3E");
-    background-size: 420px 420px, 900px 900px;
-    opacity: 0.9;
-    animation: twinkle 7s ease-in-out infinite alternate;
-  }
-  /* Light streaks and the dashed vertical guide lines near the edges, fading out toward the horizon. */
-  main::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='1600'%20height='1000'%20viewBox='0%200%201600%201000'%20preserveAspectRatio='none'%3E%3Cline%20x1='160'%20y1='240'%20x2='310'%20y2='213'%20stroke='rgb(207,198,255)'%20stroke-opacity='0.4'%20stroke-width='1'/%3E%3Cline%20x1='1180'%20y1='170'%20x2='1300'%20y2='148'%20stroke='rgb(207,198,255)'%20stroke-opacity='0.4'%20stroke-width='1'/%3E%3Cline%20x1='1320'%20y1='560'%20x2='1490'%20y2='529'%20stroke='rgb(207,198,255)'%20stroke-opacity='0.4'%20stroke-width='1'/%3E%3Cline%20x1='240'%20y1='700'%20x2='370'%20y2='677'%20stroke='rgb(207,198,255)'%20stroke-opacity='0.4'%20stroke-width='1'/%3E%3Cline%20x1='980'%20y1='380'%20x2='1070'%20y2='364'%20stroke='rgb(207,198,255)'%20stroke-opacity='0.4'%20stroke-width='1'/%3E%3Cline%20x1='560'%20y1='120'%20x2='640'%20y2='106'%20stroke='rgb(207,198,255)'%20stroke-opacity='0.4'%20stroke-width='1'/%3E%3Cline%20x1='70'%20y1='0'%20x2='70'%20y2='1000'%20stroke='white'%20stroke-opacity='0.1'%20stroke-dasharray='5%207'/%3E%3Cline%20x1='150'%20y1='0'%20x2='150'%20y2='1000'%20stroke='white'%20stroke-opacity='0.1'%20stroke-dasharray='5%207'/%3E%3Cline%20x1='1450'%20y1='0'%20x2='1450'%20y2='1000'%20stroke='white'%20stroke-opacity='0.1'%20stroke-dasharray='5%207'/%3E%3Cline%20x1='1530'%20y1='0'%20x2='1530'%20y2='1000'%20stroke='white'%20stroke-opacity='0.1'%20stroke-dasharray='5%207'/%3E%3Crect%20x='80'%20y='0'%20width='60'%20height='1000'%20fill='rgb(139,124,255)'%20fill-opacity='0.025'/%3E%3Crect%20x='1460'%20y='0'%20width='60'%20height='1000'%20fill='rgb(139,124,255)'%20fill-opacity='0.025'/%3E%3C/svg%3E");
-    background-size: 100% 100%;
-    -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 88%);
-    mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 88%);
+    opacity: 0.05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
   ::selection {
-    background: rgba(157, 140, 255, 0.32);
+    background: rgba(255, 141, 77, 0.28);
   }
   :focus-visible {
     outline: 2px solid var(--brand);
@@ -224,7 +207,7 @@
   .surface {
     background:
       var(--glass) padding-box,
-      linear-gradient(rgba(40, 30, 110, 0.32), rgba(40, 30, 110, 0.32)) padding-box,
+      linear-gradient(rgba(14, 14, 16, 0.42), rgba(14, 14, 16, 0.42)) padding-box,
       var(--glass-edge) border-box;
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
@@ -236,9 +219,9 @@
   .surface-hero {
     background:
       radial-gradient(90% 120% at 0% 0%, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0) 55%) padding-box,
-      radial-gradient(70% 90% at 100% 0%, rgba(157, 140, 255, 0.14) 0%, rgba(157, 140, 255, 0) 60%) padding-box,
+      radial-gradient(70% 90% at 100% 0%, rgba(255, 141, 77, 0.1) 0%, rgba(255, 141, 77, 0) 60%) padding-box,
       var(--glass) padding-box,
-      linear-gradient(rgba(40, 30, 110, 0.28), rgba(40, 30, 110, 0.28)) padding-box,
+      linear-gradient(rgba(14, 14, 16, 0.38), rgba(14, 14, 16, 0.38)) padding-box,
       var(--glass-edge) border-box;
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
@@ -249,10 +232,10 @@
   /* Warm glass: copper light sweep for the one figure that matters most on a page. */
   .surface-warm {
     background:
-      linear-gradient(160deg, rgba(0, 0, 0, 0) 15%, rgba(110, 88, 255, 0.36) 60%, rgba(40, 22, 140, 0.2) 90%) padding-box,
-      radial-gradient(80% 80% at 100% 100%, rgba(157, 140, 255, 0.28) 0%, rgba(157, 140, 255, 0) 70%) padding-box,
-      linear-gradient(rgba(36, 24, 110, 0.5), rgba(36, 24, 110, 0.5)) padding-box,
-      linear-gradient(140deg, rgba(228, 222, 255, 0.5) 0%, rgba(157, 140, 255, 0.16) 35%, rgba(157, 140, 255, 0.06) 65%, rgba(196, 184, 255, 0.42) 100%) border-box;
+      linear-gradient(125deg, rgba(0, 0, 0, 0) 20%, rgba(255, 141, 77, 0.32) 55%, rgba(120, 50, 10, 0.1) 80%) padding-box,
+      radial-gradient(80% 80% at 100% 100%, rgba(255, 141, 77, 0.22) 0%, rgba(255, 141, 77, 0) 70%) padding-box,
+      linear-gradient(rgba(20, 14, 10, 0.6), rgba(20, 14, 10, 0.6)) padding-box,
+      linear-gradient(140deg, rgba(255, 200, 160, 0.4) 0%, rgba(255, 141, 77, 0.12) 35%, rgba(255, 141, 77, 0.06) 65%, rgba(255, 170, 110, 0.32) 100%) border-box;
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
     border: 1px solid transparent;
@@ -274,7 +257,7 @@
   .glass-pill {
     background:
       linear-gradient(rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.03)) padding-box,
-      linear-gradient(rgba(40, 30, 110, 0.25), rgba(40, 30, 110, 0.25)) padding-box,
+      linear-gradient(rgba(14, 14, 16, 0.35), rgba(14, 14, 16, 0.35)) padding-box,
       var(--glass-edge) border-box;
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
@@ -294,13 +277,6 @@
   /* Dashed guide lines and the tick rail used by charts and timelines. */
   .tick-rail {
     background-image: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.28) 0 1px, transparent 1px 5px);
-  }
-  /* Page titles: white fading to lavender, like the reference's headline. */
-  .title-gradient {
-    background: linear-gradient(180deg, #ffffff 35%, #c9c0ff 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
   }
   .micro-label {
     font-size: 11px;
@@ -326,15 +302,6 @@
   }
 }
 
-@keyframes twinkle {
-  from {
-    opacity: 0.7;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
 @keyframes shimmer {
   0% {
     background-position: 200% 0;
@@ -346,7 +313,7 @@
 
 @keyframes flash-change {
   0% {
-    background-color: rgba(157, 140, 255, 0.2);
+    background-color: rgba(255, 141, 77, 0.18);
   }
   100% {
     background-color: transparent;
@@ -355,8 +322,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .shimmer,
-  .flash-change,
-  body::after {
+  .flash-change {
     animation: none;
   }
 }
@@ -381,8 +347,7 @@
     color: #000;
   }
   body::before,
-  body::after,
-  main::before {
+  body::after {
     display: none;
   }
   .surface,

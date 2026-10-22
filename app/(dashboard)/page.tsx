@@ -69,7 +69,7 @@ function Header({ data }: { data: CommandCenter }) {
           As of {formatDisplayDate(data.asOf)} · {data.totalSkus.toLocaleString("en-IN")} active SKUs
           {data.scenario.id !== "baseline" && <span className="text-expiry"> · Scenario: {data.scenario.name}</span>}
         </p>
-        <h1 className="mt-1 text-[56px] leading-[60px] font-light tracking-[-0.05em] text-fg-1 title-gradient max-lg:text-[40px] max-lg:leading-[46px]">Command Center</h1>
+        <h1 className="mt-1 text-[56px] leading-[60px] font-light tracking-[-0.05em] text-fg-1 max-lg:text-[40px] max-lg:leading-[46px]">Command Center</h1>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {data.latestPlan && (data.latestPlan.status === "draft" || data.latestPlan.status === "partially_approved") && <RunAgentsButton planId={data.latestPlan.id} />}
