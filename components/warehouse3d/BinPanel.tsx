@@ -18,7 +18,7 @@ import { type ModeMeta, STORAGE_LABEL, severityStyle } from "./modes";
 const QUALITY: Record<string, string> = { released: "Released", quarantine: "Quarantine", rejected: "Rejected", recalled: "Recalled" };
 /** Short data-source labels for the narrow panel; the full name is the title. */
 const SOURCE: Record<string, [string, string]> = {
-  synthetic_demo: ["Synthetic", "Synthetic demo data"],
+  synthetic_demo: ["Synthetic demo data", "Generated synthetic demo data, not a real stock record"],
   public_reference: ["Public ref.", "Public reference data"],
   unverified_sample: ["Unverified", "Unverified sample"],
   verified_customer_data: ["Verified", "Verified customer data"],

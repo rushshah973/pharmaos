@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import type { PlanSummary } from "@/lib/services/plans";
+import { formatDateTime } from "@/lib/format/date";
 import { RichText, SourceTag } from "./RichText";
 
 type Summary = PlanSummary["aiSummary"];
@@ -47,7 +48,18 @@ export function PlanSummaryCard({ planId, initial }: { planId: string; initial: 
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <Sparkles className="size-4 text-brand" strokeWidth={1.75} aria-hidden />
         <h2 className="text-[13.5px] font-semibold text-fg-1">Plan summary</h2>
-        {pending ? <span className="text-[12px] text-fg-3">PharmaOS AI is writing it from the plan&apos;s data…</span> : <SourceTag source="agent" />}
+        {pending ? (
+          <span className="text-[12px] text-fg-3">PharmaOS AI is writing it from the plan&apos;s data…</span>
+        ) : (
+          <>
+            <SourceTag source="agent" />
+            {summary.createdAt && (
+              <span className="text-[11.5px] text-fg-3" title="Written once, when the plan was created. Later edits, recalculations and agent runs are not in it.">
+                Written {formatDateTime(summary.createdAt)}, when the plan was created; later changes are not in it
+              </span>
+            )}
+          </>
+        )}
       </div>
       {pending ? (
         <div className="space-y-2">

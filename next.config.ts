@@ -6,6 +6,8 @@ const nextConfig: NextConfig = {
   devIndicators: { position: "bottom-right" },
   partialPrefetching: true,
   turbopack: {
+    // The app is its own root (a package-lock.json higher up must not be picked as the workspace root).
+    root: import.meta.dirname,
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],

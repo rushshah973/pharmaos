@@ -165,6 +165,13 @@ export function PlanTable({
               </tr>
             </thead>
             <tbody>
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={HEADERS.length + 1} className="px-5 py-10 text-center text-fg-2">
+                    No lines are in the plan right now: every line was deferred, rejected or has no usable offer. Restore one from &ldquo;Not in this plan&rdquo; below, or recalculate.
+                  </td>
+                </tr>
+              )}
               {rows.map((l) => (
                 <PlanRow
                   key={l.id}
@@ -264,10 +271,11 @@ function PlanRow({
       </td>
       <td className={cn("num px-2.5 text-right", l.cover !== null && l.leadTimeDays !== null && l.cover < l.leadTimeDays ? "text-stockout" : "text-fg-1")}>
         {cover(l.cover)}
+        {l.cover !== null && l.leadTimeDays !== null && l.cover < l.leadTimeDays && <span className="block text-[10.5px] leading-3">before delivery</span>}
       </td>
       <td className="num px-2.5 text-right text-fg-1">
         {l.qty.toLocaleString("en-IN")}
-        {l.freeQty > 0 && <span className="text-healthy"> +{l.freeQty}</span>}
+        {l.freeQty > 0 && <span className="text-healthy"> +{l.freeQty} free</span>}
       </td>
       <td className="px-2.5">
         <span className="font-mono text-[12.5px] text-fg-1" title={l.supplierName ?? undefined}>

@@ -28,7 +28,8 @@ async function lockPo(tx: postgres.TransactionSql, poId: string): Promise<PoSumm
   const [row] = await tx<PoSummary[]>`
     select po.id, po.po_number as "poNumber", po.status, s.supplier_code as "supplierCode", s.name as "supplierName",
       po.grand_total::text as "grandTotal",
-      to_char(po.sent_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as "sentAt", po.sent_by as "sentBy"
+      to_char(po.sent_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as "sentAt", po.sent_by as "sentBy",
+      po.data_source as "dataSource"
     from purchase_orders po join suppliers s on s.id = po.supplier_id
     where po.id = ${poId}
     for update of po
@@ -219,6 +220,8 @@ export type PoDetail = PoListItem & {
   sentAt: string | null;
   sentBy: string | null;
   needsOwnerApproval: boolean; // created above the limit (pending_approval, or approved / rejected / sent after a decision)
+  /** The record's data_source label (R8): synthetic_demo for every seeded or app-created PO. */
+  dataSource: string;
   lineItems: PoLine[];
 };
 

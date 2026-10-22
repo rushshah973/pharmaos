@@ -71,7 +71,16 @@ export function ReasonDialog({
             <p className="text-[12px] text-fg-3">Required · saved with the line and in the activity log.</p>
           </div>
           <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-4">
-            <Button type="button" variant="ghost" className="h-9 px-4" disabled={pending} onClick={onClose}>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-9 px-4"
+              disabled={pending}
+              onClick={() => {
+                setReason("");
+                onClose();
+              }}
+            >
               Cancel
             </Button>
             <Button type="submit" variant={defer ? "default" : "destructive"} className="h-9 min-w-[120px] px-4" disabled={pending || !valid}>

@@ -61,7 +61,7 @@ export function BinTable({
                 )}
               >
                 <td className="px-3 py-1.5 whitespace-nowrap">
-                  <button type="button" className="font-mono text-[12.5px] text-fg-1 outline-none focus-visible:underline" onClick={() => onSelect(b.id)}>
+                  <button type="button" className="rounded font-mono text-[12.5px] text-fg-1 focus-visible:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand" onClick={() => onSelect(b.id)}>
                     {b.binCode}
                   </button>
                   {matchBinIds.has(b.id) && <span className="ml-2 text-[11px] text-brand">match</span>}

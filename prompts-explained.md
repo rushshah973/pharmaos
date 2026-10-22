@@ -34,7 +34,8 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P22B | Agent pipeline: Demand, Supplier and Order agents | ✅ |
 | P23B | Agent run view | ✅ (real run on gemini-flash-lite-latest: 4 forecasts changed, 5 POs created) |
 | P24 | Scenarios and the Data & Scenarios screen | ✅ (surge → SUP-01 PO ₹4,35,854 pending_approval; reset restores baseline exactly) |
-| P25–P28 | … | ⏭ |
+| P25 | Polish pass | ✅ |
+| P26–P28 | … | ⏭ |
 
 > Budget cap removed; ₹4,00,000 per-PO Owner approval added (after P13).
 >

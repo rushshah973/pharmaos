@@ -59,7 +59,10 @@ export function CriticalSkuList({ skus, latestPlanId, totalAtRisk }: { skus: Cri
                   <td className="px-4">
                     <SkuStatusPill status={s.status} expiryRisk={atRisk} />
                   </td>
-                  <td className={`num px-4 text-right ${s.cover !== null && s.cover < s.leadTimeDays ? "text-stockout" : "text-fg-1"}`}>{cover(s.cover)}</td>
+                  <td className={`num px-4 text-right ${s.cover !== null && s.cover < s.leadTimeDays ? "text-stockout" : "text-fg-1"}`}>
+                    {cover(s.cover)}
+                    {s.cover !== null && s.cover < s.leadTimeDays && <span className="block text-[11px] font-normal">before delivery</span>}
+                  </td>
                   <td className="num px-4 text-right text-fg-1">{s.leadTimeDays} d</td>
                   <td className="num px-4 text-right text-fg-1">{atRisk ? formatINR(s.atRiskValue) : <span className="text-fg-3">—</span>}</td>
                   <td className="pr-3 pl-2 text-right">

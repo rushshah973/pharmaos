@@ -45,7 +45,7 @@ async function CommandCenterContent() {
       <div className="grid grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)] gap-5 max-xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] max-lg:grid-cols-1">
         <div className="flex min-w-0 flex-col gap-5">
           <DemandCard data={data} />
-          <PipelineStrip pipeline={pipeline} />
+          <PipelineStrip pipeline={pipeline} planHref={data.latestPlan ? `/procurement/${data.latestPlan.id}` : "/procurement"} />
         </div>
         <div className="flex min-w-0 flex-col gap-5 max-lg:grid max-lg:grid-cols-2 max-md:grid-cols-1">
           <SpendCard data={data} />
@@ -267,9 +267,9 @@ function AttentionPanel({ data, pipeline }: { data: CommandCenter; pipeline: PoP
 }
 
 /** Approve → PO → Owner → Send, with how many are at each step. */
-function PipelineStrip({ pipeline }: { pipeline: PoPipeline }) {
+function PipelineStrip({ pipeline, planHref }: { pipeline: PoPipeline; planHref: string }) {
   const steps = [
-    { label: "Lines to approve", value: pipeline.linesAwaitingPo, icon: Sparkles, href: "/procurement" },
+    { label: "Lines to approve", value: pipeline.linesAwaitingPo, icon: Sparkles, href: planHref },
     { label: "POs ready to send", value: pipeline.ready, icon: ClipboardList, href: "/purchase-orders" },
     { label: "Waiting for Owner", value: pipeline.awaitingOwner, icon: ShieldCheck, href: "/purchase-orders" },
     { label: "Sent · simulated", value: pipeline.sent, icon: Send, href: "/purchase-orders" },
@@ -320,12 +320,21 @@ function CommandCenterSkeleton() {
           <span key={i} className="shimmer h-14 rounded-full" />
         ))}
       </div>
-      <div className="grid grid-cols-[1.65fr_1fr] gap-5 max-lg:grid-cols-1">
-        <div className="surface h-[420px]" />
+      <div className="grid grid-cols-[1.65fr_1fr] gap-5 max-xl:grid-cols-[1.35fr_1fr] max-lg:grid-cols-1">
+        <div className="space-y-5">
+          <div className="surface h-[420px]" />
+          <div className="surface h-[112px]" />
+        </div>
         <div className="space-y-5">
           <div className="surface h-[260px]" />
           <div className="surface h-[220px]" />
         </div>
+      </div>
+      <span className="shimmer block h-8 w-60 rounded-full" />
+      <div className="grid grid-cols-4 gap-4 max-xl:grid-cols-2">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="surface h-[248px]" />
+        ))}
       </div>
       <CriticalSkuListSkeleton />
     </div>

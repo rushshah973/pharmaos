@@ -33,7 +33,9 @@ export function TopBar({ demoUser }: { demoUser: string }) {
           </Suspense>
           <span
             className="glass-pill flex size-9 items-center justify-center text-[11.5px] font-medium text-fg-1"
-            title={`${demoUser} · Owner · demo account · synthetic demo data`}
+            title={`${demoUser} · Owner · demo account`}
+            aria-label={`Signed in as ${demoUser}, Owner, demo account`}
+            role="img"
           >
             {initials || "D"}
           </span>
@@ -47,7 +49,14 @@ export function TopBar({ demoUser }: { demoUser: string }) {
 
 async function TopBarFacts() {
   await connection();
-  const state = await getShellState();
+  let state: Awaited<ReturnType<typeof getShellState>>;
+  try {
+    state = await getShellState();
+  } catch (err) {
+    // The page's own sections show the error; the bar just leaves the facts out.
+    console.error("[top bar]", err);
+    return null;
+  }
   return (
     <div className="flex items-center gap-2">
       {state.scenarioId !== "baseline" && (

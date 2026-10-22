@@ -63,6 +63,7 @@ export function AgentRunPanel({
   const [run, setRun] = useState<RunWithSteps | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [past, setPast] = useState<AgentRun[]>([]);
+  const [pastError, setPastError] = useState(false);
   const wasRunning = useRef(false);
 
   // Poll the selected run every 2 s until it is no longer running.
@@ -106,8 +107,12 @@ export function AgentRunPanel({
     if (!open) return;
     let stop = false;
     getJson<{ runs: AgentRun[] }>(`/api/agents/runs?planId=${planId}`)
-      .then((r) => !stop && setPast(r.runs))
-      .catch(() => {});
+      .then((r) => {
+        if (stop) return;
+        setPast(r.runs);
+        setPastError(false);
+      })
+      .catch(() => !stop && setPastError(true));
     return () => {
       stop = true;
     };
@@ -165,6 +170,7 @@ export function AgentRunPanel({
               <Results run={shown} planId={planId} />
             </>
           )}
+          {pastError && <p className="text-[12px] text-fg-3">Past runs could not load. Close and reopen the panel to try again.</p>}
           <PastRuns runs={past} currentId={runId} onSelect={onSelectRun} />
         </div>
       </SheetContent>
@@ -222,7 +228,7 @@ function AgentCard({ run, index, agent, planId }: { run: RunWithSteps; index: nu
                 <span className={cn("absolute top-[5px] -left-[21px] size-2 rounded-full", t.ok ? "bg-healthy" : "bg-stockout")} aria-hidden />
                 <span className="font-mono text-fg-1">{t.toolName}</span>
                 <span className="num ml-2 text-[11.5px] text-fg-3">{t.ms ?? 0} ms</span>
-                <span className="sr-only">{t.ok ? "ok" : "failed"}</span>
+                {t.ok ? <span className="sr-only">ok</span> : <span className="ml-2 text-[11.5px] text-stockout">failed</span>}
                 <p className="truncate text-fg-2" title={toolResult(t)}>
                   {toolResult(t)}
                 </p>

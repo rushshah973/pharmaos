@@ -64,12 +64,13 @@ export function RunAgentsButton({ planId, locked = false, className }: { planId:
 
   return (
     <>
-      <span className="inline-flex items-center gap-1">
+      {/* The title sits on the wrapper: a disabled button gets no pointer events, so its own title never shows. */}
+      <span className="inline-flex items-center gap-1" title={locked ? "The plan is approved or rejected: the agents cannot change it." : undefined}>
         <button
           type="button"
           onClick={start}
           disabled={locked || starting}
-          title={locked ? "The plan is approved or rejected: the agents cannot change it." : active ? "The agents are running: open the live trace" : undefined}
+          title={active ? "The agents are running: open the live trace" : undefined}
           className={cn(
             "glass-pill inline-flex h-9 items-center gap-2 px-4 text-[13px] text-fg-1 transition-colors hover:bg-white/[0.09] disabled:pointer-events-none disabled:opacity-50",
             active && "border-expiry/30 text-expiry",

@@ -113,8 +113,8 @@ export function ApproveDialog({
           <div className="space-y-1.5 px-6 pt-6">
             <DialogTitle className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">Create purchase orders</DialogTitle>
             <DialogDescription className="text-fg-2">
-              {lines.length} line{lines.length === 1 ? "" : "s"} · {formatINR(total)}. One PO per supplier; each line is re-checked against fresh stock, prices
-              and quotes first.
+              {lines.length} line{lines.length === 1 ? "" : "s"} · {formatINR(total)}. One PO per supplier; each line is re-checked first against current stock and
+              the suppliers&apos; offer prices (synthetic demo data, not real quotes).
             </DialogDescription>
           </div>
           <ul className="mx-6 mt-4 divide-y divide-border rounded-lg border border-border bg-surface-1">

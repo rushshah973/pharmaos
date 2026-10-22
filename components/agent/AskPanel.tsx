@@ -132,7 +132,8 @@ export function AskPanel({ planId, lines }: { planId: string; lines: { id: strin
                     <button
                       type="button"
                       onClick={() => ask(p)}
-                      className="w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-[12.5px] leading-[18px] text-fg-2 transition-colors hover:border-border-strong hover:bg-white/[0.04] hover:text-fg-1"
+                      disabled={busy}
+                      className="w-full disabled:opacity-50 rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-[12.5px] leading-[18px] text-fg-2 transition-colors hover:border-border-strong hover:bg-white/[0.04] hover:text-fg-1"
                     >
                       {p}
                     </button>
@@ -155,7 +156,9 @@ export function AskPanel({ planId, lines }: { planId: string; lines: { id: strin
                     <span className="shimmer block h-4 w-4/5 rounded" />
                   </div>
                 ) : m.error ? (
-                  <p className="text-[13px] text-stockout">{m.error}</p>
+                  <p className="text-[13px] text-stockout">
+                    {m.error} <span className="text-fg-2">Check the connection, then ask again.</span>
+                  </p>
                 ) : (
                   <>
                     <div className="mb-2 flex flex-wrap items-center gap-2">

@@ -43,7 +43,7 @@ export function ApprovalLimitForm({ current }: { current: string }) {
           <ShieldCheck className="size-4" strokeWidth={1.6} aria-hidden />
         </span>
       </div>
-      <div className="display mt-5 text-[40px] leading-[44px] text-fg-1">{formatINR(current, { paise: false })}</div>
+      <div className="display num mt-5 text-[40px] leading-[44px] text-fg-1">{formatINR(current, { paise: false })}</div>
       <label htmlFor="approval-limit" className="micro-label mt-5">
         New limit (₹)
       </label>
@@ -54,7 +54,7 @@ export function ApprovalLimitForm({ current }: { current: string }) {
           value={value}
           onChange={(e) => setValue(e.target.value)}
           aria-invalid={!valid}
-          className="num h-10 min-w-0 flex-1 rounded-full border border-white/12 bg-white/[0.04] px-4 text-[14px] text-fg-1 outline-none focus:border-brand/60"
+          className="num h-10 min-w-0 flex-1 rounded-full border border-white/12 bg-white/[0.04] px-4 text-[14px] text-fg-1 focus-visible:border-brand/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
         />
         <button type="submit" disabled={!changed || saving} className="inline-flex h-10 items-center gap-2 rounded-full bg-white px-5 text-[13px] font-medium text-black hover:bg-white/90 disabled:opacity-40">
           {saving && <Loader2 className="size-4 animate-spin" aria-hidden />}

@@ -28,14 +28,14 @@ export default function DataPage() {
         <ScenarioSection />
       </Suspense>
       <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] gap-5 max-lg:grid-cols-1">
-        <Suspense fallback={<div className="surface shimmer h-[260px]" aria-hidden />}>
+        <Suspense fallback={<CardSkeleton rows={3} />}>
           <LimitSection />
         </Suspense>
-        <Suspense fallback={<div className="surface shimmer h-[260px]" aria-hidden />}>
+        <Suspense fallback={<CardSkeleton rows={6} grid />}>
           <SummarySection />
         </Suspense>
       </div>
-      <Suspense fallback={<div className="surface shimmer h-[300px]" aria-hidden />}>
+      <Suspense fallback={<CardSkeleton rows={3} grid />}>
         <ModelSection />
       </Suspense>
       <RoiModel />
@@ -164,6 +164,23 @@ function ScenarioSkeleton() {
       <div className="grid grid-cols-3 gap-4 max-xl:grid-cols-2 max-md:grid-cols-1">
         {[0, 1, 2, 3, 4].map((i) => (
           <div key={i} className="surface h-[220px]" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** A card-shaped placeholder: title, subtitle and rows of figures (in a 3-column grid when `grid`). */
+function CardSkeleton({ rows, grid = false }: { rows: number; grid?: boolean }) {
+  return (
+    <div className="surface space-y-5 p-6" aria-hidden>
+      <div className="space-y-2">
+        <span className="shimmer block h-5 w-44 rounded-full" />
+        <span className="shimmer block h-4 w-72 max-w-full rounded-full" />
+      </div>
+      <div className={grid ? "grid grid-cols-3 gap-5" : "space-y-3"}>
+        {Array.from({ length: rows }, (_, i) => (
+          <span key={i} className="shimmer block h-10 rounded-xl" />
         ))}
       </div>
     </div>

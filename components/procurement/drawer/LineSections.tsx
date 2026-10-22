@@ -64,7 +64,7 @@ export function StockSection({ detail }: { detail: LineDetail }) {
       </div>
       <div className="grid grid-cols-4 gap-4 px-1">
         <Figure label="Position" value={packs(stock.position)} note="available + incoming" />
-        <Figure label="Cover" value={stock.cover === null ? "—" : `${stock.cover.toFixed(1)} d`} note={`fastest delivery ${policy.leadFastest} d`} tone={short ? "stockout" : undefined} />
+        <Figure label="Cover" value={stock.cover === null ? "—" : `${stock.cover.toFixed(1)} d`} note={short ? `runs out before delivery (${policy.leadFastest} d)` : `fastest delivery ${policy.leadFastest} d`} tone={short ? "stockout" : undefined} />
         <Figure label="Reorder point" value={packs(policy.reorderPoint)} note="order below this" />
         <Figure label="Target" value={packs(policy.targetStock)} note="order up to this" />
       </div>
@@ -139,6 +139,8 @@ const FACTORS: { key: keyof NonNullable<OfferRow["factors"]>; label: string }[] 
 export function SupplierComparison({ offers }: { offers: OfferRow[] }) {
   return (
     <Section title="Supplier comparison" aside="Score = 0.45 cost + 0.25 lead + 0.20 reliability + 0.10 terms">
+      {offers.length === 0 && <p className="text-[12.5px] text-fg-2">No supplier has an offer for this SKU, so it cannot be bought until one is added.</p>}
+      <p className="text-[11.5px] text-fg-3">Offer prices are synthetic demo data, not real supplier quotes.</p>
       <ul className="space-y-2">
         {offers.map((o) => {
           const excluded = o.exclusions.length > 0;
@@ -181,7 +183,7 @@ export function SupplierComparison({ offers }: { offers: OfferRow[] }) {
                 </div>
               )}
               <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-fg-3">
-                <span>Quoted {formatDisplayDate(o.quotedAt)}</span>
+                <span>Offer dated {formatDisplayDate(o.quotedAt)}</span>
                 <span>Valid until {formatDisplayDate(o.validUntil)}</span>
                 {o.exclusions.map((c) => (
                   <span key={c} className="rounded border border-stockout/30 px-1.5 leading-4 text-stockout">
@@ -204,6 +206,7 @@ function Cell({ label, value, warn }: { label: string; value: string; warn?: boo
       <dd className={cn("num truncate font-medium", warn ? "text-stockout" : "text-fg-1")} title={warn ? "More than 20% above this SKU's other offers" : undefined}>
         {value}
       </dd>
+      {warn && <dd className="text-[10.5px] text-stockout">price anomaly</dd>}
     </div>
   );
 }

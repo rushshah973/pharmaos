@@ -13,6 +13,13 @@ const PAD = { top: 12, right: 44, bottom: 26, left: 4 };
  * fill), on one axis. Hover anywhere for that day's value. A single measure, so no legend: the labels say it.
  */
 export function DemandChart({ points }: { points: DemandPoint[] }) {
+  if (points.length < 2) {
+    return <p className="flex h-[180px] items-center justify-center text-[12.5px] text-fg-3">No sales history yet: the chart appears once there are daily sales.</p>;
+  }
+  return <Chart points={points} />;
+}
+
+function Chart({ points }: { points: DemandPoint[] }) {
   const box = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<number | null>(null);
 

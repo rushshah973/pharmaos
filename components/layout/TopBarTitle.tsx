@@ -11,7 +11,7 @@ export function Breadcrumb() {
   const item = navItemFor(pathname);
   if (item.href === "/" || pathname === item.href) return null;
   return (
-    <Link href={item.href} className="mb-4 inline-flex items-center gap-1 text-[12.5px] text-fg-3 transition-colors duration-150 hover:text-fg-1 print:hidden">
+    <Link href={item.href} className="inline-flex items-center gap-1 rounded-full text-[12.5px] text-fg-3 transition-colors duration-150 hover:text-fg-1 print:hidden">
       <ChevronLeft className="size-3.5" aria-hidden />
       {item.label}
     </Link>

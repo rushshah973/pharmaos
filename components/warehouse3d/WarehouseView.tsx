@@ -9,7 +9,9 @@ import dynamic from "next/dynamic";
 import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Box, Grid3x3, Loader2, PackageX, Rows3, TriangleAlert } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "cn";
+import { EmptyState } from "@/components/layout/EmptyState";
 import { HEATMAP_MODES, type HeatmapMode } from "@/lib/business-logic/heatmap";
 import type { HeatmapView, ProductSearchHit, WarehouseLayout } from "@/lib/services/warehouse";
 import { formatDisplayDate } from "@/lib/format/date";
@@ -139,7 +141,10 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
     if (!urlSku) return;
     const ctrl = new AbortController();
     fetch(`/api/products/search?q=${encodeURIComponent(urlSku)}`, { signal: ctrl.signal })
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((j: { results?: ProductSearchHit[] }) => {
         const hit = j.results?.find((h) => h.sku.toUpperCase() === urlSku.toUpperCase()) ?? null;
         setSearch(hit);
@@ -147,8 +152,11 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
           setSelectedBinId((cur) => cur ?? hit.bins[0].binId);
           setFocus({ binId: hit.bins[0].binId, nonce: Date.now() });
         }
+        if (!hit) toast.error(`${urlSku} was not found`, { description: "No active SKU has that code. Search for it by name or brand instead." });
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!ctrl.signal.aborted) toast.error(`Could not locate ${urlSku}`, { description: "The search did not answer. Try the search box again." });
+      });
     return () => ctrl.abort();
   }, [urlSku]);
 
@@ -244,7 +252,10 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
         </p>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      {layout.bins.length === 0 && (
+        <EmptyState icon={PackageX} title="No bins set up" description="The warehouse has no storage bins yet, so there is nothing to map. Reseed the demo data to create them." />
+      )}
+      <div className={cn("grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]", layout.bins.length === 0 && "hidden")}>
         <section className="surface min-w-0 p-5" aria-label="Warehouse map">
           <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             <h2 className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">

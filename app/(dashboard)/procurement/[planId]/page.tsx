@@ -55,8 +55,16 @@ async function Drawer({ params, searchParams }: Pick<PageProps<"/procurement/[pl
   }
   let payload: DrawerPayload = null;
   if (lineId) {
-    const detail = uuid.safeParse(lineId).success ? await getLineDetail(planId, lineId).catch(() => null) : null;
-    payload = { lineId, detail };
+    let failed = false;
+    const detail = uuid.safeParse(lineId).success
+      ? await getLineDetail(planId, lineId).catch((err) => {
+          // A missing line is "not found"; anything else is a failure the drawer reports as one.
+          failed = !(err instanceof ServiceError && err.status === 404);
+          if (failed) console.error("[line drawer]", err);
+          return null;
+        })
+      : null;
+    payload = { lineId, detail, failed };
   }
   const locked = plan.status === "approved" || plan.status === "rejected";
   return <LineDrawer planId={planId} payload={payload} planTotal={plan.proposedTotal} supplierPos={plan.supplierPos} locked={locked} />;

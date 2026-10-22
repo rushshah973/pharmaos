@@ -84,8 +84,16 @@ function Card({ s, hero, latestPlanId }: { s: CriticalSku; hero: boolean; latest
           <Marker at={out} className="bg-white" label="Runs out" />
           <Marker at={lead} className="bg-brand" label="Delivery" />
         </div>
-        <div className="mt-1 flex justify-between text-[10.5px] tracking-[0.04em] text-fg-3 uppercase" aria-hidden>
+        <div className="mt-1 flex items-center justify-between gap-2 text-[10.5px] tracking-[0.04em] text-fg-3 uppercase" aria-hidden>
           <span>Today</span>
+          <span className="flex items-center gap-2.5 normal-case">
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-[3px] rounded-full bg-white" /> runs out
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-[3px] rounded-full bg-brand" /> delivery
+            </span>
+          </span>
           <span>{Math.round(span)} d</span>
         </div>
         <span className="sr-only">

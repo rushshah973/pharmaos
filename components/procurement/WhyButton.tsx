@@ -47,7 +47,9 @@ export function WhyButton({ planId, lineId, sku }: { planId: string; lineId: str
             <span className="shimmer block h-4 w-3/5 rounded" />
           </div>
         ) : state.status === "error" ? (
-          <p className="text-stockout">{state.text}</p>
+          <p className="text-stockout">
+            {state.text} <span className="text-fg-2">Close this and try Why? again.</span>
+          </p>
         ) : (
           <>
             <div className="flex items-center gap-2">

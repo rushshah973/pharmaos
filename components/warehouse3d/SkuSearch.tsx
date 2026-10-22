@@ -12,6 +12,7 @@ export function SkuSearch({ selected, onPick, onClear }: { selected: ProductSear
   const [q, setQ] = useState("");
   const [results, setResults] = useState<ProductSearchHit[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const box = useRef<HTMLDivElement>(null);
@@ -23,13 +24,19 @@ export function SkuSearch({ selected, onPick, onClear }: { selected: ProductSear
     const t = setTimeout(() => {
       setLoading(true);
       fetch(`/api/products/search?q=${encodeURIComponent(term)}`, { signal: ctrl.signal })
-        .then((r) => r.json())
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
         .then((j: { results?: ProductSearchHit[] }) => {
           setResults(j.results ?? []);
+          setFailed(false);
           setActive(0);
         })
         .catch(() => {
-          if (!ctrl.signal.aborted) setResults([]);
+          if (ctrl.signal.aborted) return;
+          setResults([]);
+          setFailed(true);
         })
         .finally(() => {
           if (!ctrl.signal.aborted) setLoading(false);
@@ -106,7 +113,11 @@ export function SkuSearch({ selected, onPick, onClear }: { selected: ProductSear
           role="listbox"
           className="absolute top-[calc(100%+6px)] right-0 z-30 max-h-80 w-full min-w-[320px] overflow-auto rounded-lg border border-border-strong bg-surface-2 p-1 shadow-[var(--shadow-pop)]"
         >
-          {shown.length === 0 && <li className="px-3 py-2.5 text-[12.5px] text-fg-3">No active SKU matches “{q.trim()}”.</li>}
+          {shown.length === 0 && (
+            <li className={cn("px-3 py-2.5 text-[12.5px]", failed ? "text-stockout" : "text-fg-3")}>
+              {failed ? "The search did not answer. Check the connection and type again." : `No active SKU matches “${q.trim()}”.`}
+            </li>
+          )}
           {shown.map((h, i) => (
             <li key={h.productId} role="option" aria-selected={i === active}>
               <button

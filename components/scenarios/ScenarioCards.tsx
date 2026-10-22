@@ -116,6 +116,9 @@ export function ScenarioCards({ scenarios, active, latestPlanId }: { scenarios: 
         </div>
       )}
 
+      {scenarios.length === 0 && (
+        <p className="surface px-5 py-6 text-fg-2">No scenarios are set up. Run the database migrations (npm run db:migrate) to add the five demo scenarios.</p>
+      )}
       <div className="grid grid-cols-5 gap-4 max-xl:grid-cols-3 max-lg:grid-cols-2 max-md:grid-cols-1">
         {scenarios.map((s) => {
           const Icon = ICON[s.id as keyof typeof ICON] ?? PackageMinus;

@@ -16,7 +16,8 @@ import { EditPanel } from "./EditPanel";
 import { requestLine, useRequestedLine } from "./line-store";
 import { BatchesTable, FormulaPanel, Section, StockSection, SupplierComparison } from "./LineSections";
 
-export type DrawerPayload = { lineId: string; detail: LineDetail | null } | null;
+/** `failed`: the line could not be read (database), as opposed to a line that is not in the plan. */
+export type DrawerPayload = { lineId: string; detail: LineDetail | null; failed?: boolean } | null;
 
 const CRITICALITY: Record<string, string> = { life_saving: "Life-saving", chronic: "Chronic", acute: "Acute", otc: "OTC" };
 const STORAGE: Record<string, string> = { ambient: "Ambient", cool: "Cool (8–15 °C)", cold_chain: "Cold chain (2–8 °C)" };
@@ -66,9 +67,13 @@ export function LineDrawer({
         {!ready ? (
           <DrawerSkeleton />
         ) : payload.detail === null ? (
-          <div className="p-6">
-            <SheetTitle className="text-[15px] font-semibold text-fg-1">Line not found</SheetTitle>
-            <SheetDescription className="mt-1 text-fg-2">This line is not part of this plan any more. Close the panel and pick another line.</SheetDescription>
+          <div className="p-6" role={payload.failed ? "alert" : undefined}>
+            <SheetTitle className="text-[15px] font-semibold text-fg-1">{payload.failed ? "This line could not load" : "Line not found"}</SheetTitle>
+            <SheetDescription className="mt-1 text-fg-2">
+              {payload.failed
+                ? "The database did not answer in time. Close the panel and open the line again; if it keeps failing, check the connection."
+                : "This line is not part of this plan any more. Close the panel and pick another line."}
+            </SheetDescription>
           </div>
         ) : (
           <DrawerBody planId={planId} detail={payload.detail} planTotal={planTotal} supplierPos={supplierPos} locked={locked} />

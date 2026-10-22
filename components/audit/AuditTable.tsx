@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/format/date";
@@ -56,10 +57,15 @@ export function AuditTable({ initial }: { initial: Row[] }) {
       if (next.entity) q.set("entity", next.entity);
       if (before) q.set("before", before);
       const res = await fetch(`/api/audit?${q}`);
-      const { rows: got } = (await res.json()) as { rows: Record<string, unknown>[] };
-      const mapped = got.map(toView);
+      const json = (await res.json().catch(() => null)) as { rows?: Record<string, unknown>[]; error?: { message?: string } } | null;
+      if (!res.ok || !json?.rows) throw new Error(json?.error?.message ?? `The activity log did not load (HTTP ${res.status}).`);
+      const mapped = json.rows.map(toView);
       setRows((r) => (before ? [...r, ...mapped] : mapped));
       setEnd(mapped.length < 50);
+    } catch (err) {
+      toast.error(before ? "Could not load more activity" : "Could not apply the filter", {
+        description: `${err instanceof Error ? err.message : "Check the connection."} The rows shown are unchanged; try again.`,
+      });
     } finally {
       setLoading(false);
     }
@@ -74,8 +80,8 @@ export function AuditTable({ initial }: { initial: Row[] }) {
   return (
     <section className="surface overflow-hidden" aria-label="Activity log">
       <header className="flex flex-wrap items-center gap-2 px-5 pt-5 pb-4">
-        <Select value={action} options={ACTIONS} onChange={(v) => change({ action: v, entity })} label="Action" />
-        <Select value={entity} options={ENTITIES} onChange={(v) => change({ action, entity: v })} label="Entity" />
+        <Select value={action} options={ACTIONS} onChange={(v) => change({ action: v, entity })} label="Action" disabled={loading} />
+        <Select value={entity} options={ENTITIES} onChange={(v) => change({ action, entity: v })} label="Entity" disabled={loading} />
         {loading && <Loader2 className="size-4 animate-spin text-fg-3" aria-label="Loading" />}
         <span className="ml-auto text-[12px] text-fg-3">Append-only: rows can never be edited or deleted</span>
       </header>
@@ -93,8 +99,11 @@ export function AuditTable({ initial }: { initial: Row[] }) {
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-5 py-10 text-center text-fg-2">
-                  No activity matches these filters.
+                <td colSpan={6} className="px-5 py-12 text-center">
+                  <p className="text-fg-1">{action || entity ? "No activity matches these filters" : "No activity yet"}</p>
+                  <p className="mt-1 text-[12.5px] text-fg-2">
+                    {action || entity ? "Choose All actions and All entities to see everything." : "Create a purchase plan: every plan, edit, approval and send is recorded here."}
+                  </p>
                 </td>
               </tr>
             )}
@@ -140,14 +149,15 @@ export function AuditTable({ initial }: { initial: Row[] }) {
   );
 }
 
-function Select({ value, options, onChange, label }: { value: string; options: { id: string; label: string }[]; onChange: (v: string) => void; label: string }) {
+function Select({ value, options, onChange, label, disabled }: { value: string; options: { id: string; label: string }[]; onChange: (v: string) => void; label: string; disabled?: boolean }) {
   return (
     <label className="inline-flex items-center gap-2">
       <span className="sr-only">{label}</span>
       <select
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className="h-8 rounded-md border border-border-strong bg-surface-2 px-2 text-[12.5px] text-fg-1"
+        className="h-8 rounded-full border border-border-strong bg-surface-2 px-3 text-[12.5px] text-fg-1 disabled:opacity-60"
       >
         {options.map((o) => (
           <option key={o.id} value={o.id}>

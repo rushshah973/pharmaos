@@ -144,6 +144,8 @@ export default function Scene3D(props: Scene3DProps) {
     <div
       ref={box}
       tabIndex={0}
+      role="application"
+      aria-roledescription="3D warehouse view"
       onKeyDown={onKey}
       onPointerDown={() => box.current?.focus({ preventScroll: true })}
       onPointerLeave={() => setHover(null)}
@@ -213,6 +215,7 @@ export default function Scene3D(props: Scene3DProps) {
               key={k}
               type="button"
               onClick={() => go(k)}
+              aria-pressed={shot.kind === k}
               className={cn(
                 "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition-colors duration-150",
                 shot.kind === k ? "bg-white/12 text-fg-1" : "text-fg-3 hover:text-fg-1",

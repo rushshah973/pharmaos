@@ -10,7 +10,7 @@ export function DataSourceBadge({ compact = false, className }: { compact?: bool
         compact ? "size-7 justify-center" : "h-6 px-2.5",
         className,
       )}
-      title="All records are generated synthetic demo data, shaped by public reference sources."
+      title="Every record and every supplier price is generated synthetic demo data, shaped by public reference sources. Nothing here is real customer data or a real quote."
     >
       <FlaskConical className="size-3.5" strokeWidth={1.75} aria-hidden />
       {compact ? <span className="sr-only">Synthetic demo data</span> : "Synthetic demo data"}

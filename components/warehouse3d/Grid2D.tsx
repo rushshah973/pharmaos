@@ -29,7 +29,7 @@ export function Grid2D({
   const aisles = [...new Set(bins.map((b) => b.aisle))].sort();
 
   return (
-    <div className="space-y-5" role="grid" aria-label={`Warehouse bins coloured by ${mode.label}`}>
+    <div className="space-y-5" role="group" aria-label={`Warehouse bins coloured by ${mode.label}`}>
       {aisles.map((aisle) => {
         const inAisle = bins.filter((b) => b.aisle === aisle);
         const classes = [...new Set(inAisle.map((b) => b.storageClass))];
@@ -47,7 +47,7 @@ export function Grid2D({
               <ShelfAxis />
               {(["L", "R"] as const).map((side, i) => (
                 <div key={side} className={cn("min-w-0 flex-1", i === 1 && "border-l border-dashed border-border pl-3")}>
-                  <div className="grid grid-cols-6 gap-1" role="row">
+                  <div className="grid grid-cols-6 gap-1" role="group" aria-label={`Aisle ${aisle}, side ${side}`}>
                     {SHELVES.flatMap((shelf) =>
                       RACKS.map((rack) => {
                         const bin = at.get(`${aisle}-${side}-${rack}-${shelf}`);
@@ -115,8 +115,7 @@ function Cell({
   return (
     <button
       type="button"
-      role="gridcell"
-      aria-selected={selected}
+      aria-pressed={selected}
       aria-label={`${bin.binCode}: ${label}${match ? " · search match" : ""}`}
       onClick={() => onSelect(bin.id)}
       style={inactive ? undefined : severityStyle(mode.tone, severity)}

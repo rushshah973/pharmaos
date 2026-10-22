@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { RotateCcw } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
+import { formatINR } from "@/lib/money";
 
 /**
  * The business case (problemstatement.md §11) as an editable, illustrative model: every assumption is a slider
@@ -53,11 +54,12 @@ const FIELDS: { key: Key; label: string; min: number; max: number; step: number;
 
 const GROUPS = ["Expiry write-off", "Lost sales", "Working capital", "Purchasing time"];
 
-/** "₹4.5 L" / "₹1.2 Cr": the scale the business case is read in. */
+/** "₹4.5 L" / "₹1.2 Cr": the scale the business case is read in (the exact amount is in `exact`). */
 function lakh(rupees: number): string {
   if (Math.abs(rupees) >= 1e7) return `₹${(rupees / 1e7).toFixed(2)} Cr`;
   return `₹${(rupees / 1e5).toFixed(1)} L`;
 }
+const exact = (rupees: number) => formatINR(Math.round(rupees), { paise: false });
 
 export function RoiModel() {
   const [a, setA] = useState(DEFAULTS);
@@ -95,7 +97,9 @@ export function RoiModel() {
             <fieldset key={GROUPS[gi]} className="space-y-4">
               <legend className="mb-3 flex w-full items-baseline justify-between">
                 <span className="micro-label">{GROUPS[gi]}</span>
-                <span className="num text-[13px] text-fg-1">{lakh(r.values[gi])} / yr</span>
+                <span className="num text-[13px] text-fg-1" title={`${exact(r.values[gi])} a year`}>
+                  {lakh(r.values[gi])} / yr
+                </span>
               </legend>
               {group.map((f) => (
                 <div key={f.key}>
@@ -114,13 +118,17 @@ export function RoiModel() {
 
         <aside className="surface-warm flex flex-col p-6">
           <p className="micro-label text-white/60">Annual value</p>
-          <p className="display mt-2 text-[48px] leading-[52px] text-white">{lakh(r.annual)}</p>
+          <p className="display num mt-2 text-[48px] leading-[52px] text-white" title={`${exact(r.annual)} a year`}>
+            {lakh(r.annual)}
+          </p>
           <p className="mt-1 text-[12.5px] text-white/60">a year, plus {lakh(r.released)} of cash released once from inventory</p>
           <ul className="mt-6 space-y-2 text-[12.5px]">
             {GROUPS.map((g, i) => (
               <li key={g} className="flex justify-between gap-3 border-b border-white/10 pb-2 last:border-0">
                 <span className="text-white/70">{g}</span>
-                <span className="num text-white">{lakh(r.values[i])}</span>
+                <span className="num text-white" title={exact(r.values[i])}>
+                  {lakh(r.values[i])}
+                </span>
               </li>
             ))}
           </ul>
@@ -129,7 +137,7 @@ export function RoiModel() {
               <label id="roi-subscription" className="text-white/70">
                 Subscription
               </label>
-              <span className="num text-white">₹{a.subscriptionPerMonth.toLocaleString("en-IN")} / month</span>
+              <span className="num text-white">{formatINR(a.subscriptionPerMonth, { paise: false })} / month</span>
             </div>
             <Slider aria-labelledby="roi-subscription" min={1000} max={50000} step={500} value={[a.subscriptionPerMonth]} onValueChange={set("subscriptionPerMonth")} />
             <p className="mt-4 text-[13px] text-white">

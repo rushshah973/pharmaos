@@ -3,7 +3,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { ArrowLeft } from "lucide-react";
 import { ErrorState } from "@/components/layout/ErrorState";
 import { PoActions } from "@/components/purchase-orders/PoActions";
 import { PoStatusPill } from "@/components/purchase-orders/PoStatusPill";
@@ -18,7 +17,7 @@ export const metadata: Metadata = { title: "Purchase order" };
 
 export default function PoPage({ params }: PageProps<"/purchase-orders/[poId]">) {
   return (
-    <Suspense fallback={<div className="surface shimmer h-[640px]" aria-hidden />}>
+    <Suspense fallback={<PoSkeleton />}>
       <Po params={params} />
     </Suspense>
   );
@@ -42,10 +41,8 @@ async function Po({ params }: { params: PageProps<"/purchase-orders/[poId]">["pa
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <Link href="/purchase-orders" className="inline-flex items-center gap-1.5 text-[12.5px] text-fg-2 hover:text-fg-1">
-          <ArrowLeft className="size-3.5" aria-hidden /> All purchase orders
-        </Link>
+      {/* The back link to all purchase orders is the shell's breadcrumb, above. */}
+      <div className="flex flex-wrap items-center justify-end gap-3 print:hidden">
         <PoActions poId={po.id} poNumber={po.poNumber} status={po.status} pharmaos={pharmaos} />
       </div>
 
@@ -66,6 +63,9 @@ async function Po({ params }: { params: PageProps<"/purchase-orders/[poId]">["pa
             <h1 className="mt-1 font-mono text-[22px] leading-7 font-semibold text-fg-1">{po.poNumber}</h1>
             <div className="mt-2 flex items-center gap-2">
               <PoStatusPill status={po.status} />
+              <span className="rounded-full border border-white/12 px-2 text-[11px] leading-5 text-fg-2" title="This record's data_source">
+                {DATA_SOURCE[po.dataSource] ?? po.dataSource}
+              </span>
               {!pharmaos && <span className="text-[12px] text-fg-3">Earlier purchase (before PharmaOS) · reference only</span>}
             </div>
           </div>
@@ -88,7 +88,7 @@ async function Po({ params }: { params: PageProps<"/purchase-orders/[poId]">["pa
             <p className="mt-1 font-medium text-fg-1">
               {po.supplierName} <span className="font-mono text-[12.5px] text-fg-2">{po.supplierCode}</span>
             </p>
-            <p className="text-[12.5px] text-fg-2">Approved supplier · quote prices</p>
+            <p className="text-[12.5px] text-fg-2">Approved supplier · prices from its synthetic demo offer, not a real quote</p>
           </div>
         </section>
 
@@ -186,6 +186,37 @@ function Total({ label, value }: { label: string; value: string }) {
     <div className="flex items-baseline justify-between">
       <dt className="text-fg-2">{label}</dt>
       <dd className="num text-fg-1">{formatINR(value)}</dd>
+    </div>
+  );
+}
+
+const DATA_SOURCE: Record<string, string> = {
+  synthetic_demo: "Synthetic demo data",
+  public_reference: "Public reference",
+  unverified_sample: "Unverified sample",
+  verified_customer_data: "Verified customer data",
+};
+
+/** Shaped like the PO document: header, the two parties, the lines table and the totals. */
+function PoSkeleton() {
+  return (
+    <div className="surface space-y-6 p-8" aria-hidden>
+      <div className="flex justify-between gap-6">
+        <div className="space-y-2">
+          <span className="shimmer block h-4 w-28 rounded-full" />
+          <span className="shimmer block h-7 w-56 rounded-lg" />
+          <span className="shimmer block h-6 w-40 rounded-full" />
+        </div>
+        <span className="shimmer block h-20 w-64 rounded-xl" />
+      </div>
+      <div className="grid gap-6 md:grid-cols-2">
+        <span className="shimmer block h-16 rounded-xl" />
+        <span className="shimmer block h-16 rounded-xl" />
+      </div>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <span key={i} className="shimmer block h-10 rounded-lg" />
+      ))}
+      <span className="shimmer ml-auto block h-24 w-72 rounded-xl" />
     </div>
   );
 }
