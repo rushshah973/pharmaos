@@ -288,6 +288,10 @@ export function injectDemoCases(data: SyntheticDataset, seed = 42): DemoCases {
     for (const o of offers.slice(1)) {
       o.lead_time_days = rng.int(1, 2);
       o.available_qty = Math.max(o.available_qty, 1000);
+      // No free-goods scheme on the faster offers: a scheme can make one of them cheapest per pack, and then
+      // nothing cheaper was skipped for speed.
+      o.scheme_paid_qty = null;
+      o.scheme_free_qty = null;
       // Keep the slow offer clearly cheapest (≥ 3% gap) after freight and GST.
       const floor = effectiveCostApprox(offers[0]) * 1.03;
       if (effectiveCostApprox(o) < floor) {
