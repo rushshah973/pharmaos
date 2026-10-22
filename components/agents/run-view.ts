@@ -102,7 +102,7 @@ export function decisions(run: RunWithSteps, agent: AgentName): DecisionRow[] {
         const method = label(i.method);
         const before = obj(o.before);
         const after = obj(o.after);
-        decision = accepted && o.changed ? `${label(before.method)} → ${label(after.method)} · ${before.qty} → ${after.qty} packs` : `${method}${accepted ? " · no change" : ""}`;
+        decision = accepted && o.changed ? `${before.method ? `${label(before.method)} → ` : ""}${label(after.method ?? i.method)} · ${before.qty} → ${after.qty} packs` : `${method}${accepted ? " · no change" : ""}`;
       } else {
         decision = accepted && o.changed ? `${o.from ?? "—"} → ${o.to}` : accepted ? `Keep ${o.supplierCode ?? "offer"}` : `Offer ${String(i.offerId ?? "").slice(0, 8)}`;
       }
