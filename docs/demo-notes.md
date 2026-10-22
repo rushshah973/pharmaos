@@ -89,9 +89,9 @@ the projected stockout.
   **527%** against the average's **189%**, and it uses the **average**. Say: "Where ML doesn't beat the simple
   average, we say so and use the average."
 
-**If it fails:** "Why?" waits for Gemini and on 22 Oct took up to **98 seconds** before answering with the
-calculated explanation. If it spins, close it and read the reason chips and the supplier table in the drawer; they
-are calculated and need no AI.
+**If it fails:** "Why?" waits at most about **15 seconds** for Gemini, then shows the calculated explanation (the
+same reasons, without AI). If Gemini is overloaded, that is what you will see; say "the AI is busy, so PharmaOS shows
+the calculated reason", which is the designed fallback.
 
 ## 4. (1:30) Edit a line
 
@@ -156,7 +156,8 @@ up the active scenario.
   - **PHX-0331 Bexocort 0.05**: ML → average (390 → 380), "Baseline has lower WAPE (0.2076 vs 0.2343)";
   - **PHX-0115 Vexolin 500**: ML → average (545 → 545), average error 52% vs ML 56%.
 - **Supplier Agent** can only pick an offer that passes every check. In the rehearsal it switched PHX-0355 from SUP-06
-  to SUP-02 and kept 14 lines.
+  to SUP-02 and kept 14 lines; that switch cut the order from 880 to 15 packs and is now refused by a guardrail
+  (`QTY_CUT_TOO_FAR`), so expect it as a rejected decision instead.
 - **Order Agent** validates the lines and creates POs through the same approval service as the Approve button:
   **Ready** up to ₹10,00,000, **Pending approval** above it. It cannot send or Owner-approve.
 
@@ -229,7 +230,8 @@ sent, which mirrors how stockists approve large orders. The Owner can change the
 
 ## Known issues seen in rehearsal (22 Oct 2026)
 
-- **Gemini latency.** "Why?" took 98 s and an agent run took 277 s; the Order Agent timed out once. The fallbacks
-  worked as designed, but a demo should not wait on them.
-- **Supplier Agent quantity drop.** On the surge plan it switched PHX-0355 to SUP-02's offer, which cut the line from
-  880 to 15 packs. The guardrail allowed it because the offer is valid. Worth tightening before relying on it live.
+- **Gemini latency.** An agent run took 277 s and the Order Agent timed out once. "Why?" and Ask PharmaOS now fall
+  back to the calculated answer within about 15 s (fixed after the rehearsal; it was 98 s).
+- **Supplier Agent quantity drop (fixed).** In the rehearsal it switched PHX-0355 to SUP-02's top-up offer, cutting the
+  line from 880 to 15 packs. Such a switch is now refused (`QTY_CUT_TOO_FAR`, shown as a rejected decision in the
+  trace) and the line keeps its offer.
