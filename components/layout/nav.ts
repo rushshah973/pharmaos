@@ -12,7 +12,7 @@ export type NavItem = { href: string; label: string; icon: LucideIcon };
 
 // The six dashboard sections (implementationplan.md §10.2).
 export const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Today", icon: LayoutDashboard },
+  { href: "/", label: "Command Center", icon: LayoutDashboard },
   { href: "/procurement", label: "Plans", icon: ClipboardList },
   { href: "/warehouse", label: "Warehouse", icon: Boxes },
   { href: "/purchase-orders", label: "Orders", icon: FileText },
