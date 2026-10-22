@@ -78,6 +78,8 @@ export async function runAgentLoop<R>(args: {
   hedgeAfterMs?: number;
   /** Epoch ms by which the whole run must finish; the agent falls back instead of starting a call it cannot finish. */
   deadline?: number;
+  /** Read tools our code runs before the first model call; their results go into the first message. */
+  briefing?: { tool: string; args: Record<string, unknown> }[];
 }): Promise<AgentOutcome<R>> {
   const { agent, client, model, systemPrompt, userMessage, tools, terminal, log } = args;
   const byName = new Map(tools.map((t) => [t.name, t]));
@@ -89,10 +91,37 @@ export async function runAgentLoop<R>(args: {
   const models = modelChain(model);
   let active = 0;
 
+  async function runTool(name: string | undefined, input: unknown): Promise<ToolResult<unknown>> {
+    const tool = name ? byName.get(name) : undefined;
+    if (!tool) return toolError("INVALID_TOOL_INPUT", `Unknown tool ${name ?? ""}. Only these tools exist: ${[...byName.keys(), terminal.name].join(", ")}.`);
+    const parsed = tool.schema.safeParse(input ?? {});
+    if (!parsed.success) return toolError("INVALID_TOOL_INPUT", issues(parsed.error));
+    try {
+      return toolOk(await tool.handler(parsed.data as never));
+    } catch (err) {
+      if (!(err instanceof ServiceError)) console.error(`[agent ${agent} ${name}]`, err);
+      return err instanceof ServiceError ? toolError(err.code, err.message) : toolError("TOOL_FAILED", "The tool failed while reading data.");
+    }
+  }
+
   const fallback = async (reason: string, turns: number): Promise<AgentOutcome<R>> => {
     await log.add({ agent, kind: "fallback", output: { reason }, ok: false });
     return { status: "fallback", reason, turns };
   };
+
+  // The briefing: our code runs the agent's read tools first and hands the results over in the first message, so the
+  // agent can decide in one call instead of one call per tool (a run used 30–70 requests; the free tier allows 20 a
+  // day per model). Each briefing call is logged like any tool call, so the trace shows the evidence used.
+  if (args.briefing?.length) {
+    const lines: string[] = [];
+    for (const b of args.briefing) {
+      const t0 = performance.now();
+      const result = await runTool(b.tool, b.args);
+      await log.add({ agent, kind: "tool_call", toolName: b.tool, input: { ...b.args, briefing: true }, output: result, ok: result.ok, ms: Math.round(performance.now() - t0) });
+      lines.push(`${b.tool}(${JSON.stringify(b.args)}) → ${JSON.stringify(result)}`);
+    }
+    contents[0] = { role: "user", parts: [{ text: `${userMessage}\n\nEvidence already gathered for you (one tool result per line):\n${lines.join("\n")}` }] };
+  }
 
   for (let turn = 1; turn <= MAX_TURNS; turn++) {
     let response: ModelResponse;
@@ -168,21 +197,7 @@ export async function runAgentLoop<R>(args: {
           }
         }
       } else {
-        const tool = call.name ? byName.get(call.name) : undefined;
-        if (!tool) {
-          result = toolError("INVALID_TOOL_INPUT", `Unknown tool ${call.name ?? ""}. Only these tools exist: ${[...byName.keys(), terminal.name].join(", ")}.`);
-        } else {
-          const parsed = tool.schema.safeParse(call.args ?? {});
-          if (!parsed.success) result = toolError("INVALID_TOOL_INPUT", issues(parsed.error));
-          else {
-            try {
-              result = toolOk(await tool.handler(parsed.data as never));
-            } catch (err) {
-              result = err instanceof ServiceError ? toolError(err.code, err.message) : toolError("TOOL_FAILED", "The tool failed while reading data.");
-              if (!(err instanceof ServiceError)) console.error(`[agent ${agent} ${call.name}]`, err);
-            }
-          }
-        }
+        result = await runTool(call.name, call.args);
       }
       const ms = Math.round(performance.now() - t0);
       await log.add({ agent, kind: "tool_call", toolName: call.name ?? "?", input: call.args ?? {}, output: result, ok: result.ok, ms });

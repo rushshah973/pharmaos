@@ -12,10 +12,11 @@ import { type AgentOutcome, type AgentTool, runAgentLoop } from "./loop";
 
 const SYSTEM = `You are the Demand Agent in PharmaOS, a procurement system for an Indian pharmaceutical stockist.
 For each SKU you are given, decide which daily-demand forecast the purchase plan should use: "ml" (the ridge-regression
-model) or "baseline" (0.6 × 7-day average + 0.4 × 28-day average).
+model blended with the average) or "baseline" (the trend-aware moving average).
 Rules:
-- Look at the evidence with get_demand_forecasts (both forecasts, both measured errors on the last 14 days, the default
-  rule's choice, demand flags) and, when useful, get_sales_history and get_inventory_position.
+- The message already holds get_demand_forecasts for every SKU (both forecasts, both measured errors on the last 14
+  days, the default rule's choice, demand flags). Decide from it and call submit_demand_decisions right away; use
+  get_sales_history or get_inventory_position only if a decision really needs more.
 - You choose a METHOD only. Never send a number: the system takes the daily demand from the method you choose.
 - Prefer the method with the lower measured error; prefer "baseline" when the recent history is a one-off spike, when
   ML is missing, or when the evidence is unclear. Give a short reason (at least 10 characters) that cites the evidence.
@@ -115,6 +116,7 @@ export function runDemandAgent(ctx: RunContext): Promise<AgentOutcome<DemandSumm
     systemPrompt: SYSTEM,
     userMessage: `Decide the forecast method for each of these SKUs (plan ${ctx.planId}, as of ${ctx.asOf}):\n${runLinesText(ctx)}`,
     tools: demandTools(ctx),
+    briefing: ctx.lines.map((l) => ({ tool: "get_demand_forecasts", args: { sku: l.sku } })),
     terminal: {
       name: "submit_demand_decisions",
       description: "Submit one decision per SKU: { sku, method: 'ml' | 'baseline', reason }. Methods only, never numbers.",

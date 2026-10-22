@@ -16,6 +16,9 @@ import { type ModelClient, type ModelResponse, runAgentLoop } from "@/lib/agents
 import { applySupplierDecisions } from "@/lib/agents/pipeline/supplier-agent";
 import { BACKUP_GEMINI_MODEL, hedged } from "@/lib/agents/retry";
 
+// One backup model, so the call counts below stay small; the chain itself is tested separately.
+process.env.GEMINI_BACKUP_MODELS = BACKUP_GEMINI_MODEL;
+
 type Call = { id: string; name: string; args: Record<string, unknown> };
 const response = (calls: Call[], finishReason = "STOP"): ModelResponse => ({
   candidates: [{ content: { role: "model", parts: calls.map((c) => ({ functionCall: c, thoughtSignature: `sig-${c.id}` })) }, finishReason }],
@@ -147,6 +150,18 @@ describe("F11 shared agent loop", () => {
     const out = await runAgentLoop({ agent: "demand", client, model: "primary-model", systemPrompt: "s", userMessage: "u", tools: [], terminal, log: sink, deadline: Date.now() + 1_000 });
     expect(out).toMatchObject({ status: "fallback", reason: expect.stringContaining("ran out of time") });
     expect(seen).toHaveLength(0);
+  });
+
+  it("runs the briefing tools first, logs them, and puts their results in the first message", async () => {
+    const { client, seen } = fake([response([{ id: "t", name: "submit_test", args: { value: "ok" } }])]);
+    const { steps, sink } = memoryLog();
+    const out = await runAgentLoop({ agent: "demand", client, model: "primary-model", systemPrompt: "s", userMessage: "decide", tools: [echo], terminal, log: sink, retryDelaysMs: [0, 0], briefing: [{ tool: "echo", args: { x: 7 } }] });
+    expect(out.status).toBe("done");
+    expect(seen).toHaveLength(1); // one model call: the evidence was already there
+    expect(steps[0]).toMatchObject({ kind: "tool_call", toolName: "echo", ok: true });
+    const first = seen[0][0].parts?.[0]?.text ?? "";
+    expect(first).toContain("decide");
+    expect(first).toContain('echo({"x":7})');
   });
 
   it("does not retry a non-transient error (e.g. 400 bad request)", async () => {

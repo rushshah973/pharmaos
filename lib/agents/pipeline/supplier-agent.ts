@@ -15,9 +15,10 @@ import { type AgentOutcome, type AgentTool, runAgentLoop } from "./loop";
 const SYSTEM = `You are the Supplier Agent in PharmaOS, a procurement system for an Indian pharmaceutical stockist.
 For each SKU you are given, decide which supplier offer the purchase plan should buy from.
 Rules:
-- Use compare_supplier_offers for each SKU: it shows every offer for the forecast the Demand Agent chose, with exclusion
-  codes, quantity, landed cost, lead time, score and the offer the plan uses now. Use get_po_projection and
-  get_approval_limit to see each supplier's purchase order total and the Owner approval limit.
+- The message already holds compare_supplier_offers for every SKU (every offer for the forecast the Demand Agent chose,
+  with exclusion codes, quantity, landed cost, lead time, score and the offer the plan uses now) and get_po_projection
+  (each supplier's purchase order total and the Owner approval limit). Decide from it and call
+  submit_supplier_decisions right away.
 - Only choose an offer with no exclusion codes. Keep the current offer unless another one is clearly better: it avoids a
   stockout, costs less, consolidates SKUs onto one supplier, or keeps a supplier PO at or below the Owner approval limit.
 - Never switch to an offer whose quantity is less than half of the line's current quantity (small top-up offers):
@@ -176,6 +177,7 @@ export function runSupplierAgent(ctx: RunContext): Promise<AgentOutcome<Supplier
     systemPrompt: SYSTEM,
     userMessage: `Choose the supplier offer for each of these SKUs (plan ${ctx.planId}, as of ${ctx.asOf}):\n${runLinesText(ctx)}`,
     tools: supplierTools(ctx),
+    briefing: [{ tool: "get_po_projection", args: {} }, ...ctx.lines.map((l) => ({ tool: "compare_supplier_offers", args: { sku: l.sku } }))],
     terminal: {
       name: "submit_supplier_decisions",
       description: "Submit one decision per SKU: { sku, offerId, reason }. Use the current offer id to keep it.",

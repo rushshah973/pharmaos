@@ -14,9 +14,11 @@ import { type AgentOutcome, type AgentTool, runAgentLoop } from "./loop";
 const SYSTEM = `You are the Order Agent in PharmaOS, a procurement system for an Indian pharmaceutical stockist.
 Your job: turn this run's plan lines into purchase orders.
 Rules:
-- Call get_plan, then validate_po for the run's line ids. Lines with hard stops cannot be ordered: skip them and say why.
-- Call create_purchase_orders ONCE with every line that passed validate_po. The system groups them into one purchase
-  order per supplier; a PO above the Owner approval limit waits for the Owner.
+- The message already holds get_plan (this run's lines now) and validate_po (hard stops per line).
+- In ONE reply, call create_purchase_orders with every run line that is still proposed or edited, counted in the plan,
+  not on a PO yet and has no hard stop; then call submit_order_summary with created = [] (the system records the real
+  POs) and each skipped SKU with its reason. The system groups lines into one purchase order per supplier; a PO above
+  the Owner approval limit waits for the Owner.
 - You cannot send purchase orders, approve them for the Owner, reject the plan or change the approval limit.
 - Finish by calling submit_order_summary exactly once with the created PO ids and the skipped SKUs with reasons.`;
 
@@ -99,6 +101,14 @@ export async function applyOrderSummary(ctx: RunContext, summary: unknown): Prom
   const parsed = orderSummary.safeParse(summary);
   if (!parsed.success) throw new ServiceError("INVALID_TOOL_INPUT", 400, parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
   const real = new Set(await runPoIds(ctx));
+  if (real.size === 0) {
+    // Nothing ordered yet: refuse a summary that leaves orderable lines unexplained (the loop asks again).
+    const runIds = new Set(ctx.lines.map((l) => l.lineId));
+    const orderable = (await getPlan(ctx.planId)).lines.filter((l) => runIds.has(l.id) && l.counted && (l.status === "proposed" || l.status === "edited") && !l.poId);
+    if (orderable.length > parsed.data.skipped.length) {
+      throw new ServiceError("NO_POS_CREATED", 400, `No purchase orders were created. Call create_purchase_orders with the orderable lines (${orderable.map((l) => l.sku).join(", ")}) first, or list each one under skipped with its reason.`);
+    }
+  }
   const claimed = parsed.data.created.filter((id) => !real.has(id));
   if (claimed.length > 0) {
     await ctx.log.add({ agent: "order", kind: "rejected_decision", input: { created: claimed }, output: { code: "PO_NOT_CREATED_BY_RUN", message: "These ids are not purchase orders created by this run." }, ok: false });
@@ -125,6 +135,10 @@ export function runOrderAgent(ctx: RunContext): Promise<AgentOutcome<OrderSummar
     systemPrompt: SYSTEM,
     userMessage: `Create purchase orders for this run's lines (plan ${ctx.planId}, as of ${ctx.asOf}):\n${runLinesText(ctx)}`,
     tools: orderTools(ctx),
+    briefing: [
+      { tool: "get_plan", args: {} },
+      { tool: "validate_po", args: { lineIds: ctx.lines.map((l) => l.lineId) } },
+    ],
     terminal: {
       name: "submit_order_summary",
       description: "Finish: the created PO ids and the skipped SKUs with reasons.",
