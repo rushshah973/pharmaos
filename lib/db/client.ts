@@ -24,19 +24,28 @@ export function getSql(): Sql {
   const serverless = Boolean(process.env.VERCEL);
   const url = serverless && process.env.DATABASE_POOLER !== "session" ? transactionPoolerUrl(raw) : raw;
   const transactionMode = /:6543(\/|$)/.test(url);
-  const sql = postgres(url, {
+  const options = {
     max: transactionMode ? 10 : serverless ? 2 : 4,
     prepare: !transactionMode,
     idle_timeout: serverless ? 5 : 20,
     ...(serverless ? { max_lifetime: 60 } : {}),
-    // One query in flight per connection. Supavisor's transaction mode can hand pipelined queries to different
-    // database clients, so a pipelined query never gets its answer and the request hangs (seen 22 Oct under 8+
-    // parallel loads). In postgres.js 3.4, max_pipeline 1 still lets a second query in behind the running one;
-    // 0 is the setting that means none.
-    ...(transactionMode ? { max_pipeline: 0 } : {}),
     // Give up connecting after 15 s, so a dead pooled connection never hangs a request.
     connect_timeout: 15,
-  });
+  };
+  // One query in flight per connection on the transaction pooler: Supavisor can hand the next autocommit query
+  // to another database client, so a query pipelined behind a running one never gets its answer and the request
+  // hangs (seen 22 Oct under parallel page loads). In postgres.js 3.4, max_pipeline 1 still lets a second query
+  // in behind the running one; 0 means none. But with 0, sql.begin never reserves its connection (BEGIN fails
+  // with UNSAFE_TRANSACTION), so transactions go through a second pool with the default pipeline: inside a
+  // transaction Supavisor keeps the same database client, so pipelining there is safe.
+  // max_pipeline is a real option that postgres.js leaves out of its types.
+  const sql = postgres(url, transactionMode ? ({ ...options, max_pipeline: 0 } as typeof options) : options);
+  if (transactionMode) {
+    const tx = postgres(url, { ...options, max: 5 });
+    sql.begin = tx.begin;
+    const end = sql.end;
+    sql.end = (opts) => Promise.all([end(opts), tx.end(opts)]).then(() => undefined);
+  }
 
   globalForDb.pharmaosSql = sql;
   return sql;
