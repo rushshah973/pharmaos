@@ -3,8 +3,8 @@ import { handle, parseBody } from "@/lib/api/http";
 import { runAgent } from "@/lib/agents/orchestrator";
 import { chatBody } from "@/lib/validation/api";
 
-// Up to 8 Gemini calls (30 s each, one retry on the backup model): leave the whole function budget.
-export const maxDuration = 300;
+// runAgent answers within 15 s (then the calculated answer); the limit only covers slow database calls.
+export const maxDuration = 60;
 
 // POST /api/agent/chat — Ask PharmaOS. Never 503: any AI failure falls back to a deterministic answer.
 export async function POST(req: Request) {

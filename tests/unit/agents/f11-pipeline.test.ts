@@ -237,4 +237,15 @@ describe("F11 Supplier Agent guardrail", () => {
     expect(out.switched).toHaveLength(1);
     expect(editLine).toHaveBeenCalledWith(c.planId, c.lines[0].lineId, { kind: "offer", offerId: offer }, expect.objectContaining({ actor: { type: "agent", id: "supplier-agent" }, reason: "Cheaper and still before stockout" }));
   });
+
+  it("a switch that would cut the order by more than half → rejected after the preview, the line is not changed", async () => {
+    vi.mocked(analyseLine).mockResolvedValue(analysed([]));
+    vi.mocked(editLine).mockResolvedValue({ preview: true, before: { supplierCode: "SUP-06", qty: 880, totals: { lineTotal: "49776.01" } }, after: { supplierCode: "SUP-02", qty: 15, totals: { lineTotal: "825.18" } } } as never);
+    const { c, steps } = ctx();
+    const out = await applySupplierDecisions(c, [{ sku: "PHX-0001", offerId: offer, reason: "Better score and free packs" }]);
+    expect(out).toMatchObject({ accepted: 0, rejected: 1, switched: [] });
+    expect(editLine).toHaveBeenCalledTimes(1); // the preview only
+    expect(editLine).toHaveBeenCalledWith(c.planId, c.lines[0].lineId, { kind: "offer", offerId: offer }, { preview: true });
+    expect(steps[0].output).toMatchObject({ code: "QTY_CUT_TOO_FAR", qtyBefore: 880, qtyAfter: 15 });
+  });
 });

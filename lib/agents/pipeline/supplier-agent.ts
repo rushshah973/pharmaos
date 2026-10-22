@@ -20,6 +20,8 @@ Rules:
   get_approval_limit to see each supplier's purchase order total and the Owner approval limit.
 - Only choose an offer with no exclusion codes. Keep the current offer unless another one is clearly better: it avoids a
   stockout, costs less, consolidates SKUs onto one supplier, or keeps a supplier PO at or below the Owner approval limit.
+- Never switch to an offer whose quantity is less than half of the line's current quantity (small top-up offers):
+  that would under-order the medicine, and the system refuses it.
 - Never invent numbers; give a short reason (at least 10 characters) that cites the evidence.
 - Only decide for the SKUs listed. Finish by calling submit_supplier_decisions exactly once with one decision per SKU
   (the current offer id when you keep it).`;
@@ -95,6 +97,9 @@ export function supplierTools(ctx: RunContext): AgentTool[] {
 }
 
 /** Applies a submitted decision list: per-item guardrail (no exclusions, hard stops via editLine), then the effect. */
+/** A supplier switch may not leave the line with less than this share of its packs. */
+export const MIN_QTY_KEPT = 0.5;
+
 export async function applySupplierDecisions(ctx: RunContext, decisions: Record<string, unknown>[]): Promise<SupplierSummary> {
   const out: SupplierSummary = { accepted: 0, rejected: 0, switched: [] };
   for (const raw of decisions) {
@@ -123,6 +128,18 @@ export async function applySupplierDecisions(ctx: RunContext, decisions: Record<
       if (row.offerId === d.offerId) {
         out.accepted++;
         await ctx.log.add({ agent: "supplier", kind: "decision", input: d, output: { changed: false, supplierCode: ev.supplierCode } });
+        continue;
+      }
+      // A switch keeps the line's quantity when the new offer allows it, else takes what the engine would buy from
+      // that offer. A small top-up offer can then cut the order sharply (22 Oct: 880 → 15 packs of a SKU about to
+      // run out), so the switch is previewed first and refused if the line would lose more than half its packs.
+      const preview = await editLine(ctx.planId, line.lineId, { kind: "offer", offerId: d.offerId }, { preview: true });
+      if (preview.after.qty < preview.before.qty * MIN_QTY_KEPT) {
+        await reject(
+          "QTY_CUT_TOO_FAR",
+          `Switching ${line.sku} to ${ev.supplierCode} would cut the order from ${preview.before.qty} to ${preview.after.qty} packs (more than half); the line keeps its offer.`,
+          { qtyBefore: preview.before.qty, qtyAfter: preview.after.qty },
+        );
         continue;
       }
       const r = await editLine(

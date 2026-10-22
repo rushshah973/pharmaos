@@ -11,7 +11,7 @@ const PROMPT =
 
 export async function generatePlanSummary(planId: string): Promise<void> {
   try {
-    const r = await runAgent({ message: PROMPT, planId });
+    const r = await runAgent({ message: PROMPT, planId, budgetMs: 120_000 }); // runs after the response: nobody waits
     await savePlanSummary(planId, r.source === "agent" ? r.reply.trim() : null);
   } catch (err) {
     console.error("[plan summary]", err);
