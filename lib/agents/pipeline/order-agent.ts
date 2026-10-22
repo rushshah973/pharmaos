@@ -121,6 +121,7 @@ export function runOrderAgent(ctx: RunContext): Promise<AgentOutcome<OrderSummar
     agent: "order",
     client: ctx.client,
     model: ctx.model,
+    deadline: ctx.deadline,
     systemPrompt: SYSTEM,
     userMessage: `Create purchase orders for this run's lines (plan ${ctx.planId}, as of ${ctx.asOf}):\n${runLinesText(ctx)}`,
     tools: orderTools(ctx),

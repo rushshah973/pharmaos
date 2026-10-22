@@ -3,7 +3,7 @@
 // The model turn is appended EXACTLY as returned (keeps thoughtSignature parts); all function responses go back in
 // ONE user turn, in call order, with matching id and name. Any failure → a deterministic answer (source
 // 'deterministic'): missing key, ApiError (429 / 5xx), network or timeout, a non-STOP finish reason, or 8 turns.
-import { CALL_TIMEOUT_MS, DEFAULT_GEMINI_MODEL, modelChain, withRetry } from "./retry";
+import { CALL_TIMEOUT_MS, DEFAULT_GEMINI_MODEL, hedged, modelChain, withRetry } from "./retry";
 import { ApiError, type Content, FinishReason, FunctionCallingConfigMode, GoogleGenAI, type Part } from "@google/genai";
 import { formatINR } from "@/lib/money";
 import { resolvePlanningState } from "@/lib/services/as-of";
@@ -45,25 +45,26 @@ export async function runAgent({ message, planId }: { message: string; planId?: 
 
   try {
     for (let turn = 0; turn < MAX_TURNS; turn++) {
-      // One quick retry on a transient error, on the backup model: the person is waiting for the answer.
+      // A slow or overloaded model is raced against the backup, plus one quick retry: the person is waiting.
       const response = await withRetry(
-        (attempt) => {
-          const i = Math.min(active + attempt, models.length - 1);
-          return ai.models.generateContent({
-            model: models[i],
-            contents,
-            config: {
-              systemInstruction: SYSTEM_PROMPT,
-              tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
-              toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
-              automaticFunctionCalling: { disable: true },
-              maxOutputTokens: 8192,
-              httpOptions: { timeout: CALL_TIMEOUT_MS },
-            },
-          }).then((r) => {
-            active = i;
-            return r;
-          });
+        async () => {
+          const won = await hedged(models.slice(active), (model, abortSignal) =>
+            ai.models.generateContent({
+              model,
+              contents,
+              config: {
+                systemInstruction: SYSTEM_PROMPT,
+                tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
+                toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },
+                automaticFunctionCalling: { disable: true },
+                maxOutputTokens: 8192,
+                abortSignal,
+                httpOptions: { timeout: CALL_TIMEOUT_MS },
+              },
+            }),
+          );
+          active = models.indexOf(won.model);
+          return won.value;
         },
         [1000],
       );

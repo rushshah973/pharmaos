@@ -111,6 +111,7 @@ export function runDemandAgent(ctx: RunContext): Promise<AgentOutcome<DemandSumm
     agent: "demand",
     client: ctx.client,
     model: ctx.model,
+    deadline: ctx.deadline,
     systemPrompt: SYSTEM,
     userMessage: `Decide the forecast method for each of these SKUs (plan ${ctx.planId}, as of ${ctx.asOf}):\n${runLinesText(ctx)}`,
     tools: demandTools(ctx),

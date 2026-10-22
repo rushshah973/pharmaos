@@ -10,7 +10,10 @@ export const DEFAULT_GEMINI_MODEL = "gemini-flash-lite-latest";
  * returned 504 for a while, later gemini-flash-lite-latest returned 503 "high demand" and took 39 s to say "ok". */
 export const BACKUP_GEMINI_MODEL = "gemini-flash-latest";
 /** Per-call deadline. The SDK sends it to Gemini as X-Server-Timeout, so a call past it comes back as 504. */
-export const CALL_TIMEOUT_MS = 30_000;
+export const CALL_TIMEOUT_MS = 45_000;
+/** A call still unanswered after this also goes to the backup model; the first answer wins. A normal turn takes
+ * 2–8 s, so this only fires when Google is slow. */
+export const HEDGE_AFTER_MS = 10_000;
 
 /** The models to try, in order: the configured one, then the backup. */
 export function modelChain(primary: string): string[] {
@@ -29,6 +32,49 @@ export const RETRY_DELAYS_MS = [1000, 3000] as const;
 
 export function isTransient(err: unknown): boolean {
   return (err instanceof ApiError && TRANSIENT_STATUS.has(err.status)) || isTimeout(err);
+}
+
+/** Starts call(models[0]); if it fails with a transient error, or has not answered after hedgeAfterMs, the next model
+ * is started too. The first answer wins and the other request is aborted; it fails only when every started request
+ * failed (with the last error). */
+export function hedged<T>(models: string[], call: (model: string, signal: AbortSignal) => Promise<T>, hedgeAfterMs = HEDGE_AFTER_MS): Promise<{ value: T; model: string }> {
+  return new Promise((resolve, reject) => {
+    const controllers: AbortController[] = [];
+    let next = 0;
+    let pending = 0;
+    let done = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settle = () => {
+      done = true;
+      clearTimeout(timer);
+    };
+    const start = () => {
+      const model = models[next++];
+      const controller = new AbortController();
+      controllers.push(controller);
+      pending++;
+      call(model, controller.signal).then(
+        (value) => {
+          if (done) return;
+          settle();
+          for (const c of controllers) if (c !== controller) c.abort();
+          resolve({ value, model });
+        },
+        (err) => {
+          pending--;
+          if (done) return;
+          if (next < models.length && isTransient(err)) start();
+          else if (pending === 0) {
+            settle();
+            reject(err);
+          }
+        },
+      );
+      clearTimeout(timer);
+      if (next < models.length) timer = setTimeout(() => !done && next < models.length && start(), hedgeAfterMs);
+    };
+    start();
+  });
 }
 
 /** `call` gets the attempt number (0 first), so a retry can switch model. */

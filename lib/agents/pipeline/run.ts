@@ -13,8 +13,11 @@ import { type OrderSummary, runOrderAgent } from "./order-agent";
 import { type SupplierSummary, runSupplierAgent } from "./supplier-agent";
 
 export const AI_UNAVAILABLE = "AI unavailable — review and approve manually.";
+/** The run must finish within the agents/run route's maxDuration (300 s), with room to record the outcome. */
+export const RUN_BUDGET_MS = 270_000;
 
 export async function runPipeline(runId: string, deps: { client?: ModelClient | null; model?: string } = {}): Promise<void> {
+  const deadline = Date.now() + RUN_BUDGET_MS;
   const log = new StepLog(runId);
   try {
     const run = await getRun(runId);
@@ -31,7 +34,7 @@ export async function runPipeline(runId: string, deps: { client?: ModelClient | 
       return await finishRun(runId, "fallback", `${AI_UNAVAILABLE} The agents made no changes and created no purchase orders.`);
     }
 
-    const ctx: RunContext = { runId, planId: run.planId, asOf: state.asOf, lines, client, model: deps.model ?? (process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL), log };
+    const ctx: RunContext = { runId, planId: run.planId, asOf: state.asOf, lines, client, model: deps.model ?? (process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL), log, deadline };
 
     const demand = await runDemandAgent(ctx);
     if (demand.status === "fallback") {

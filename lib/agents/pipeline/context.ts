@@ -13,6 +13,8 @@ export type RunContext = {
   client: ModelClient;
   model: string;
   log: StepSink;
+  /** Epoch ms by which the whole run must finish (before the serverless function is stopped). */
+  deadline?: number;
 };
 
 /** The run line for a SKU code, or a SKU_NOT_IN_RUN error (agents only touch the SKUs selected for this run). */

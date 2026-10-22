@@ -14,7 +14,7 @@ import type { RunContext } from "@/lib/agents/pipeline/context";
 import { applyDemandDecisions } from "@/lib/agents/pipeline/demand-agent";
 import { type ModelClient, type ModelResponse, runAgentLoop } from "@/lib/agents/pipeline/loop";
 import { applySupplierDecisions } from "@/lib/agents/pipeline/supplier-agent";
-import { BACKUP_GEMINI_MODEL } from "@/lib/agents/retry";
+import { BACKUP_GEMINI_MODEL, hedged } from "@/lib/agents/retry";
 
 type Call = { id: string; name: string; args: Record<string, unknown> };
 const response = (calls: Call[], finishReason = "STOP"): ModelResponse => ({
@@ -109,8 +109,9 @@ describe("F11 shared agent loop", () => {
   it("falls back on a non-STOP finish, and on an API error that persists after 2 retries", async () => {
     expect((await loop([response([{ id: "a", name: "echo", args: { x: 1 } }], "MAX_TOKENS")]).run).status).toBe("fallback");
     const busy = () => new ApiError({ message: "busy", status: 503 });
-    const api = await loop([busy(), busy(), busy()]).run;
-    expect(api).toMatchObject({ status: "fallback", reason: "Gemini API error 503" });
+    const persistent = loop(Array.from({ length: 6 }, busy)); // 3 attempts, each on both models
+    expect(await persistent.run).toMatchObject({ status: "fallback", reason: "Gemini API error 503" });
+    expect(persistent.models).toHaveLength(6);
   });
 
   it("retries a transient Gemini error (504 deadline expired) and the agent still finishes", async () => {
@@ -124,6 +125,28 @@ describe("F11 shared agent loop", () => {
     const { run, models } = loop([new ApiError({ message: "high demand", status: 503 }), response([{ id: "a", name: "echo", args: { x: 1 } }]), timeout, response([{ id: "t", name: "submit_test", args: { value: "ok" } }])]);
     expect((await run).status).toBe("done");
     expect(models).toEqual(["primary-model", BACKUP_GEMINI_MODEL, BACKUP_GEMINI_MODEL, BACKUP_GEMINI_MODEL]);
+  });
+
+  it("races a slow model against the backup: the first answer wins and the slow request is aborted", async () => {
+    const asked: string[] = [];
+    let aborted = false;
+    const won = await hedged(["primary-model", BACKUP_GEMINI_MODEL], (model, signal) => {
+      asked.push(model);
+      if (model === BACKUP_GEMINI_MODEL) return Promise.resolve("backup answer");
+      signal.addEventListener("abort", () => (aborted = true));
+      return new Promise<string>(() => {}); // never answers
+    }, 5);
+    expect(won).toEqual({ value: "backup answer", model: BACKUP_GEMINI_MODEL });
+    expect(asked).toEqual(["primary-model", BACKUP_GEMINI_MODEL]);
+    expect(aborted).toBe(true);
+  });
+
+  it("falls back cleanly instead of starting a call past the run deadline", async () => {
+    const { client, seen } = fake([response([{ id: "t", name: "submit_test", args: { value: "ok" } }])]);
+    const { sink } = memoryLog();
+    const out = await runAgentLoop({ agent: "demand", client, model: "primary-model", systemPrompt: "s", userMessage: "u", tools: [], terminal, log: sink, deadline: Date.now() + 1_000 });
+    expect(out).toMatchObject({ status: "fallback", reason: expect.stringContaining("ran out of time") });
+    expect(seen).toHaveLength(0);
   });
 
   it("does not retry a non-transient error (e.g. 400 bad request)", async () => {

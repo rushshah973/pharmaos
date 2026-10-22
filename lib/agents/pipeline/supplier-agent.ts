@@ -155,6 +155,7 @@ export function runSupplierAgent(ctx: RunContext): Promise<AgentOutcome<Supplier
     agent: "supplier",
     client: ctx.client,
     model: ctx.model,
+    deadline: ctx.deadline,
     systemPrompt: SYSTEM,
     userMessage: `Choose the supplier offer for each of these SKUs (plan ${ctx.planId}, as of ${ctx.asOf}):\n${runLinesText(ctx)}`,
     tools: supplierTools(ctx),
