@@ -80,8 +80,6 @@ export default function Scene3D(props: Scene3DProps) {
   const hovered = hover ? slots[hover.index] : undefined;
   const hoverHeat = hovered ? heat.get(hovered.bin.id) : undefined;
   const tone = SCENE_TONE[mode];
-  // In the risk modes everything that is not at risk fades to grey, so the coloured racks carry the picture.
-  const dim = mode !== "normal";
   const hotBays = useMemo(() => {
     const s = new Set<string>();
     for (const slot of slots) {
@@ -161,9 +159,9 @@ export default function Scene3D(props: Scene3DProps) {
           <Lightformer form="rect" intensity={0.8} color="#fff7ed" scale={[30, 8, 1]} position={[20, 6, 10]} rotation-y={-Math.PI / 2} />
         </Environment>
 
-        <Hall aisleCount={layout.aisles.length} racks={racks} aisles={layout.aisles} dim={dim} />
-        <Racks aisleCount={layout.aisles.length} racks={racks} dim={dim} />
-        <Loads slots={slots} dim={dim} />
+        <Hall aisleCount={layout.aisles.length} racks={racks} aisles={layout.aisles} />
+        <Racks aisleCount={layout.aisles.length} racks={racks} />
+        <Loads slots={slots} />
         <HeatOverlay slots={slots} bays={bays} heat={heat} mode={mode} />
         <RackLabels bays={bays} hot={hotBays} tone={tone} />
         <AisleSigns aisles={layout.aisles} subs={subs} z={bounds.racks.z1 + 1.2} />
@@ -518,9 +516,11 @@ function CameraRig({
     } else if (shot.kind === "visit" && shot.binId) {
       const s = slotById.get(shot.binId);
       if (s) {
-        // Stand on the far side of the walkway, facing the shelf, slightly off-axis.
-        const camX = walkwayX(s.aisleIndex) + s.facing * (WALK / 2 - 0.35);
-        void ctl.setLookAt(camX, Math.min(s.center.y + 0.7, RACK_HEIGHT), s.center.z + 2.2, s.center.x, s.center.y, s.center.z, true);
+        // Stand in the walkway a few bays down, on the far side, and look back at the whole rack: the selected
+        // rack fills the middle of the view with its neighbours either side, its shelf at eye level.
+        const camX = walkwayX(s.aisleIndex) + s.facing * (WALK / 2 - 0.45);
+        const targetY = (s.center.y + RACK_HEIGHT / 2) / 2;
+        void ctl.setLookAt(camX, 2.4, s.center.z + 5.6, s.center.x, targetY, s.center.z, true);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- a new shot (nonce) is the trigger

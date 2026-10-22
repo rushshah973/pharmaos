@@ -16,6 +16,8 @@ export const walkwayX = (aisleIndex: number) => aisleIndex * AISLE_PITCH;
 export const columnX = (aisleIndex: number, side: "L" | "R") => walkwayX(aisleIndex) + (side === "L" ? -1 : 1) * (WALK / 2 + BAY.depth / 2);
 export const bayZ = (rack: number) => (rack - 1) * BAY_PITCH;
 export const levelY = (shelf: number) => (shelf - 1) * BAY.level;
+/** Top of the shelf deck a bin's stock stands on (shelf 1 sits just above the floor). */
+export const shelfDeckY = (shelf: number) => (shelf === 1 ? 0.14 : levelY(shelf) + 0.05);
 
 export type Slot = {
   bin: LayoutBin;
@@ -34,7 +36,7 @@ export function buildSlots(bins: LayoutBin[], aisles: string[]): Slot[] {
   return bins.map((bin, index) => {
     const aisleIndex = Math.max(0, aisles.indexOf(bin.aisle));
     const x = columnX(aisleIndex, bin.side);
-    const floorY = levelY(bin.shelf) + (bin.shelf > 1 ? BAY.beam / 2 : 0);
+    const floorY = shelfDeckY(bin.shelf) + 0.015;
     return {
       bin,
       index,

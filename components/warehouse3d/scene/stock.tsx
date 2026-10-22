@@ -14,7 +14,7 @@ import { BAY, BAY_PITCH, type Bay, RACK_HEIGHT, type Slot, WALK, walkwayX } from
 /** Where the selected bin's label sits in the world: just above the slot, below the rack labels. */
 export const labelAnchor = (s: Slot) => new THREE.Vector3(s.center.x, Math.min(s.center.y + 0.95, RACK_HEIGHT + 0.2), s.center.z);
 import { type Inst, useInstances } from "./structure";
-import { kraftCarton, palletWood, pharmaCarton } from "./textures";
+import { kraftCarton, pharmaCarton } from "./textures";
 
 /** Bright, saturated tones for a lit scene (the legend uses the matching UI tokens). */
 export const SCENE_TONE: Record<HeatmapMode, string> = { stockout: "#ef4444", expiry: "#f59e0b", excess: "#8b5cf6", normal: "#64748b", proposed: "#06b6d4" };
@@ -32,61 +32,65 @@ function hash(s: string): number {
   return h >>> 0;
 }
 
-/** Pallets and cartons for every non-empty bin: up to 2 pallets × 3 layers × 4 cartons, filled by fill %. */
-/** `dim` mutes the stock (grey cartons) so at-risk bins stand out in the risk modes. */
-export function Loads({ slots, dim = false }: { slots: Slot[]; dim?: boolean }) {
-  const tex = useMemo(() => ({ red: pharmaCarton("#dc2626", "Paracetamol"), blue: pharmaCarton("#2563eb", "Amoxicillin"), kraft: kraftCarton(), wood: palletWood() }), []);
+/**
+ * Big cartons packed straight onto the shelf: 3 across × 2 deep × up to 2 high, more the fuller the bin
+ * (front row first, then the back row, then the second layer). Pharma cartons and kraft boxes are mixed.
+ */
+export function Loads({ slots }: { slots: Slot[] }) {
+  const tex = useMemo(() => ({ red: pharmaCarton("#dc2626", "Paracetamol"), blue: pharmaCarton("#2563eb", "Amoxicillin"), kraft: kraftCarton() }), []);
   useEffect(() => () => Object.values(tex).forEach((t) => t.dispose()), [tex]);
 
-  const data = useMemo(() => {
-    const pallets: Inst[] = [];
-    const cartons: [Inst[], Inst[], Inst[]] = [[], [], []];
-    const cw = 0.43;
-    const cd = 0.41;
-    const ch = 0.25;
+  const cartons = useMemo(() => {
+    const out: [Inst[], Inst[], Inst[]] = [[], [], []];
+    const across = 3;
+    const deep = 2;
+    const pitchZ = (BAY.length - 0.1) / across;
+    const pitchX = (BAY.depth - 0.12) / deep;
     for (const s of slots) {
       const b = s.bin;
       if (b.used <= 0 || b.status !== "active") continue;
       const fill = Math.min(1, b.used / b.capacityUnits);
-      let n = Math.max(1, Math.ceil(fill * 24));
       const h = hash(b.id);
-      for (let p = 0; p < 2 && n > 0; p++) {
-        const pz = s.center.z + (p === 0 ? -0.5 : 0.5);
-        pallets.push({ p: [s.center.x, s.floorY + 0.065, pz], s: [0.95, 0.13, 0.9] });
-        const type = ((h >>> (p * 3)) % 3) as 0 | 1 | 2;
-        for (let layer = 0; layer < 3 && n > 0; layer++) {
-          for (let k = 0; k < 4 && n > 0; k++, n--) {
-            const jx = (((h >>> (k + layer)) & 7) - 3.5) * 0.004;
-            cartons[type].push({
-              p: [s.center.x + (k % 2 ? 0.225 : -0.225) + jx, s.floorY + 0.13 + ch / 2 + layer * (ch + 0.005), pz + (k < 2 ? -0.215 : 0.215)],
-              s: [cw, ch, cd],
-              r: new THREE.Euler(0, (((h >>> k) & 3) - 1.5) * 0.015, 0),
+      const boxH = 0.36 + ((h >>> 3) % 5) * 0.015;
+      // Square-root curve: low fills still read as stocked shelves; fuller bins always show more boxes.
+      let n = Math.max(1, Math.ceil(Math.sqrt(fill) * across * deep * 2));
+      for (let layer = 0; layer < 2 && n > 0; layer++) {
+        for (let row = 0; row < deep && n > 0; row++) {
+          // Row 0 is the front, facing the walkway.
+          const x = s.center.x + s.facing * (pitchX / 2) * (row === 0 ? 1 : -1);
+          for (let k = 0; k < across && n > 0; k++, n--) {
+            const i = layer * 6 + row * 3 + k;
+            const z = s.center.z - (BAY.length - 0.1) / 2 + pitchZ * (k + 0.5);
+            const jit = (((h >>> (i % 24)) & 7) - 3.5) * 0.006;
+            out[((h >>> (i % 29)) + i) % 3].push({
+              p: [x + jit, s.floorY + boxH / 2 + layer * (boxH + 0.01), z + jit],
+              s: [pitchX - 0.03, boxH, pitchZ - 0.04],
+              r: new THREE.Euler(0, jit * 2, 0),
             });
           }
         }
       }
     }
-    return { pallets, cartons };
+    return out;
   }, [slots]);
 
   return (
     <group>
-      <Textured items={data.pallets} map={tex.wood} roughness={0.9} tint={dim ? "#7c828c" : "#ffffff"} />
-      <Textured items={data.cartons[0]} map={tex.red} roughness={0.7} tint={dim ? "#858b95" : "#ffffff"} />
-      <Textured items={data.cartons[1]} map={tex.blue} roughness={0.7} tint={dim ? "#858b95" : "#ffffff"} />
-      <Textured items={data.cartons[2]} map={tex.kraft} roughness={0.88} tint={dim ? "#7c828c" : "#ffffff"} />
+      <Textured items={cartons[0]} map={tex.red} roughness={0.65} />
+      <Textured items={cartons[1]} map={tex.blue} roughness={0.65} />
+      <Textured items={cartons[2]} map={tex.kraft} roughness={0.85} />
     </group>
   );
 }
 
-function Textured({ items, map, roughness, tint }: { items: Inst[]; map: THREE.Texture; roughness: number; tint: string }) {
+function Textured({ items, map, roughness }: { items: Inst[]; map: THREE.Texture; roughness: number }) {
   const ref = useRef<THREE.InstancedMesh>(null);
   useInstances(ref, items);
   if (items.length === 0) return null;
   return (
     <instancedMesh ref={ref} args={[undefined, undefined, items.length]} castShadow receiveShadow>
       <boxGeometry />
-      <meshStandardMaterial map={map} color={tint} roughness={roughness} metalness={0} />
+      <meshStandardMaterial map={map} roughness={roughness} metalness={0} />
     </instancedMesh>
   );
 }
@@ -177,8 +181,8 @@ export function HeatOverlay({ slots, bays, heat, mode }: { slots: Slot[]; bays: 
         barColors.push(tone.clone().multiplyScalar(GLOW[sev]));
       }
     }
-    // Every bay with a highlighted bin: a glowing frame around the whole rack (floor to top), a tinted floor
-    // patch and a glowing floor outline, so an at-risk rack reads from across the hall.
+    // Every bay with a highlighted bin: a glowing frame around the whole rack (floor to top) and a glowing
+    // outline on the floor, so an at-risk rack reads from across the hall.
     const hotBays = new Set(hot.map((s) => s.bayKey));
     for (const bay of bays) {
       if (!hotBays.has(bay.key)) continue;
@@ -191,13 +195,11 @@ export function HeatOverlay({ slots, bays, heat, mode }: { slots: Slot[]; bays: 
       }
       const w = BAY.depth + 0.9;
       const l = BAY_PITCH + 0.5;
-      fills.push({ p: [bay.x, 0.01, bay.z], s: [w, 0.01, l] });
-      fillColors.push({ c: tone.clone(), o: FILL[maxSev] * 0.9 });
       for (const [px, pz, sx, sz] of [
-        [bay.x, bay.z - l / 2, w, 0.12],
-        [bay.x, bay.z + l / 2, w, 0.12],
-        [bay.x - w / 2, bay.z, 0.12, l],
-        [bay.x + w / 2, bay.z, 0.12, l],
+        [bay.x, bay.z - l / 2, w, 0.09],
+        [bay.x, bay.z + l / 2, w, 0.09],
+        [bay.x - w / 2, bay.z, 0.09, l],
+        [bay.x + w / 2, bay.z, 0.09, l],
       ]) {
         bars.push({ p: [px, 0.014, pz], s: [sx, 0.014, sz] });
         barColors.push(glow.clone());
@@ -220,7 +222,7 @@ export function HeatOverlay({ slots, bays, heat, mode }: { slots: Slot[]; bays: 
       {built.fills.length > 0 && (
         <instancedMesh key={`f${built.fills.length}`} ref={fillRef} args={[undefined, undefined, built.fills.length]} renderOrder={2} raycast={() => null}>
           <boxGeometry />
-          <meshBasicMaterial transparent opacity={0.55} depthWrite={false} toneMapped={false} />
+          <meshBasicMaterial transparent opacity={0.45} depthWrite={false} toneMapped={false} />
         </instancedMesh>
       )}
       <GlowBars items={built.bars} colors={built.barColors} />

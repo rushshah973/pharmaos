@@ -7,7 +7,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useThree } from "@react-three/fiber";
 import { MeshReflectorMaterial } from "@react-three/drei";
 import * as THREE from "three";
-import { BAY, BAY_PITCH, type Bay, LEVELS, RACK_HEIGHT, WALK, bayZ, columnX, hallBounds, levelY, walkwayX } from "./layout3d";
+import { BAY, BAY_PITCH, type Bay, LEVELS, RACK_HEIGHT, WALK, bayZ, columnX, hallBounds, shelfDeckY, walkwayX } from "./layout3d";
 import { aisleSign, chip, dockDoor, epoxyFloor, floorText, kraftCarton, palletWood } from "./textures";
 
 export type Inst = { p: THREE.Vector3Tuple; s: THREE.Vector3Tuple; r?: THREE.Euler };
@@ -58,58 +58,52 @@ function Instanced({
   );
 }
 
-/** Blue uprights, orange beams, frame bracing, base plates and yellow column guards. */
-/** `dim` turns the racking to plain grey steel so at-risk racks stand out in the risk modes. */
-export function Racks({ aisleCount, racks, dim = false }: { aisleCount: number; racks: number; dim?: boolean }) {
+/** Shelving racks like a pharma DC: navy uprights and beams, a solid light-steel shelf on every level, side bracing. */
+export function Racks({ aisleCount, racks }: { aisleCount: number; racks: number }) {
   const parts = useMemo(() => {
     const uprights: Inst[] = [];
     const beams: Inst[] = [];
+    const decks: Inst[] = [];
     const braces: Inst[] = [];
     const plates: Inst[] = [];
-    const guards: Inst[] = [];
     const halfD = BAY.depth / 2 - BAY.post / 2;
+    const len = BAY_PITCH - BAY.post;
     for (let a = 0; a < aisleCount; a++) {
       for (const side of ["L", "R"] as const) {
         const x = columnX(a, side);
         const frames = Array.from({ length: racks + 1 }, (_, i) => bayZ(1) - BAY_PITCH / 2 + i * BAY_PITCH);
-        frames.forEach((z, fi) => {
+        for (const z of frames) {
           for (const dx of [-halfD, halfD]) {
-            uprights.push({ p: [x + dx, RACK_HEIGHT / 2, z], s: [BAY.post, RACK_HEIGHT, BAY.post * 0.75] });
+            uprights.push({ p: [x + dx, RACK_HEIGHT / 2, z], s: [BAY.post, RACK_HEIGHT, BAY.post] });
             plates.push({ p: [x + dx, 0.01, z], s: [0.16, 0.02, 0.16] });
           }
-          // Zig-zag bracing in the frame plane (x-y), between the two uprights.
+          // Zig-zag bracing in the side frame, between the front and back uprights.
           const span = halfD * 2;
           const step = 0.85;
           for (let y = 0.25, k = 0; y + step < RACK_HEIGHT - 0.1; y += step, k++) {
-            const len = Math.hypot(span, step);
-            const ang = Math.atan2(step, span) * (k % 2 ? -1 : 1);
-            braces.push({ p: [x, y + step / 2, z], s: [len, 0.035, 0.035], r: new THREE.Euler(0, 0, ang) });
+            braces.push({ p: [x, y + step / 2, z], s: [Math.hypot(span, step), 0.03, 0.03], r: new THREE.Euler(0, 0, Math.atan2(step, span) * (k % 2 ? -1 : 1)) });
           }
-          // Column guards on the walkway-facing upright at both aisle ends.
-          if (fi === 0 || fi === frames.length - 1) {
-            const dx = side === "L" ? halfD : -halfD;
-            guards.push({ p: [x + dx + (side === "L" ? 0.06 : -0.06), 0.3, z], s: [0.12, 0.6, 0.2] });
-          }
-        });
+        }
         for (let r = 1; r <= racks; r++) {
           const z = bayZ(r);
-          for (let s = 2; s <= LEVELS + 1; s++) {
-            const y = s <= LEVELS ? levelY(s) : RACK_HEIGHT - 0.12;
-            for (const dx of [-halfD, halfD]) beams.push({ p: [x + dx, y, z], s: [0.05, BAY.beam, BAY_PITCH - BAY.post] });
+          for (let s = 1; s <= LEVELS + 1; s++) {
+            const y = s <= LEVELS ? shelfDeckY(s) : RACK_HEIGHT - 0.06;
+            for (const dx of [-halfD, halfD]) beams.push({ p: [x + dx, y - 0.03, z], s: [0.05, 0.08, len] });
+            if (s <= LEVELS) decks.push({ p: [x, y, z], s: [BAY.depth - 0.06, 0.03, len] });
           }
         }
       }
     }
-    return { uprights, beams, braces, plates, guards };
+    return { uprights, beams, decks, braces, plates };
   }, [aisleCount, racks]);
 
   return (
     <group>
-      <Instanced items={parts.uprights} color={dim ? "#5b6472" : "#1e4fa8"} metalness={0.45} roughness={0.38} />
-      <Instanced items={parts.beams} color={dim ? "#737b88" : "#f07a1a"} metalness={0.35} roughness={0.42} />
-      <Instanced items={parts.braces} color={dim ? "#5b6472" : "#2a5cb8"} metalness={0.45} roughness={0.4} castShadow={false} />
+      <Instanced items={parts.uprights} color="#1d3a6b" metalness={0.45} roughness={0.38} />
+      <Instanced items={parts.beams} color="#24497f" metalness={0.4} roughness={0.4} />
+      <Instanced items={parts.decks} color="#d9dee5" metalness={0.35} roughness={0.45} />
+      <Instanced items={parts.braces} color="#2b4f86" metalness={0.45} roughness={0.4} castShadow={false} />
       <Instanced items={parts.plates} color="#334155" metalness={0.6} roughness={0.4} castShadow={false} />
-      <Instanced items={parts.guards} color="#facc15" metalness={0.2} roughness={0.5} />
     </group>
   );
 }
@@ -162,8 +156,7 @@ export function AisleSigns({ aisles, subs, z }: { aisles: string[]; subs: string
 }
 
 /** The hall: epoxy floor with reflections and safety markings, walls, dock doors, columns and high-bay lights. */
-/** `dim` greys the yellow safety markings so they never compete with the risk colours. */
-export function Hall({ aisleCount, racks, aisles, dim = false }: { aisleCount: number; racks: number; aisles: string[]; dim?: boolean }) {
+export function Hall({ aisleCount, racks, aisles }: { aisleCount: number; racks: number; aisles: string[] }) {
   const { hall, racks: rk } = useMemo(() => hallBounds(aisleCount, racks), [aisleCount, racks]);
   const w = hall.x1 - hall.x0;
   const d = hall.z1 - hall.z0;
@@ -255,15 +248,7 @@ export function Hall({ aisleCount, racks, aisles, dim = false }: { aisleCount: n
           roughness={0.75}
         />
       </mesh>
-      <Instanced
-        items={markings}
-        color={dim ? "#d4d8de" : "#facc15"}
-        metalness={0}
-        roughness={0.6}
-        castShadow={false}
-        emissive={dim ? "#000000" : "#facc15"}
-        emissiveIntensity={dim ? 0 : 0.15}
-      />
+      <Instanced items={markings} color="#facc15" metalness={0} roughness={0.6} castShadow={false} emissive="#facc15" emissiveIntensity={0.15} />
 
       {aisles.map((a, i) => (
         <mesh key={a} rotation-x={-Math.PI / 2} position={[walkwayX(i), 0.006, rk.z1 + 3.9]} raycast={() => null}>
