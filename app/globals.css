@@ -79,11 +79,12 @@
 }
 
 /* Dark is the only theme; :root and .dark carry the same values.
-   Glass design system: near-black canvas with a warm and a cool ambient glow, frosted glass cards, thin type,
-   one warm accent (brand) for focus and highlights, and the four status colours (always with a label). */
+   Glass design system: near-black green-tinted canvas with an emerald bloom from the top and a faint grid, frosted
+   glass cards, thin type, one emerald accent (brand) for actions and highlights, and the four status colours (always
+   with a label; healthy is mint-teal so it never reads as the accent). */
 :root,
 .dark {
-  --bg: #08080a;
+  --bg: #050907;
   /* Opaque fallbacks (sticky table cells, menus): close to the average colour of a glass card on the canvas. */
   --surface-1: #121214;
   --surface-2: #19191c;
@@ -92,17 +93,17 @@
   --text-1: #f4f4f5;
   --text-2: #a1a1aa;
   --text-3: #66666e;
-  --brand: #ff8d4d; /* warm copper accent ("--accent" in the plan; named brand to avoid shadcn's --accent) */
-  --brand-strong: #f97316;
-  --brand-glow: rgba(255, 141, 77, 0.12);
+  --brand: #34d36e; /* emerald accent ("--accent" in the plan; named brand to avoid shadcn's --accent) */
+  --brand-strong: #19b85a;
+  --brand-glow: rgba(52, 211, 110, 0.12);
   --stockout: #ff5c5c;
   --stockout-bg: rgba(255, 92, 92, 0.12);
   --expiry: #f2c94c;
   --expiry-bg: rgba(242, 201, 76, 0.12);
   --excess: #a78bfa;
   --excess-bg: rgba(167, 139, 250, 0.12);
-  --healthy: #4ade80;
-  --healthy-bg: rgba(74, 222, 128, 0.11);
+  --healthy: #5eead4;
+  --healthy-bg: rgba(94, 234, 212, 0.1);
   --neutral: #a1a1aa;
   --neutral-bg: rgba(161, 161, 170, 0.1);
   --proposed: rgba(255, 141, 77, 0.35);
@@ -111,7 +112,7 @@
   --glass-border: rgba(255, 255, 255, 0.09);
   /* A light edge: brightest at the top-left (where the light comes from), fading round the pane. Painted as the
      border-box layer of a two-layer background so it works with backdrop-filter and rounded corners. */
-  --glass-edge: linear-gradient(140deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.06) 30%, rgba(255, 255, 255, 0.03) 65%, rgba(255, 255, 255, 0.14) 100%);
+  --glass-edge: linear-gradient(140deg, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.06) 30%, rgba(52, 211, 110, 0.05) 65%, rgba(52, 211, 110, 0.22) 100%);
   --glass-blur: blur(28px) saturate(170%);
   --shadow-pop: 0 24px 60px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
   --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 0 24px rgba(255, 255, 255, 0.02), 0 30px 60px -30px rgba(0, 0, 0, 0.85),
@@ -177,11 +178,10 @@
     z-index: -1;
     pointer-events: none;
     background:
-      radial-gradient(55% 50% at 88% -6%, rgba(255, 128, 56, 0.24) 0%, rgba(255, 128, 56, 0) 70%),
-      radial-gradient(40% 40% at 104% 42%, rgba(255, 170, 110, 0.09) 0%, rgba(255, 170, 110, 0) 70%),
-      radial-gradient(50% 55% at -6% 104%, rgba(56, 170, 130, 0.18) 0%, rgba(56, 170, 130, 0) 70%),
-      radial-gradient(38% 38% at 18% 22%, rgba(120, 110, 220, 0.08) 0%, rgba(120, 110, 220, 0) 70%),
-      radial-gradient(40% 40% at 55% 60%, rgba(120, 130, 150, 0.06) 0%, rgba(120, 130, 150, 0) 70%),
+      radial-gradient(70% 48% at 50% -10%, rgba(34, 197, 94, 0.3) 0%, rgba(34, 197, 94, 0.08) 45%, rgba(34, 197, 94, 0) 75%),
+      radial-gradient(40% 45% at 100% 28%, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0) 70%),
+      radial-gradient(55% 50% at -8% 102%, rgba(22, 163, 74, 0.2) 0%, rgba(22, 163, 74, 0) 70%),
+      radial-gradient(45% 40% at 92% 108%, rgba(52, 211, 153, 0.12) 0%, rgba(52, 211, 153, 0) 70%),
       var(--bg);
   }
   body::after {
@@ -193,8 +193,23 @@
     opacity: 0.05;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
+  /* Faint grid behind the content (the reference's blueprint lines), strongest under the top bloom. */
+  main::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+    background-size: 72px 72px;
+    background-position: center top;
+    -webkit-mask-image: radial-gradient(80% 65% at 50% 0%, #000 0%, rgba(0, 0, 0, 0.35) 55%, transparent 85%);
+    mask-image: radial-gradient(80% 65% at 50% 0%, #000 0%, rgba(0, 0, 0, 0.35) 55%, transparent 85%);
+  }
   ::selection {
-    background: rgba(255, 141, 77, 0.28);
+    background: rgba(52, 211, 110, 0.28);
   }
   :focus-visible {
     outline: 2px solid var(--brand);
@@ -207,7 +222,7 @@
   .surface {
     background:
       var(--glass) padding-box,
-      linear-gradient(rgba(14, 14, 16, 0.42), rgba(14, 14, 16, 0.42)) padding-box,
+      linear-gradient(rgba(7, 14, 10, 0.45), rgba(7, 14, 10, 0.45)) padding-box,
       var(--glass-edge) border-box;
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
@@ -219,9 +234,9 @@
   .surface-hero {
     background:
       radial-gradient(90% 120% at 0% 0%, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0) 55%) padding-box,
-      radial-gradient(70% 90% at 100% 0%, rgba(255, 141, 77, 0.1) 0%, rgba(255, 141, 77, 0) 60%) padding-box,
+      radial-gradient(70% 90% at 100% 0%, rgba(52, 211, 110, 0.12) 0%, rgba(52, 211, 110, 0) 60%) padding-box,
       var(--glass) padding-box,
-      linear-gradient(rgba(14, 14, 16, 0.38), rgba(14, 14, 16, 0.38)) padding-box,
+      linear-gradient(rgba(7, 14, 10, 0.4), rgba(7, 14, 10, 0.4)) padding-box,
       var(--glass-edge) border-box;
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
@@ -232,10 +247,10 @@
   /* Warm glass: copper light sweep for the one figure that matters most on a page. */
   .surface-warm {
     background:
-      linear-gradient(125deg, rgba(0, 0, 0, 0) 20%, rgba(255, 141, 77, 0.32) 55%, rgba(120, 50, 10, 0.1) 80%) padding-box,
-      radial-gradient(80% 80% at 100% 100%, rgba(255, 141, 77, 0.22) 0%, rgba(255, 141, 77, 0) 70%) padding-box,
-      linear-gradient(rgba(20, 14, 10, 0.6), rgba(20, 14, 10, 0.6)) padding-box,
-      linear-gradient(140deg, rgba(255, 200, 160, 0.4) 0%, rgba(255, 141, 77, 0.12) 35%, rgba(255, 141, 77, 0.06) 65%, rgba(255, 170, 110, 0.32) 100%) border-box;
+      linear-gradient(160deg, rgba(0, 0, 0, 0) 15%, rgba(34, 197, 94, 0.3) 60%, rgba(10, 90, 45, 0.16) 90%) padding-box,
+      radial-gradient(80% 80% at 100% 100%, rgba(52, 211, 110, 0.26) 0%, rgba(52, 211, 110, 0) 70%) padding-box,
+      linear-gradient(rgba(6, 20, 12, 0.62), rgba(6, 20, 12, 0.62)) padding-box,
+      linear-gradient(140deg, rgba(180, 255, 210, 0.4) 0%, rgba(52, 211, 110, 0.14) 35%, rgba(52, 211, 110, 0.06) 65%, rgba(110, 240, 160, 0.38) 100%) border-box;
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
     border: 1px solid transparent;
@@ -257,7 +272,7 @@
   .glass-pill {
     background:
       linear-gradient(rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.03)) padding-box,
-      linear-gradient(rgba(14, 14, 16, 0.35), rgba(14, 14, 16, 0.35)) padding-box,
+      linear-gradient(rgba(7, 14, 10, 0.35), rgba(7, 14, 10, 0.35)) padding-box,
       var(--glass-edge) border-box;
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
@@ -313,7 +328,7 @@
 
 @keyframes flash-change {
   0% {
-    background-color: rgba(255, 141, 77, 0.18);
+    background-color: rgba(52, 211, 110, 0.18);
   }
   100% {
     background-color: transparent;
@@ -347,7 +362,8 @@
     color: #000;
   }
   body::before,
-  body::after {
+  body::after,
+  main::before {
     display: none;
   }
   .surface,
