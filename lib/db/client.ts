@@ -29,7 +29,11 @@ export function getSql(): Sql {
     prepare: !transactionMode,
     idle_timeout: serverless ? 5 : 20,
     ...(serverless ? { max_lifetime: 60 } : {}),
-    ...(transactionMode ? ({ max_pipeline: 1 } as unknown as postgres.Options<Record<string, never>>) : {}),
+    // One query in flight per connection. Supavisor's transaction mode can hand pipelined queries to different
+    // database clients, so a pipelined query never gets its answer and the request hangs (seen 22 Oct under 8+
+    // parallel loads). In postgres.js 3.4, max_pipeline 1 still lets a second query in behind the running one;
+    // 0 is the setting that means none.
+    ...(transactionMode ? { max_pipeline: 0 } : {}),
     // Give up connecting after 15 s, so a dead pooled connection never hangs a request.
     connect_timeout: 15,
   });
