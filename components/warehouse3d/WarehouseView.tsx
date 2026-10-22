@@ -22,14 +22,22 @@ import { SkuSearch } from "./SkuSearch";
 
 const Scene3D = dynamic(() => import("./Scene3D"), {
   ssr: false,
-  loading: () => (
-    <div className="flex h-[620px] items-center justify-center rounded-lg border border-border bg-[#080d19] max-xl:h-[520px]">
-      <span className="shimmer inline-flex items-center gap-2 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[12.5px] text-fg-2">
-        <Loader2 className="size-3.5 animate-spin" aria-hidden /> Loading the 3D scene…
-      </span>
-    </div>
-  ),
+  loading: () => <SceneLoading />,
 });
+
+/** Shown while the 3D bundle downloads: a centred card, so the panel never looks like an empty black box. */
+function SceneLoading() {
+  return (
+    <div className="relative flex h-[680px] items-center justify-center overflow-hidden rounded-xl border border-border bg-[radial-gradient(120%_80%_at_50%_30%,#111a2e_0%,#070b14_70%)] max-xl:h-[560px]">
+      <div className="flex w-[300px] flex-col items-center rounded-xl border border-white/10 bg-[#0d1424]/85 px-6 py-5 text-center shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+        <Box className="size-6 text-brand" strokeWidth={1.5} aria-hidden />
+        <div className="mt-3 text-[13.5px] font-semibold text-fg-1">Building the 3D warehouse</div>
+        <div className="mt-1 text-[12px] text-fg-3">Racks, stock and risk for all 240 bins</div>
+        <div className="shimmer mt-4 h-1 w-full rounded-full bg-white/10" />
+      </div>
+    </div>
+  );
+}
 
 type View = "3d" | "grid" | "table";
 const VIEWS: View[] = ["3d", "grid", "table"];
@@ -152,8 +160,8 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
   const select = (binId: string | null) => {
     setSelectedBinId(binId);
     setUrl({ bin: binId });
-    // Below xl the panel sits under the map: bring it into view.
-    if (binId && !window.matchMedia("(min-width: 1280px)").matches) {
+    // Below xl the panel sits under the map: bring it into view (in 3D the rack card shows the selection instead).
+    if (binId && shown !== "3d" && !window.matchMedia("(min-width: 1280px)").matches) {
       requestAnimationFrame(() => panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
     }
   };
@@ -246,6 +254,11 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
           {view === "3d" && shown === "grid" && (
             <p role="status" className="mb-4 rounded-lg border border-border bg-surface-2 px-3 py-2 text-[12.5px] text-fg-2">
               {sceneFailed ? "The 3D scene hit an error, so the 2D grid is shown instead." : "This browser has no WebGL2, so the 2D grid is shown instead of 3D."}
+              {sceneFailed && (
+                <button type="button" onClick={() => setSceneFailed(false)} className="ml-2 font-medium text-brand hover:underline">
+                  Try 3D again
+                </button>
+              )}
             </p>
           )}
 
@@ -272,6 +285,7 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
                     layout={layout}
                     heat={heat}
                     mode={mode}
+                    heatmaps={heatmaps}
                     selectedBinId={selectedBinId}
                     matchBinIds={matchBinIds}
                     focus={focus}

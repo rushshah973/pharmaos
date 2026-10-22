@@ -3,7 +3,7 @@
 // Bin panel (§11): location path, capacity and fill, and every balance in the bin with its batch, expiry,
 // days left, quantity, reservation, quality status, engine status and data source. Mount with key={binId}.
 import { useEffect, useState } from "react";
-import { MousePointerClick, PackageOpen, RotateCw, X } from "lucide-react";
+import { CircleAlert, MousePointerClick, PackageOpen, RotateCw, X } from "lucide-react";
 import { cn } from "cn";
 import { SkuStatusPill } from "@/components/layout/SkuStatusPill";
 import { Button } from "@/components/ui/button";
@@ -230,11 +230,64 @@ function BinBody({ bin, asOf, here }: { bin: BinDetails; asOf: string; here: Hea
                     })}
                   </tbody>
                 </table>
+                <RecommendedAction product={p} asOf={asOf} />
               </li>
             ))}
           </ul>
         )}
       </section>
+    </div>
+  );
+}
+
+type BinProduct = BinDetails["products"][number];
+
+/**
+ * What to do with this SKU in this bin, from the engine status and the batches shown above. Fixed rules, no AI:
+ * quality holds first, then stock that will expire unsold, then the SKU's status.
+ */
+function recommendation(p: BinProduct, asOf: string): { tone: "stockout" | "expiry" | "excess" | "neutral"; title: string; text: string } | null {
+  const held = p.batches.find((b) => b.qualityStatus !== "released");
+  if (held) return { tone: "stockout", title: "Do not dispatch", text: `Batch ${held.batchNumber} is ${held.qualityStatus}. Keep it segregated and send it to QA; it does not count as stock.` };
+  const expired = p.batches.find((b) => daysBetween(asOf, b.expiryDate) <= 0);
+  if (expired) return { tone: "stockout", title: "Remove expired stock", text: `Batch ${expired.batchNumber} has expired. Move it to the returns / destruction area.` };
+  const atRisk = p.batches.filter((b) => b.atRiskQty > 0).sort((a, b) => a.expiryDate.localeCompare(b.expiryDate))[0];
+  if (atRisk) {
+    const days = daysBetween(asOf, atRisk.expiryDate);
+    return {
+      tone: "expiry",
+      title: "Dispatch first (FEFO)",
+      text: `${atRisk.atRiskQty} packs of ${atRisk.batchNumber} will not sell before expiry in ${days} d at current demand. Pick this batch first, offer it to high-demand customers, or raise a return with the supplier while it is still in date.`,
+    };
+  }
+  if (p.status === "STOCKOUT_RISK")
+    return {
+      tone: "stockout",
+      title: "Reorder now",
+      text: `About ${p.cover?.toFixed(1) ?? "0"} d of cover across all bins, shorter than the fastest delivery. Approve this SKU's line in the purchase plan today.`,
+    };
+  if (p.status === "BELOW_ROP") return { tone: "neutral", title: "Reorder soon", text: "Stock is below the reorder point. Check it is in the latest purchase plan and approve it with the next PO." };
+  if (p.status === "EXCESS") return { tone: "excess", title: "Hold new orders", text: "Stock is well above target. Skip reorders until it sells down, and keep picking oldest expiry first." };
+  return null;
+}
+
+const ACTION_STYLE = {
+  stockout: "border-stockout/30 bg-stockout-bg text-stockout",
+  expiry: "border-expiry/30 bg-expiry-bg text-expiry",
+  excess: "border-excess/30 bg-excess-bg text-excess",
+  neutral: "border-border bg-surface-2 text-fg-2",
+} as const;
+
+function RecommendedAction({ product, asOf }: { product: BinProduct; asOf: string }) {
+  const r = recommendation(product, asOf);
+  if (!r) return null;
+  return (
+    <div className={cn("mx-3 mb-3 rounded-lg border px-3 py-2.5", ACTION_STYLE[r.tone])}>
+      <div className="flex items-center gap-1.5 text-[12px] font-semibold">
+        <CircleAlert className="size-3.5" strokeWidth={2} aria-hidden />
+        Recommended action · {r.title}
+      </div>
+      <p className="mt-1 text-[12px] leading-[17px] text-fg-2">{r.text}</p>
     </div>
   );
 }

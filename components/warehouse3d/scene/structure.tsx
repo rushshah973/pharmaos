@@ -1,293 +1,156 @@
 "use client";
 
-// The building and the racking (§11), all procedural: no external models, textures or fonts. Textures that need
-// detail (wire decks, signs, dock door) are drawn on small canvases in code.
+// The hall and the racking, all procedural: blue-and-orange pallet racking with frame bracing, base plates and
+// column guards; a bright epoxy floor with painted safety lines; walls with dock doors; high-bay lights; hanging
+// aisle signs; a glass cold room; receiving and dispatch zones with staged pallets and a forklift.
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useThree } from "@react-three/fiber";
 import { MeshReflectorMaterial } from "@react-three/drei";
 import * as THREE from "three";
-import type { LayoutBin, WarehouseLayout } from "@/lib/services/warehouse";
+import { BAY, BAY_PITCH, type Bay, LEVELS, RACK_HEIGHT, WALK, bayZ, columnX, hallBounds, levelY, walkwayX } from "./layout3d";
+import { aisleSign, chip, dockDoor, epoxyFloor, floorText, kraftCarton, palletWood } from "./textures";
 
-export const SHELF_STEP = 0.7;
-const RACK_TOP = 2.85;
-const POST = 0.06;
+export type Inst = { p: THREE.Vector3Tuple; s: THREE.Vector3Tuple; r?: THREE.Euler };
 
-/** One rack column = one side of one aisle: its x centre, bay z range and shelf levels. */
-export type RackColumn = { key: string; aisle: string; side: "L" | "R"; x: number; zMin: number; zMax: number; zs: number[]; levels: number[] };
-
-export function rackColumns(bins: LayoutBin[]): RackColumn[] {
-  const groups = new Map<string, LayoutBin[]>();
-  for (const b of bins) groups.set(`${b.aisle}${b.side}`, [...(groups.get(`${b.aisle}${b.side}`) ?? []), b]);
-  return [...groups.entries()].map(([key, g]) => {
-    const zs = [...new Set(g.map((b) => b.z))].sort((a, b) => a - b);
-    const levels = [...new Set(g.map((b) => b.y))].sort((a, b) => a - b);
-    return { key, aisle: g[0].aisle, side: g[0].side, x: g[0].x, zMin: zs[0] - 0.6, zMax: zs[zs.length - 1] + 0.6, zs, levels };
-  });
-}
-
-/** Fills an instanced mesh from a list of [position, scale] pairs. */
-function useInstances(ref: React.RefObject<THREE.InstancedMesh | null>, items: { p: THREE.Vector3Tuple; s: THREE.Vector3Tuple }[]) {
+/** Fills an instanced mesh from position / scale / rotation triples. */
+export function useInstances(ref: React.RefObject<THREE.InstancedMesh | null>, items: Inst[]) {
   const invalidate = useThree((s) => s.invalidate);
   useLayoutEffect(() => {
     const mesh = ref.current;
     if (!mesh) return;
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
-    items.forEach((it, i) => mesh.setMatrixAt(i, m.compose(new THREE.Vector3(...it.p), q, new THREE.Vector3(...it.s))));
+    items.forEach((it, i) => {
+      q.setFromEuler(it.r ?? new THREE.Euler());
+      mesh.setMatrixAt(i, m.compose(new THREE.Vector3(...it.p), q, new THREE.Vector3(...it.s)));
+    });
     mesh.instanceMatrix.needsUpdate = true;
     mesh.computeBoundingSphere();
     invalidate();
   }, [ref, items, invalidate]);
 }
 
-/** Steel pallet racking: uprights, beams, wire-mesh decks and end-frame bracing for every rack column. */
-export function Racks({ columns }: { columns: RackColumn[] }) {
-  const uprightRef = useRef<THREE.InstancedMesh>(null);
-  const beamRef = useRef<THREE.InstancedMesh>(null);
-  const deckRef = useRef<THREE.InstancedMesh>(null);
-
-  const { uprights, beams, decks, bracing } = useMemo(() => {
-    const uprights: { p: THREE.Vector3Tuple; s: THREE.Vector3Tuple }[] = [];
-    const beams: { p: THREE.Vector3Tuple; s: THREE.Vector3Tuple }[] = [];
-    const decks: { p: THREE.Vector3Tuple; s: THREE.Vector3Tuple }[] = [];
-    const pts: number[] = [];
-    for (const c of columns) {
-      const frames = [c.zMin, ...c.zs.slice(1).map((z) => z - 0.6), c.zMax];
-      const x0 = c.x - 0.48;
-      const x1 = c.x + 0.48;
-      const len = c.zMax - c.zMin;
-      const zc = (c.zMin + c.zMax) / 2;
-      for (const z of frames) {
-        uprights.push({ p: [x0, RACK_TOP / 2, z], s: [POST, RACK_TOP, POST] }, { p: [x1, RACK_TOP / 2, z], s: [POST, RACK_TOP, POST] });
-        // Bracing zig-zag on the two end frames only, as on real racking (inner frames are hidden by stock).
-        if (z !== c.zMin && z !== c.zMax) continue;
-        for (let y = 0.15; y < RACK_TOP - 0.3; y += 0.55) pts.push(x0, y, z, x1, y + 0.5, z, x1, y + 0.5, z, x0, Math.min(y + 1.0, RACK_TOP - 0.1), z);
-      }
-      for (const level of [...c.levels.filter((l) => l > 0), RACK_TOP - 0.05]) {
-        beams.push({ p: [x0, level - 0.05, zc], s: [0.05, 0.09, len] }, { p: [x1, level - 0.05, zc], s: [0.05, 0.09, len] });
-      }
-      for (const level of c.levels) decks.push({ p: [c.x, level + 0.012, zc], s: [0.94, 0.024, len] });
-    }
-    const bracing = new THREE.BufferGeometry();
-    bracing.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
-    return { uprights, beams, decks, bracing };
-  }, [columns]);
-
-  useInstances(uprightRef, uprights);
-  useInstances(beamRef, beams);
-  useInstances(deckRef, decks);
-  const deckTexture = useMemo(() => wireDeckTexture(), []);
-  useEffect(() => () => deckTexture.dispose(), [deckTexture]);
-
-  return (
-    <group>
-      <instancedMesh ref={uprightRef} args={[undefined, undefined, uprights.length]} castShadow receiveShadow>
-        <boxGeometry />
-        <meshStandardMaterial color="#6b7383" metalness={0.75} roughness={0.3} />
-      </instancedMesh>
-      <instancedMesh ref={beamRef} args={[undefined, undefined, beams.length]} castShadow>
-        <boxGeometry />
-        <meshStandardMaterial color="#7c8494" metalness={0.7} roughness={0.28} />
-      </instancedMesh>
-      <instancedMesh ref={deckRef} args={[undefined, undefined, decks.length]} receiveShadow castShadow>
-        <boxGeometry />
-        <meshStandardMaterial color="#8796b0" metalness={0.8} roughness={0.35} alphaMap={deckTexture} alphaTest={0.4} transparent side={THREE.DoubleSide} />
-      </instancedMesh>
-      <lineSegments geometry={bracing}>
-        <lineBasicMaterial color="#4b5263" transparent opacity={0.9} />
-      </lineSegments>
-    </group>
-  );
-}
-
-/** Wire-mesh deck: a grid drawn on a canvas, used as an alpha map so the shelf below shows through. */
-function wireDeckTexture(): THREE.CanvasTexture {
-  const c = document.createElement("canvas");
-  c.width = c.height = 64;
-  const ctx = c.getContext("2d")!;
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, 0, 64, 64);
-  ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 6;
-  for (let i = 0; i <= 64; i += 16) {
-    ctx.beginPath();
-    ctx.moveTo(i, 0);
-    ctx.lineTo(i, 64);
-    ctx.moveTo(0, i);
-    ctx.lineTo(64, i);
-    ctx.stroke();
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.repeat.set(4, 24);
-  return t;
-}
-
-/** The hall: polished concrete floor with reflections, painted aisle lines, two walls, a dock door, columns and light strips. */
-export function Building({ layout, walkways }: { layout: WarehouseLayout; walkways: number[] }) {
-  const { bounds } = layout;
-  const x0 = bounds.min.x - 4.5;
-  const x1 = bounds.max.x + 4.5;
-  const z0 = bounds.min.z - 3.5;
-  const z1 = bounds.max.z + 5;
-  const w = x1 - x0;
-  const d = z1 - z0;
-  const cx = (x0 + x1) / 2;
-  const cz = (z0 + z1) / 2;
-  const wallH = 5.2;
-  const door = useMemo(() => dockDoorTexture(), []);
-  useEffect(() => () => door.dispose(), [door]);
-
-  const lines = useMemo(() => {
-    const pts: number[] = [];
-    for (const x of walkways) {
-      // Walkway edge lines, stopping short of the hall walls.
-      for (const dx of [-0.5, 0.5]) pts.push(x + dx, 0.004, bounds.min.z - 1.0, x + dx, 0.004, bounds.max.z + 1.4);
-    }
-    // Cross lane in front of the racks.
-    pts.push(x0 + 1, 0.004, bounds.max.z + 1.4, x1 - 1, 0.004, bounds.max.z + 1.4, x0 + 1, 0.004, bounds.max.z + 2.6, x1 - 1, 0.004, bounds.max.z + 2.6);
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
-    return g;
-  }, [walkways, bounds, x0, x1]);
-
-  return (
-    <group>
-      <mesh rotation-x={-Math.PI / 2} position={[cx, 0, cz]} receiveShadow>
-        <planeGeometry args={[w, d]} />
-        <MeshReflectorMaterial
-          resolution={512}
-          blur={[400, 120]}
-          mixBlur={1}
-          mixStrength={2.2}
-          mirror={0.35}
-          depthScale={0.6}
-          minDepthThreshold={0.4}
-          maxDepthThreshold={1.3}
-          color="#0a101c"
-          metalness={0.35}
-          roughness={0.85}
-        />
-      </mesh>
-      <lineSegments geometry={lines}>
-        <lineBasicMaterial color="#cbd5e1" transparent opacity={0.22} />
-      </lineSegments>
-
-      {/* Back wall and left wall, with ribbed cladding. */}
-      <mesh position={[cx, wallH / 2, z0]} receiveShadow>
-        <boxGeometry args={[w, wallH, 0.2]} />
-        <meshStandardMaterial color="#0e1525" roughness={0.92} />
-      </mesh>
-      <mesh position={[x0, wallH / 2, cz]} receiveShadow>
-        <boxGeometry args={[0.2, wallH, d]} />
-        <meshStandardMaterial color="#0d1322" roughness={0.92} />
-      </mesh>
-      <Ribs from={[x0 + 1, z0 + 0.12]} to={[x1 - 0.5, z0 + 0.12]} height={wallH} />
-      <Ribs from={[x0 + 0.12, z0 + 1]} to={[x0 + 0.12, z1 - 0.5]} height={wallH} />
-      {/* Steel columns along the walls. */}
-      {Array.from({ length: Math.floor(w / 6) + 1 }, (_, i) => x0 + 0.3 + i * 6).map((x) => (
-        <mesh key={`c${x}`} position={[x, wallH / 2, z0 + 0.3]} castShadow>
-          <boxGeometry args={[0.32, wallH, 0.32]} />
-          <meshStandardMaterial color="#26324a" metalness={0.6} roughness={0.4} />
-        </mesh>
-      ))}
-
-      {/* Loading dock on the left wall: roller door, dock bumpers and a light above. */}
-      <group position={[x0 + 0.13, 0, cz + 1]}>
-        <mesh position={[0, 1.75, 0]} rotation-y={Math.PI / 2}>
-          <planeGeometry args={[4.2, 3.5]} />
-          <meshStandardMaterial map={door} metalness={0.5} roughness={0.5} />
-        </mesh>
-        {[-1.6, 1.6].map((z) => (
-          <mesh key={z} position={[0.12, 0.55, z]}>
-            <boxGeometry args={[0.16, 0.5, 0.3]} />
-            <meshStandardMaterial color="#111827" roughness={0.9} />
-          </mesh>
-        ))}
-        <mesh position={[0.08, 3.75, 0]}>
-          <boxGeometry args={[0.06, 0.08, 3.6]} />
-          <meshStandardMaterial color="#f8fafc" emissive="#f8fafc" emissiveIntensity={2.5} toneMapped={false} />
-        </mesh>
-      </group>
-
-      {/* Overhead LED strips above each walkway, each with a real light below it. */}
-      {walkways.map((x) => (
-        <pointLight key={`p${x}`} position={[x, 3.9, (bounds.min.z + bounds.max.z) / 2]} intensity={7} distance={9} decay={1.6} color="#e8eefc" />
-      ))}
-      {walkways.map((x) => (
-        <mesh key={`l${x}`} position={[x, 4.4, (bounds.min.z + bounds.max.z) / 2]}>
-          <boxGeometry args={[0.05, 0.03, bounds.max.z - bounds.min.z + 1]} />
-          <meshStandardMaterial color="#64748b" emissive="#94a3b8" emissiveIntensity={0.5} toneMapped={false} transparent opacity={0.7} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
-function Ribs({ from, to, height }: { from: [number, number]; to: [number, number]; height: number }) {
+function Instanced({
+  items,
+  color,
+  metalness = 0.4,
+  roughness = 0.5,
+  castShadow = true,
+  emissive,
+  emissiveIntensity,
+}: {
+  items: Inst[];
+  color: string;
+  metalness?: number;
+  roughness?: number;
+  castShadow?: boolean;
+  emissive?: string;
+  emissiveIntensity?: number;
+}) {
   const ref = useRef<THREE.InstancedMesh>(null);
-  const items = useMemo(() => {
-    const out: { p: THREE.Vector3Tuple; s: THREE.Vector3Tuple }[] = [];
-    const len = Math.hypot(to[0] - from[0], to[1] - from[1]);
-    const n = Math.floor(len / 0.9);
-    const alongX = from[1] === to[1];
-    for (let i = 0; i <= n; i++) {
-      const t = i / n;
-      const p: THREE.Vector3Tuple = [from[0] + (to[0] - from[0]) * t, height / 2, from[1] + (to[1] - from[1]) * t];
-      out.push({ p, s: alongX ? [0.05, height, 0.06] : [0.06, height, 0.05] });
-    }
-    return out;
-  }, [from, to, height]);
   useInstances(ref, items);
+  if (items.length === 0) return null;
   return (
-    <instancedMesh ref={ref} args={[undefined, undefined, items.length]}>
+    <instancedMesh ref={ref} args={[undefined, undefined, items.length]} castShadow={castShadow} receiveShadow>
       <boxGeometry />
-      <meshStandardMaterial color="#141d31" roughness={0.85} metalness={0.2} />
+      <meshStandardMaterial color={color} metalness={metalness} roughness={roughness} emissive={emissive ?? "#000000"} emissiveIntensity={emissiveIntensity ?? 0} />
     </instancedMesh>
   );
 }
 
-function dockDoorTexture(): THREE.CanvasTexture {
-  const c = document.createElement("canvas");
-  c.width = 256;
-  c.height = 256;
-  const ctx = c.getContext("2d")!;
-  ctx.fillStyle = "#1b2538";
-  ctx.fillRect(0, 0, 256, 256);
-  for (let y = 0; y < 256; y += 12) {
-    ctx.fillStyle = "#24304a";
-    ctx.fillRect(0, y, 256, 6);
-  }
-  ctx.fillStyle = "#94a3b8";
-  ctx.font = "600 22px ui-sans-serif, system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("DOCK 1", 128, 40);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
+/** Blue uprights, orange beams, frame bracing, base plates and yellow column guards. */
+export function Racks({ aisleCount, racks }: { aisleCount: number; racks: number }) {
+  const parts = useMemo(() => {
+    const uprights: Inst[] = [];
+    const beams: Inst[] = [];
+    const braces: Inst[] = [];
+    const plates: Inst[] = [];
+    const guards: Inst[] = [];
+    const halfD = BAY.depth / 2 - BAY.post / 2;
+    for (let a = 0; a < aisleCount; a++) {
+      for (const side of ["L", "R"] as const) {
+        const x = columnX(a, side);
+        const frames = Array.from({ length: racks + 1 }, (_, i) => bayZ(1) - BAY_PITCH / 2 + i * BAY_PITCH);
+        frames.forEach((z, fi) => {
+          for (const dx of [-halfD, halfD]) {
+            uprights.push({ p: [x + dx, RACK_HEIGHT / 2, z], s: [BAY.post, RACK_HEIGHT, BAY.post * 0.75] });
+            plates.push({ p: [x + dx, 0.01, z], s: [0.16, 0.02, 0.16] });
+          }
+          // Zig-zag bracing in the frame plane (x-y), between the two uprights.
+          const span = halfD * 2;
+          const step = 0.85;
+          for (let y = 0.25, k = 0; y + step < RACK_HEIGHT - 0.1; y += step, k++) {
+            const len = Math.hypot(span, step);
+            const ang = Math.atan2(step, span) * (k % 2 ? -1 : 1);
+            braces.push({ p: [x, y + step / 2, z], s: [len, 0.035, 0.035], r: new THREE.Euler(0, 0, ang) });
+          }
+          // Column guards on the walkway-facing upright at both aisle ends.
+          if (fi === 0 || fi === frames.length - 1) {
+            const dx = side === "L" ? halfD : -halfD;
+            guards.push({ p: [x + dx + (side === "L" ? 0.06 : -0.06), 0.3, z], s: [0.12, 0.6, 0.2] });
+          }
+        });
+        for (let r = 1; r <= racks; r++) {
+          const z = bayZ(r);
+          for (let s = 2; s <= LEVELS + 1; s++) {
+            const y = s <= LEVELS ? levelY(s) : RACK_HEIGHT - 0.12;
+            for (const dx of [-halfD, halfD]) beams.push({ p: [x + dx, y, z], s: [0.05, BAY.beam, BAY_PITCH - BAY.post] });
+          }
+        }
+      }
+    }
+    return { uprights, beams, braces, plates, guards };
+  }, [aisleCount, racks]);
+
+  return (
+    <group>
+      <Instanced items={parts.uprights} color="#1e4fa8" metalness={0.45} roughness={0.38} />
+      <Instanced items={parts.beams} color="#f07a1a" metalness={0.35} roughness={0.42} />
+      <Instanced items={parts.braces} color="#2a5cb8" metalness={0.45} roughness={0.4} castShadow={false} />
+      <Instanced items={parts.plates} color="#334155" metalness={0.6} roughness={0.4} castShadow={false} />
+      <Instanced items={parts.guards} color="#facc15" metalness={0.2} roughness={0.5} />
+    </group>
+  );
 }
 
-/** Hanging aisle signs at the near end of each walkway, lit like the real thing. */
-export function AisleSigns({ signs }: { signs: { aisle: string; x: number; z: number; sub: string }[] }) {
-  const textures = useMemo(() => signs.map((s) => signTexture(s.aisle, s.sub)), [signs]);
+/** White label chips above every rack bay; hot bays are larger and tinted with the mode colour. */
+export function RackLabels({ bays, hot, tone }: { bays: Bay[]; hot: Set<string>; tone: string }) {
+  const textures = useMemo(() => new Map(bays.map((b) => [b.key, chip(b.key)])), [bays]);
+  useEffect(() => () => textures.forEach((t) => t.dispose()), [textures]);
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => invalidate(), [hot, tone, invalidate]);
+  return (
+    <group>
+      {bays.map((b) => (
+        <sprite key={b.key} position={[b.x, RACK_HEIGHT + 0.75, b.z]} scale={hot.has(b.key) ? [1.15, 0.43, 1] : [0.95, 0.36, 1]} raycast={() => null}>
+          <spriteMaterial map={textures.get(b.key)} color={hot.has(b.key) ? tone : "#ffffff"} toneMapped={false} depthWrite={false} />
+        </sprite>
+      ))}
+    </group>
+  );
+}
+
+/** Hanging signs over the entrance of each walkway. */
+export function AisleSigns({ aisles, subs, z }: { aisles: string[]; subs: string[]; z: number }) {
+  const textures = useMemo(() => aisles.map((a, i) => aisleSign(a, subs[i] ?? "")), [aisles, subs]);
   useEffect(() => () => textures.forEach((t) => t.dispose()), [textures]);
   return (
     <group>
-      {signs.map((s, i) => (
-        <group key={s.aisle} position={[s.x, 3.55, s.z]}>
-          {[-0.55, 0.55].map((dx) => (
-            <mesh key={dx} position={[dx, 0.55, 0]}>
-              <cylinderGeometry args={[0.008, 0.008, 1.1]} />
-              <meshStandardMaterial color="#64748b" metalness={0.8} roughness={0.3} />
+      {aisles.map((a, i) => (
+        <group key={a} position={[walkwayX(i), RACK_HEIGHT + 1.35, z]}>
+          {[-0.9, 0.9].map((dx) => (
+            <mesh key={dx} position={[dx, 1.2, 0]}>
+              <cylinderGeometry args={[0.012, 0.012, 2.4]} />
+              <meshStandardMaterial color="#6b7280" metalness={0.8} roughness={0.3} />
             </mesh>
           ))}
           <mesh castShadow>
-            <boxGeometry args={[1.5, 0.78, 0.05]} />
-            <meshStandardMaterial color="#0f172a" metalness={0.4} roughness={0.5} />
+            <boxGeometry args={[2.3, 1.15, 0.06]} />
+            <meshStandardMaterial color="#0f2a5c" metalness={0.3} roughness={0.5} />
           </mesh>
-          {[0.027, -0.027].map((dz) => (
+          {[0.031, -0.031].map((dz) => (
             <mesh key={dz} position={[0, 0, dz]} rotation-y={dz < 0 ? Math.PI : 0}>
-              <planeGeometry args={[1.42, 0.7]} />
+              <planeGeometry args={[2.25, 1.1]} />
               <meshBasicMaterial map={textures[i]} toneMapped={false} />
             </mesh>
           ))}
@@ -297,53 +160,290 @@ export function AisleSigns({ signs }: { signs: { aisle: string; x: number; z: nu
   );
 }
 
-function signTexture(aisle: string, sub: string): THREE.CanvasTexture {
-  const c = document.createElement("canvas");
-  c.width = 512;
-  c.height = 252;
-  const ctx = c.getContext("2d")!;
-  const g = ctx.createLinearGradient(0, 0, 0, 252);
-  g.addColorStop(0, "#132036");
-  g.addColorStop(1, "#0b1424");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 512, 252);
-  ctx.fillStyle = "#2dd4bf";
-  ctx.fillRect(0, 0, 512, 8);
-  ctx.fillStyle = "#e6edf7";
-  ctx.font = "700 150px ui-sans-serif, system-ui, sans-serif";
-  ctx.textAlign = "left";
-  ctx.fillText(aisle, 40, 178);
-  ctx.fillStyle = "#94a3b8";
-  ctx.font = "600 30px ui-sans-serif, system-ui, sans-serif";
-  ctx.fillText("AISLE", 190, 105);
-  ctx.fillStyle = "#e6edf7";
-  ctx.font = "500 34px ui-sans-serif, system-ui, sans-serif";
-  ctx.fillText(sub, 190, 160);
-  ctx.fillStyle = "#5b6b85";
-  ctx.font = "500 24px ui-sans-serif, system-ui, sans-serif";
-  ctx.fillText("Racks 01–06 · Shelves 1–4", 190, 206);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 8;
-  return t;
+/** The hall: epoxy floor with reflections and safety markings, walls, dock doors, columns and high-bay lights. */
+export function Hall({ aisleCount, racks, aisles }: { aisleCount: number; racks: number; aisles: string[] }) {
+  const { hall, racks: rk } = useMemo(() => hallBounds(aisleCount, racks), [aisleCount, racks]);
+  const w = hall.x1 - hall.x0;
+  const d = hall.z1 - hall.z0;
+  const cx = (hall.x0 + hall.x1) / 2;
+  const cz = (hall.z0 + hall.z1) / 2;
+  const wallH = 9;
+
+  const tex = useMemo(() => {
+    const floor = epoxyFloor();
+    floor.repeat.set(w / 4, d / 4);
+    return {
+      floor,
+      doors: [1, 2, 3, 4].map((n) => dockDoor(n)),
+      letters: aisles.map((a) => floorText(a)),
+      receiving: floorText("RECEIVING", "INBOUND · QC HOLD"),
+      dispatch: floorText("DISPATCH", "OUTBOUND · STAGING"),
+    };
+  }, [w, d, aisles]);
+  useEffect(
+    () => () => {
+      tex.floor.dispose();
+      tex.doors.forEach((t) => t.dispose());
+      tex.letters.forEach((t) => t.dispose());
+      tex.receiving.dispose();
+      tex.dispatch.dispose();
+    },
+    [tex],
+  );
+
+  const zone = { z0: hall.z0 + 1.6, z1: rk.z0 - 4.6 };
+  const markings = useMemo(() => {
+    const out: Inst[] = [];
+    const y = 0.004;
+    const lineW = 0.1;
+    const frontZ = rk.z1 + 0.4;
+    for (let a = 0; a < aisleCount; a++) {
+      // Walkway edge lines and a zebra crossing at the walkway entrance.
+      for (const dx of [-(WALK / 2 - 0.15), WALK / 2 - 0.15]) out.push({ p: [walkwayX(a) + dx, y, (rk.z0 + frontZ) / 2], s: [lineW, 0.004, frontZ - rk.z0] });
+      for (let k = 0; k < 6; k++) out.push({ p: [walkwayX(a) - 1.25 + k * 0.5, y, frontZ + 1.6], s: [0.26, 0.004, 1.6] });
+    }
+    for (const z of [frontZ, frontZ + 3.2, rk.z0 - 0.6, rk.z0 - 3.8]) out.push({ p: [cx, y, z], s: [w - 3, 0.004, lineW] });
+    for (const [x0, x1] of [
+      [hall.x0 + 1.5, cx - 1.2],
+      [cx + 1.2, hall.x1 - 1.5],
+    ]) {
+      out.push({ p: [(x0 + x1) / 2, y, zone.z0], s: [x1 - x0, 0.004, lineW] }, { p: [(x0 + x1) / 2, y, zone.z1], s: [x1 - x0, 0.004, lineW] });
+      out.push({ p: [x0, y, (zone.z0 + zone.z1) / 2], s: [lineW, 0.004, zone.z1 - zone.z0] }, { p: [x1, y, (zone.z0 + zone.z1) / 2], s: [lineW, 0.004, zone.z1 - zone.z0] });
+    }
+    return out;
+  }, [aisleCount, rk, hall, cx, w, zone.z0, zone.z1]);
+
+  const columns = useMemo(() => {
+    const out: Inst[] = [];
+    for (let x = hall.x0 + 0.4; x <= hall.x1; x += 7.5) out.push({ p: [x, wallH / 2, hall.z0 + 0.4], s: [0.4, wallH, 0.4] });
+    for (let z = hall.z0 + 7.5; z <= hall.z1; z += 7.5) out.push({ p: [hall.x0 + 0.4, wallH / 2, z], s: [0.4, wallH, 0.4] });
+    return out;
+  }, [hall]);
+
+  const lamps = useMemo(() => {
+    const out: Inst[] = [];
+    for (let a = 0; a < aisleCount; a++) for (let k = 0; k < 3; k++) out.push({ p: [walkwayX(a), wallH - 0.6, rk.z0 + 2 + k * ((rk.z1 - rk.z0 - 4) / 2)], s: [0.7, 0.12, 0.7] });
+    return out;
+  }, [aisleCount, rk]);
+
+  const doorX = (i: number) => hall.x0 + 5 + i * ((w - 10) / 3);
+  const zoneMid = (zone.z0 + zone.z1) / 2;
+
+  return (
+    <group>
+      {/* Slab edge, so the hall reads as a model sitting in the dark app canvas. */}
+      <mesh position={[cx, -0.26, cz]} receiveShadow>
+        <boxGeometry args={[w + 0.4, 0.5, d + 0.4]} />
+        <meshStandardMaterial color="#1e293b" roughness={0.9} />
+      </mesh>
+      <mesh rotation-x={-Math.PI / 2} position={[cx, 0, cz]} receiveShadow>
+        <planeGeometry args={[w, d]} />
+        <MeshReflectorMaterial
+          map={tex.floor}
+          resolution={1024}
+          blur={[300, 80]}
+          mixBlur={0.9}
+          mixStrength={0.9}
+          mirror={0.25}
+          depthScale={0.5}
+          minDepthThreshold={0.4}
+          maxDepthThreshold={1.2}
+          color="#ffffff"
+          metalness={0.05}
+          roughness={0.75}
+        />
+      </mesh>
+      <Instanced items={markings} color="#facc15" metalness={0} roughness={0.6} castShadow={false} emissive="#facc15" emissiveIntensity={0.15} />
+
+      {aisles.map((a, i) => (
+        <mesh key={a} rotation-x={-Math.PI / 2} position={[walkwayX(i), 0.006, rk.z1 + 3.9]} raycast={() => null}>
+          <planeGeometry args={[2.4, 1.2]} />
+          <meshBasicMaterial map={tex.letters[i]} transparent toneMapped={false} depthWrite={false} opacity={0.85} />
+        </mesh>
+      ))}
+      <mesh rotation-x={-Math.PI / 2} position={[(hall.x0 + 1.5 + cx - 1.2) / 2, 0.006, zoneMid + 1.6]} raycast={() => null}>
+        <planeGeometry args={[6, 3]} />
+        <meshBasicMaterial map={tex.receiving} transparent toneMapped={false} depthWrite={false} opacity={0.7} />
+      </mesh>
+      <mesh rotation-x={-Math.PI / 2} position={[(cx + 1.2 + hall.x1 - 1.5) / 2, 0.006, zoneMid + 1.6]} raycast={() => null}>
+        <planeGeometry args={[6, 3]} />
+        <meshBasicMaterial map={tex.dispatch} transparent toneMapped={false} depthWrite={false} opacity={0.7} />
+      </mesh>
+
+      {/* Back and left walls: light insulated panels above a darker dado. */}
+      <mesh position={[cx, wallH / 2, hall.z0]} receiveShadow>
+        <boxGeometry args={[w, wallH, 0.25]} />
+        <meshStandardMaterial color="#d5dae1" roughness={0.85} />
+      </mesh>
+      <mesh position={[cx, 1, hall.z0 + 0.14]} receiveShadow>
+        <boxGeometry args={[w, 2, 0.04]} />
+        <meshStandardMaterial color="#5c6676" roughness={0.8} />
+      </mesh>
+      <mesh position={[hall.x0, wallH / 2, cz]} receiveShadow>
+        <boxGeometry args={[0.25, wallH, d]} />
+        <meshStandardMaterial color="#cfd5dc" roughness={0.85} />
+      </mesh>
+      <mesh position={[hall.x0 + 0.14, 1, cz]} receiveShadow>
+        <boxGeometry args={[0.04, 2, d]} />
+        <meshStandardMaterial color="#5c6676" roughness={0.8} />
+      </mesh>
+      <Instanced items={columns} color="#9aa4b2" metalness={0.5} roughness={0.4} />
+
+      {[0, 1, 2, 3].map((i) => (
+        <group key={i} position={[doorX(i), 0, hall.z0 + 0.14]}>
+          <mesh position={[0, 1.9, 0.03]}>
+            <planeGeometry args={[3, 3.6]} />
+            <meshStandardMaterial map={tex.doors[i]} metalness={0.4} roughness={0.5} />
+          </mesh>
+          <mesh position={[0, 0.02, 0.9]} receiveShadow>
+            <boxGeometry args={[2.6, 0.04, 1.8]} />
+            <meshStandardMaterial color="#6b7280" metalness={0.6} roughness={0.4} />
+          </mesh>
+          {[-1.6, 1.6].map((dx) => (
+            <mesh key={dx} position={[dx, 0.5, 0.1]}>
+              <boxGeometry args={[0.25, 0.5, 0.18]} />
+              <meshStandardMaterial color="#111827" roughness={0.9} />
+            </mesh>
+          ))}
+          <mesh position={[1.85, 2.6, 0.08]}>
+            <sphereGeometry args={[0.09, 16, 16]} />
+            <meshStandardMaterial color={i === 1 ? "#ef4444" : "#22c55e"} emissive={i === 1 ? "#ef4444" : "#22c55e"} emissiveIntensity={2.2} toneMapped={false} />
+          </mesh>
+        </group>
+      ))}
+
+      <Instanced items={lamps} color="#f8fafc" metalness={0} roughness={0.2} castShadow={false} emissive="#ffffff" emissiveIntensity={2.4} />
+    </group>
+  );
 }
 
-/** Glass enclosure around the cold-chain aisle (2–8 °C), with frosted edges. */
-export function ColdRoom({ x0, x1, z0, z1, height }: { x0: number; x1: number; z0: number; z1: number; height: number }) {
-  const edges = useMemo(() => new THREE.EdgesGeometry(new THREE.BoxGeometry(x1 - x0, height, z1 - z0)), [x0, x1, z0, z1, height]);
+/** Frosted-glass enclosure around the cold-chain / cool aisle. */
+export function ColdRoom({ aisleIndex, racks }: { aisleIndex: number; racks: number }) {
+  const x0 = columnX(aisleIndex, "L") - BAY.depth / 2 - 0.25;
+  const x1 = columnX(aisleIndex, "R") + BAY.depth / 2 + 0.25;
+  const z0 = bayZ(1) - BAY_PITCH / 2 - 0.5;
+  const z1 = bayZ(racks) + BAY_PITCH / 2 + 0.5;
+  const h = RACK_HEIGHT + 0.6;
+  const edges = useMemo(() => new THREE.EdgesGeometry(new THREE.BoxGeometry(x1 - x0, h, z1 - z0)), [x0, x1, z0, z1, h]);
   return (
-    <group position={[(x0 + x1) / 2, height / 2, (z0 + z1) / 2]}>
-      <mesh renderOrder={1}>
-        <boxGeometry args={[x1 - x0, height, z1 - z0]} />
-        <meshPhysicalMaterial color="#7dd3fc" transparent opacity={0.07} roughness={0.15} metalness={0} depthWrite={false} side={THREE.DoubleSide} />
+    <group position={[(x0 + x1) / 2, h / 2, (z0 + z1) / 2]}>
+      <mesh renderOrder={1} raycast={() => null}>
+        <boxGeometry args={[x1 - x0, h, z1 - z0]} />
+        <meshPhysicalMaterial color="#bae6fd" transparent opacity={0.13} roughness={0.1} metalness={0} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
       <lineSegments geometry={edges}>
-        <lineBasicMaterial color="#7dd3fc" transparent opacity={0.45} />
+        <lineBasicMaterial color="#38bdf8" transparent opacity={0.8} />
       </lineSegments>
-      <mesh position={[0, height / 2 - 0.05, 0]}>
-        <boxGeometry args={[x1 - x0 - 0.2, 0.04, 0.12]} />
-        <meshStandardMaterial color="#7dd3fc" emissive="#38bdf8" emissiveIntensity={0.7} toneMapped={false} transparent opacity={0.8} />
+    </group>
+  );
+}
+
+/** Receiving and dispatch zones: stretch-wrapped pallets and a forklift. Decorative, fixed positions. */
+export function Staging({ aisleCount, racks }: { aisleCount: number; racks: number }) {
+  const { hall, racks: rk } = useMemo(() => hallBounds(aisleCount, racks), [aisleCount, racks]);
+  const cx = (hall.x0 + hall.x1) / 2;
+  const zMid = (hall.z0 + 1.6 + rk.z0 - 4.6) / 2 - 1.0;
+  const loads = useMemo(() => {
+    const out: { x: number; z: number; layers: number; tint: string }[] = [];
+    const rows = [
+      [hall.x0 + 3, cx - 3],
+      [cx + 3, hall.x1 - 3],
+    ];
+    rows.forEach(([a, b], zi) => {
+      for (let x = a, k = 0; x <= b; x += 1.6, k++) {
+        out.push({ x, z: zMid - 0.8 + (k % 2) * 1.6, layers: 2 + ((k * 7 + zi) % 3), tint: (k + zi) % 3 === 0 ? "#e8edf3" : "#ffffff" });
+      }
+    });
+    return out;
+  }, [hall, cx, zMid]);
+  const wood = useMemo(() => palletWood(), []);
+  const kraft = useMemo(() => kraftCarton(), []);
+  useEffect(
+    () => () => {
+      wood.dispose();
+      kraft.dispose();
+    },
+    [wood, kraft],
+  );
+  return (
+    <group>
+      {loads.map((l, i) => (
+        <group key={i} position={[l.x, 0, l.z]}>
+          <mesh position={[0, 0.07, 0]} castShadow receiveShadow>
+            <boxGeometry args={[1.2, 0.14, 1.0]} />
+            <meshStandardMaterial map={wood} roughness={0.9} />
+          </mesh>
+          <mesh position={[0, 0.14 + (l.layers * 0.3) / 2, 0]} castShadow receiveShadow>
+            <boxGeometry args={[1.12, l.layers * 0.3, 0.94]} />
+            <meshStandardMaterial map={kraft} color={l.tint} roughness={0.85} />
+          </mesh>
+          <mesh position={[0, 0.14 + (l.layers * 0.3) / 2, 0]} raycast={() => null}>
+            <boxGeometry args={[1.16, l.layers * 0.3 + 0.02, 0.98]} />
+            <meshPhysicalMaterial color="#ffffff" transparent opacity={0.18} roughness={0.15} depthWrite={false} />
+          </mesh>
+        </group>
+      ))}
+      <Forklift position={[cx + 6, 0, zMid + 2.6]} rotationY={-Math.PI / 2.4} />
+    </group>
+  );
+}
+
+/** A simple counterbalance forklift built from boxes and cylinders. */
+function Forklift({ position, rotationY }: { position: THREE.Vector3Tuple; rotationY: number }) {
+  const dark = "#1f2937";
+  const steel = "#4b5563";
+  return (
+    <group position={position} rotation-y={rotationY}>
+      <mesh position={[0, 0.55, 0]} castShadow>
+        <boxGeometry args={[1.1, 0.7, 2.0]} />
+        <meshStandardMaterial color="#eab308" metalness={0.3} roughness={0.45} />
       </mesh>
+      <mesh position={[0, 0.75, -0.85]} castShadow>
+        <boxGeometry args={[1.12, 0.9, 0.5]} />
+        <meshStandardMaterial color="#374151" metalness={0.4} roughness={0.5} />
+      </mesh>
+      <mesh position={[0, 1.05, -0.1]} castShadow>
+        <boxGeometry args={[0.55, 0.12, 0.55]} />
+        <meshStandardMaterial color={dark} roughness={0.8} />
+      </mesh>
+      {[
+        [-0.5, -0.45],
+        [0.5, -0.45],
+        [-0.5, 0.45],
+        [0.5, 0.45],
+      ].map(([x, z]) => (
+        <mesh key={`${x}${z}`} position={[x, 1.55, z]} castShadow>
+          <boxGeometry args={[0.06, 1.3, 0.06]} />
+          <meshStandardMaterial color={dark} metalness={0.6} roughness={0.4} />
+        </mesh>
+      ))}
+      <mesh position={[0, 2.2, 0]} castShadow>
+        <boxGeometry args={[1.1, 0.05, 1.0]} />
+        <meshStandardMaterial color={dark} metalness={0.6} roughness={0.4} />
+      </mesh>
+      {[-0.35, 0.35].map((x) => (
+        <mesh key={x} position={[x, 1.25, 1.1]} castShadow>
+          <boxGeometry args={[0.08, 2.5, 0.1]} />
+          <meshStandardMaterial color={steel} metalness={0.7} roughness={0.35} />
+        </mesh>
+      ))}
+      {[-0.25, 0.25].map((x) => (
+        <mesh key={`f${x}`} position={[x, 0.12, 1.65]} castShadow>
+          <boxGeometry args={[0.1, 0.05, 1.1]} />
+          <meshStandardMaterial color={steel} metalness={0.7} roughness={0.35} />
+        </mesh>
+      ))}
+      {[
+        [-0.55, 0.6],
+        [0.55, 0.6],
+        [-0.55, -0.6],
+        [0.55, -0.6],
+      ].map(([x, z]) => (
+        <mesh key={`w${x}${z}`} position={[x, 0.24, z]} rotation-z={Math.PI / 2} castShadow>
+          <cylinderGeometry args={[0.24, 0.24, 0.2, 24]} />
+          <meshStandardMaterial color="#111827" roughness={0.9} />
+        </mesh>
+      ))}
     </group>
   );
 }

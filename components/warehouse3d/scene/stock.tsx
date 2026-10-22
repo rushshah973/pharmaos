@@ -1,101 +1,115 @@
 "use client";
 
-// What sits on the shelves: one open plastic tote per bin (ONE InstancedMesh, per-instance colour from the
-// heatmap severity; high severities glow through bloom), kraft cartons inside each tote sized by the bin's fill,
-// see-through cyan cartons for proposed stock, outlines for search matches and a light beam on the selected bin.
+// What is on the racks and how risk is shown. ONE invisible InstancedMesh covers all 240 bins (click and hover);
+// the stock is pallets with pharma and kraft cartons, as many as the bin's fill; at-risk bins get a tinted,
+// glowing frame (bloom) in the mode colour, and their bay a glowing floor outline; proposed stock is staged
+// as cyan glass pallets in the walkway in front of its bay ("Proposed — not received").
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { type ThreeEvent, useThree } from "@react-three/fiber";
-import { Html } from "@react-three/drei";
 import * as THREE from "three";
 import type { BinHeat, HeatmapMode, Severity } from "@/lib/business-logic/heatmap";
-import type { HeatmapView, LayoutBin } from "@/lib/services/warehouse";
+import type { HeatmapView } from "@/lib/services/warehouse";
+import { BAY, BAY_PITCH, type Bay, RACK_HEIGHT, type Slot, WALK, walkwayX } from "./layout3d";
 
-export const TOTE = { w: 0.86, h: 0.34, d: 1.0 };
-const TONE: Record<HeatmapMode, string> = { stockout: "#f87171", expiry: "#fbbf24", excess: "#a78bfa", normal: "#94a3b8", proposed: "#22d3ee" };
-/** Brightness multipliers: values above 1 (with toneMapped off) cross the bloom threshold and glow. */
-const GLOW: Record<HeatmapMode, Record<Severity, number>> = {
-  stockout: { 0: 0, 1: 1.05, 2: 2.0, 3: 3.4 },
-  expiry: { 0: 0, 1: 0.95, 2: 1.8, 3: 3.0 },
-  excess: { 0: 0, 1: 1.0, 2: 1.9, 3: 3.0 },
-  normal: { 0: 0, 1: 0.45, 2: 0.7, 3: 0.95 },
-  proposed: { 0: 0, 1: 1.1, 2: 1.6, 3: 2.2 },
-};
-const BASE = new THREE.Color("#33446a");
-const INACTIVE = new THREE.Color("#10172a");
-const WHITE = new THREE.Color("#ffffff");
+/** Where the selected bin's label sits in the world: just above the slot, below the rack labels. */
+export const labelAnchor = (s: Slot) => new THREE.Vector3(s.center.x, Math.min(s.center.y + 0.95, RACK_HEIGHT + 0.2), s.center.z);
+import { type Inst, useInstances } from "./structure";
+import { kraftCarton, palletWood, pharmaCarton } from "./textures";
 
-export const toteCenter = (b: LayoutBin) => new THREE.Vector3(b.x, b.y + 0.03 + TOTE.h / 2, b.z);
+/** Bright, saturated tones for a lit scene (the legend uses the matching UI tokens). */
+export const SCENE_TONE: Record<HeatmapMode, string> = { stockout: "#ef4444", expiry: "#f59e0b", excess: "#8b5cf6", normal: "#64748b", proposed: "#06b6d4" };
+const FILL_OPACITY: Record<Severity, number> = { 0: 0, 1: 0.16, 2: 0.26, 3: 0.36 };
+const GLOW: Record<Severity, number> = { 0: 0, 1: 1.25, 2: 1.9, 3: 2.8 };
+/** Normal mode shows fill through the stock itself; only nearly full bins get a frame. */
+const showSeverity = (mode: HeatmapMode, s: Severity) => (mode === "normal" ? s >= 3 : s > 0);
 
-/** An open-top box (the top face removed), so the cartons inside are visible from above. */
-function openToteGeometry(): THREE.BufferGeometry {
-  const g = new THREE.BoxGeometry(TOTE.w, TOTE.h, TOTE.d);
-  const index = g.getIndex()!;
-  const keep: number[] = [];
-  g.groups.forEach((group, i) => {
-    if (i === 2) return; // +y face
-    for (let k = group.start; k < group.start + group.count; k++) keep.push(index.getX(k));
-  });
-  g.setIndex(keep);
-  g.clearGroups();
-  return g;
+const SLOT = { x: BAY.depth - 0.1, y: 0.95, z: BAY.length - 0.08 };
+
+function hash(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return h >>> 0;
 }
 
-export function Totes({
-  bins,
-  heat,
-  mode,
-  hovered,
+/** Pallets and cartons for every non-empty bin: up to 2 pallets × 3 layers × 4 cartons, filled by fill %. */
+export function Loads({ slots }: { slots: Slot[] }) {
+  const tex = useMemo(() => ({ red: pharmaCarton("#dc2626", "Paracetamol"), blue: pharmaCarton("#2563eb", "Amoxicillin"), kraft: kraftCarton(), wood: palletWood() }), []);
+  useEffect(() => () => Object.values(tex).forEach((t) => t.dispose()), [tex]);
+
+  const data = useMemo(() => {
+    const pallets: Inst[] = [];
+    const cartons: [Inst[], Inst[], Inst[]] = [[], [], []];
+    const cw = 0.43;
+    const cd = 0.41;
+    const ch = 0.25;
+    for (const s of slots) {
+      const b = s.bin;
+      if (b.used <= 0 || b.status !== "active") continue;
+      const fill = Math.min(1, b.used / b.capacityUnits);
+      let n = Math.max(1, Math.ceil(fill * 24));
+      const h = hash(b.id);
+      for (let p = 0; p < 2 && n > 0; p++) {
+        const pz = s.center.z + (p === 0 ? -0.5 : 0.5);
+        pallets.push({ p: [s.center.x, s.floorY + 0.065, pz], s: [0.95, 0.13, 0.9] });
+        const type = ((h >>> (p * 3)) % 3) as 0 | 1 | 2;
+        for (let layer = 0; layer < 3 && n > 0; layer++) {
+          for (let k = 0; k < 4 && n > 0; k++, n--) {
+            const jx = (((h >>> (k + layer)) & 7) - 3.5) * 0.004;
+            cartons[type].push({
+              p: [s.center.x + (k % 2 ? 0.225 : -0.225) + jx, s.floorY + 0.13 + ch / 2 + layer * (ch + 0.005), pz + (k < 2 ? -0.215 : 0.215)],
+              s: [cw, ch, cd],
+              r: new THREE.Euler(0, (((h >>> k) & 3) - 1.5) * 0.015, 0),
+            });
+          }
+        }
+      }
+    }
+    return { pallets, cartons };
+  }, [slots]);
+
+  return (
+    <group>
+      <Textured items={data.pallets} map={tex.wood} roughness={0.9} />
+      <Textured items={data.cartons[0]} map={tex.red} roughness={0.7} />
+      <Textured items={data.cartons[1]} map={tex.blue} roughness={0.7} />
+      <Textured items={data.cartons[2]} map={tex.kraft} roughness={0.88} />
+    </group>
+  );
+}
+
+function Textured({ items, map, roughness }: { items: Inst[]; map: THREE.Texture; roughness: number }) {
+  const ref = useRef<THREE.InstancedMesh>(null);
+  useInstances(ref, items);
+  if (items.length === 0) return null;
+  return (
+    <instancedMesh ref={ref} args={[undefined, undefined, items.length]} castShadow receiveShadow>
+      <boxGeometry />
+      <meshStandardMaterial map={map} roughness={roughness} metalness={0} />
+    </instancedMesh>
+  );
+}
+
+/** The ONE instanced mesh for all bins: invisible slot volumes that take clicks and hover. */
+export function BinHitboxes({
+  slots,
   onSelect,
   onHover,
 }: {
-  bins: LayoutBin[];
-  heat: Map<string, BinHeat>;
-  mode: HeatmapMode;
-  hovered: number | null;
+  slots: Slot[];
   onSelect: (binId: string) => void;
   onHover: (index: number | null, x: number, y: number) => void;
 }) {
   const ref = useRef<THREE.InstancedMesh>(null);
-  const invalidate = useThree((s) => s.invalidate);
-  const geometry = useMemo(() => openToteGeometry(), []);
-
-  useLayoutEffect(() => {
-    const mesh = ref.current;
-    if (!mesh) return;
-    const m = new THREE.Matrix4();
-    bins.forEach((b, i) => mesh.setMatrixAt(i, m.makeTranslation(toteCenter(b))));
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.computeBoundingSphere();
-    invalidate();
-  }, [bins, invalidate]);
-
-  useLayoutEffect(() => {
-    const mesh = ref.current;
-    if (!mesh) return;
-    const tone = new THREE.Color(TONE[mode]);
-    const c = new THREE.Color();
-    bins.forEach((b, i) => {
-      const sev = heat.get(b.id)?.severity ?? 0;
-      if (b.status !== "active") c.copy(INACTIVE);
-      else if (sev === 0) c.copy(BASE);
-      else c.copy(tone).multiplyScalar(GLOW[mode][sev]);
-      if (i === hovered) c.lerp(WHITE, 0.28);
-      mesh.setColorAt(i, c);
-    });
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    invalidate();
-  }, [bins, heat, mode, hovered, invalidate]);
-
+  const items = useMemo<Inst[]>(() => slots.map((s) => ({ p: s.center.toArray() as THREE.Vector3Tuple, s: [SLOT.x, SLOT.y, SLOT.z] })), [slots]);
+  useInstances(ref, items);
   return (
     <instancedMesh
       ref={ref}
-      args={[geometry, undefined, bins.length]}
-      castShadow
-      receiveShadow
+      args={[undefined, undefined, slots.length]}
       onClick={(e: ThreeEvent<MouseEvent>) => {
         e.stopPropagation();
-        if (e.delta > 4 || e.instanceId === undefined) return; // a drag, not a click
-        onSelect(bins[e.instanceId].id);
+        if (e.delta > 5 || e.instanceId === undefined) return; // a drag, not a click
+        onSelect(slots[e.instanceId].bin.id);
       }}
       onPointerMove={(e: ThreeEvent<PointerEvent>) => {
         e.stopPropagation();
@@ -103,170 +117,185 @@ export function Totes({
       }}
       onPointerOut={() => onHover(null, 0, 0)}
     >
-      <meshStandardMaterial roughness={0.42} metalness={0.05} side={THREE.DoubleSide} toneMapped={false} />
+      <boxGeometry />
+      <meshBasicMaterial colorWrite={false} depthWrite={false} transparent opacity={0} />
     </instancedMesh>
   );
 }
 
-/** Kraft cartons inside each tote: 1–3 boxes, taller and more of them the fuller the bin. Empty bins stay empty. */
-export function Cartons({ bins }: { bins: LayoutBin[] }) {
+/** Twelve thin bars along the edges of a box (centre, size). */
+function edgeBars(c: THREE.Vector3, size: { x: number; y: number; z: number }, t: number): Inst[] {
+  const out: Inst[] = [];
+  const hx = size.x / 2;
+  const hy = size.y / 2;
+  const hz = size.z / 2;
+  for (const sy of [-1, 1]) for (const sz of [-1, 1]) out.push({ p: [c.x, c.y + sy * hy, c.z + sz * hz], s: [size.x + t, t, t] });
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) out.push({ p: [c.x + sx * hx, c.y, c.z + sz * hz], s: [t, size.y + t, t] });
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) out.push({ p: [c.x + sx * hx, c.y + sy * hy, c.z], s: [t, t, size.z + t] });
+  return out;
+}
+
+function GlowBars({ items, colors }: { items: Inst[]; colors: THREE.Color[] }) {
   const ref = useRef<THREE.InstancedMesh>(null);
   const invalidate = useThree((s) => s.invalidate);
-  const items = useMemo(() => {
-    const out: { p: THREE.Vector3; s: THREE.Vector3; shade: number }[] = [];
-    bins.forEach((b, bi) => {
-      if (b.used <= 0 || b.status !== "active") return;
-      const fill = Math.min(1, b.used / b.capacityUnits);
-      const n = fill < 0.25 ? 1 : fill < 0.6 ? 2 : 3;
-      const h = 0.1 + 0.3 * Math.min(1, fill * 1.4);
-      const slot = (TOTE.d - 0.1) / 3;
-      for (let k = 0; k < n; k++) {
-        const z = b.z - (TOTE.d - 0.1) / 2 + slot * (k + 0.5);
-        // Small, fixed per-carton variation so a shelf does not look cloned.
-        const jitter = ((bi * 7 + k * 13) % 10) / 10;
-        out.push({
-          p: new THREE.Vector3(b.x + (jitter - 0.5) * 0.06, b.y + 0.05 + (h * (0.92 + jitter * 0.08)) / 2, z),
-          s: new THREE.Vector3(TOTE.w - 0.18 - jitter * 0.06, h * (0.92 + jitter * 0.08), slot - 0.04),
-          shade: 0.82 + jitter * 0.3,
-        });
-      }
-    });
-    return out;
-  }, [bins]);
-
+  useInstances(ref, items);
   useLayoutEffect(() => {
     const mesh = ref.current;
     if (!mesh) return;
-    const m = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const kraft = new THREE.Color("#a07d50");
-    const c = new THREE.Color();
-    items.forEach((it, i) => {
-      mesh.setMatrixAt(i, m.compose(it.p, q, it.s));
-      mesh.setColorAt(i, c.copy(kraft).multiplyScalar(it.shade));
-    });
-    mesh.instanceMatrix.needsUpdate = true;
+    colors.forEach((c, i) => mesh.setColorAt(i, c));
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    mesh.computeBoundingSphere();
     invalidate();
-  }, [items, invalidate]);
-
+  }, [colors, invalidate]);
   if (items.length === 0) return null;
   return (
-    <instancedMesh ref={ref} args={[undefined, undefined, items.length]} castShadow receiveShadow raycast={() => null}>
+    <instancedMesh key={items.length} ref={ref} args={[undefined, undefined, items.length]} raycast={() => null}>
       <boxGeometry />
-      <meshStandardMaterial roughness={0.9} metalness={0} />
+      <meshBasicMaterial toneMapped={false} />
     </instancedMesh>
   );
 }
 
-/** Proposed stock: glowing see-through cartons standing on top of their candidate totes ("Proposed — not received"). */
-export function ProposedCartons({
-  cartons,
-  binById,
-  onHover,
-  onSelect,
-}: {
-  cartons: HeatmapView["placements"];
-  binById: Map<string, LayoutBin>;
-  onHover: (index: number | null, x: number, y: number) => void;
-  onSelect: (binId: string) => void;
-}) {
-  const ref = useRef<THREE.InstancedMesh>(null);
+/** Tinted glowing frames on highlighted bins and glowing floor outlines under their bays. */
+export function HeatOverlay({ slots, bays, heat, mode }: { slots: Slot[]; bays: Bay[]; heat: Map<string, BinHeat>; mode: HeatmapMode }) {
+  const fillRef = useRef<THREE.InstancedMesh>(null);
   const invalidate = useThree((s) => s.invalidate);
-  const edges = useMemo(() => new THREE.EdgesGeometry(new THREE.BoxGeometry(0.66, 0.3, 0.8)), []);
+  const built = useMemo(() => {
+    const tone = new THREE.Color(SCENE_TONE[mode]);
+    const hot = slots.filter((s) => s.bin.status === "active" && showSeverity(mode, heat.get(s.bin.id)?.severity ?? 0));
+    const fills: Inst[] = [];
+    const fillColors: { c: THREE.Color; o: number }[] = [];
+    const bars: Inst[] = [];
+    const barColors: THREE.Color[] = [];
+    for (const s of hot) {
+      const sev = heat.get(s.bin.id)!.severity;
+      fills.push({ p: s.center.toArray() as THREE.Vector3Tuple, s: [SLOT.x + 0.04, SLOT.y + 0.02, SLOT.z + 0.04] });
+      fillColors.push({ c: tone.clone(), o: FILL_OPACITY[sev] });
+      for (const b of edgeBars(s.center, { x: SLOT.x + 0.06, y: SLOT.y + 0.04, z: SLOT.z + 0.06 }, sev === 3 ? 0.045 : 0.03)) {
+        bars.push(b);
+        barColors.push(tone.clone().multiplyScalar(GLOW[sev]));
+      }
+    }
+    // Floor outline under every bay with a highlighted bin.
+    const hotBays = new Set(hot.map((s) => s.bayKey));
+    for (const bay of bays) {
+      if (!hotBays.has(bay.key)) continue;
+      const maxSev = Math.max(...bay.slots.map((s) => heat.get(s.bin.id)?.severity ?? 0)) as Severity;
+      const c = new THREE.Vector3(bay.x, 0.012, bay.z);
+      const w = BAY.depth + 0.5;
+      const l = BAY_PITCH + 0.3;
+      for (const [px, pz, sx, sz] of [
+        [c.x, c.z - l / 2, w, 0.07],
+        [c.x, c.z + l / 2, w, 0.07],
+        [c.x - w / 2, c.z, 0.07, l],
+        [c.x + w / 2, c.z, 0.07, l],
+      ]) {
+        bars.push({ p: [px, 0.012, pz], s: [sx, 0.012, sz] });
+        barColors.push(tone.clone().multiplyScalar(GLOW[maxSev] * 0.9));
+      }
+    }
+    return { fills, fillColors, bars, barColors, hotBays };
+  }, [slots, bays, heat, mode]);
+
+  useInstances(fillRef, built.fills);
   useLayoutEffect(() => {
-    const mesh = ref.current;
+    const mesh = fillRef.current;
     if (!mesh) return;
-    const m = new THREE.Matrix4();
-    cartons.forEach((p, i) => {
-      const b = binById.get(p.binId!)!;
-      mesh.setMatrixAt(i, m.makeTranslation(b.x, b.y + 0.03 + TOTE.h + 0.17, b.z));
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.computeBoundingSphere();
+    built.fillColors.forEach((f, i) => mesh.setColorAt(i, f.c.clone().multiplyScalar(0.4 + f.o * 2.2)));
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     invalidate();
-  }, [cartons, binById, invalidate]);
+  }, [built, invalidate]);
+
   return (
     <group>
-      <instancedMesh
-        ref={ref}
-        args={[undefined, undefined, cartons.length]}
-        renderOrder={2}
-        onClick={(e: ThreeEvent<MouseEvent>) => {
-          e.stopPropagation();
-          if (e.delta > 4 || e.instanceId === undefined) return;
-          onSelect(cartons[e.instanceId].binId!);
-        }}
-        onPointerMove={(e: ThreeEvent<PointerEvent>) => {
-          e.stopPropagation();
-          if (e.instanceId !== undefined) onHover(e.instanceId, e.nativeEvent.offsetX, e.nativeEvent.offsetY);
-        }}
-        onPointerOut={() => onHover(null, 0, 0)}
-      >
-        <boxGeometry args={[0.66, 0.3, 0.8]} />
-        <meshStandardMaterial color="#22d3ee" emissive="#22d3ee" emissiveIntensity={0.9} transparent opacity={0.38} depthWrite={false} toneMapped={false} />
-      </instancedMesh>
-      {cartons.map((p) => {
-        const b = binById.get(p.binId!)!;
-        return (
-          <lineSegments key={p.lineId} geometry={edges} position={[b.x, b.y + 0.03 + TOTE.h + 0.17, b.z]}>
-            <lineBasicMaterial color="#67e8f9" transparent opacity={0.9} toneMapped={false} />
-          </lineSegments>
-        );
-      })}
+      {built.fills.length > 0 && (
+        <instancedMesh key={`f${built.fills.length}`} ref={fillRef} args={[undefined, undefined, built.fills.length]} renderOrder={2} raycast={() => null}>
+          <boxGeometry />
+          <meshBasicMaterial transparent opacity={0.3} depthWrite={false} toneMapped={false} />
+        </instancedMesh>
+      )}
+      <GlowBars items={built.bars} colors={built.barColors} />
     </group>
   );
 }
 
-/** Teal outlines on search matches and a white one on the selection, drawn through other bins (depthTest off). */
-export function Markers({ bins, matchBinIds, selectedBinId }: { bins: LayoutBin[]; matchBinIds: Set<string>; selectedBinId: string | null }) {
-  const invalidate = useThree((s) => s.invalidate);
-  const edges = useMemo(() => new THREE.EdgesGeometry(new THREE.BoxGeometry(TOTE.w + 0.1, TOTE.h + 0.1, TOTE.d + 0.1)), []);
-  const marked = bins.filter((b) => matchBinIds.has(b.id) || b.id === selectedBinId);
-  useEffect(() => invalidate(), [marked.length, selectedBinId, invalidate]);
+/** Proposed stock: cyan glass pallets staged on the walkway in front of their candidate bay. */
+export function StagedProposed({ slots, placements, onSelect }: { slots: Slot[]; placements: HeatmapView["placements"]; onSelect: (binId: string) => void }) {
+  const byId = useMemo(() => new Map(slots.map((s) => [s.bin.id, s])), [slots]);
+  const items = useMemo(() => {
+    const perBay = new Map<string, number>();
+    return placements
+      .filter((p) => p.binId && byId.has(p.binId))
+      .map((p) => {
+        const s = byId.get(p.binId!)!;
+        const k = perBay.get(s.bayKey) ?? 0;
+        perBay.set(s.bayKey, k + 1);
+        const x = walkwayX(s.aisleIndex) - s.facing * (WALK / 2 - 0.85);
+        return { p, s, pos: new THREE.Vector3(x, 0, s.center.z - 0.55 + (k % 2) * 1.1) };
+      });
+  }, [placements, byId]);
+  const edges = useMemo(() => new THREE.EdgesGeometry(new THREE.BoxGeometry(0.95, 0.8, 0.95)), []);
   return (
-    <>
-      {marked.map((b) => (
-        <lineSegments key={b.id} geometry={edges} position={toteCenter(b)} renderOrder={3}>
-          <lineBasicMaterial color={b.id === selectedBinId ? "#f8fafc" : "#2dd4bf"} depthTest={false} transparent toneMapped={false} />
-        </lineSegments>
+    <group>
+      {items.map(({ p, s, pos }) => (
+        <group
+          key={p.lineId}
+          position={pos}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect(s.bin.id);
+          }}
+        >
+          <mesh position={[0, 0.065, 0]}>
+            <boxGeometry args={[1.0, 0.13, 1.0]} />
+            <meshStandardMaterial color="#67e8f9" transparent opacity={0.45} roughness={0.3} />
+          </mesh>
+          <mesh position={[0, 0.53, 0]} renderOrder={3}>
+            <boxGeometry args={[0.95, 0.8, 0.95]} />
+            <meshStandardMaterial color="#22d3ee" emissive="#06b6d4" emissiveIntensity={0.6} transparent opacity={0.32} depthWrite={false} toneMapped={false} />
+          </mesh>
+          <lineSegments geometry={edges} position={[0, 0.53, 0]}>
+            <lineBasicMaterial color={new THREE.Color("#67e8f9").multiplyScalar(2.2)} toneMapped={false} />
+          </lineSegments>
+        </group>
       ))}
-    </>
+    </group>
   );
 }
 
-/** A soft column of light rising from the selected bin, a glowing ring on its shelf, and its label. */
-export function Selection({ bin, heat }: { bin: LayoutBin; heat: BinHeat | undefined }) {
-  const p = toteCenter(bin);
-  const beam = useMemo(() => {
-    // Vertical gradient (bright at the bin, fading upwards) baked into vertex colours.
-    const g = new THREE.CylinderGeometry(0.42, 0.5, 4, 32, 8, true);
-    const colors: number[] = [];
-    const pos = g.getAttribute("position");
-    for (let i = 0; i < pos.count; i++) {
-      const t = (pos.getY(i) + 2) / 4; // 0 at the bottom, 1 at the top
-      const a = Math.pow(1 - t, 1.6);
-      colors.push(0.18 * a, 0.83 * a, 0.75 * a);
+/** Hover frame (white) and selection: glowing teal frame and bay floor outline. The label is a DOM overlay (BinLabel). */
+export function Selection({ slot, hover }: { slot: Slot | undefined; hover: Slot | undefined }) {
+  const bars = useMemo(() => {
+    const items: Inst[] = [];
+    const colors: THREE.Color[] = [];
+    if (hover && hover !== slot) {
+      for (const b of edgeBars(hover.center, { x: SLOT.x + 0.08, y: SLOT.y + 0.06, z: SLOT.z + 0.08 }, 0.025)) {
+        items.push(b);
+        colors.push(new THREE.Color("#ffffff").multiplyScalar(1.4));
+      }
     }
-    g.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-    return g;
-  }, []);
+    if (slot) {
+      for (const b of edgeBars(slot.center, { x: SLOT.x + 0.1, y: SLOT.y + 0.08, z: SLOT.z + 0.1 }, 0.05)) {
+        items.push(b);
+        colors.push(new THREE.Color("#2dd4bf").multiplyScalar(2.6));
+      }
+      const w = BAY.depth + 0.7;
+      const l = BAY_PITCH + 0.5;
+      for (const [px, pz, sx, sz] of [
+        [slot.center.x, slot.center.z - l / 2, w, 0.09],
+        [slot.center.x, slot.center.z + l / 2, w, 0.09],
+        [slot.center.x - w / 2, slot.center.z, 0.09, l],
+        [slot.center.x + w / 2, slot.center.z, 0.09, l],
+      ]) {
+        items.push({ p: [px, 0.014, pz], s: [sx, 0.014, sz] });
+        colors.push(new THREE.Color("#2dd4bf").multiplyScalar(2.4));
+      }
+    }
+    return { items, colors };
+  }, [slot, hover]);
+
   return (
     <group>
-      <mesh geometry={beam} position={[p.x, p.y + 2 + TOTE.h / 2, p.z]} renderOrder={4} raycast={() => null}>
-        <meshBasicMaterial vertexColors transparent opacity={0.55} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} toneMapped={false} />
-      </mesh>
-      <mesh position={[p.x, bin.y + 0.035, p.z]} rotation-x={-Math.PI / 2} renderOrder={4} raycast={() => null}>
-        <ringGeometry args={[0.55, 0.66, 48]} />
-        <meshBasicMaterial color="#5eead4" transparent opacity={0.9} toneMapped={false} depthWrite={false} />
-      </mesh>
-      <Html position={[p.x, p.y + 0.62, p.z]} center zIndexRange={[20, 0]} pointerEvents="none">
-        <div className="rounded-lg border border-brand/40 bg-surface-2/95 px-2.5 py-1.5 text-center whitespace-nowrap shadow-[0_8px_24px_rgba(0,0,0,0.5),0_0_0_1px_rgba(45,212,191,0.15)] backdrop-blur">
-          <div className="font-mono text-[12.5px] font-medium text-fg-1">{bin.binCode}</div>
-          {heat && <div className="text-[11px] leading-4 text-fg-2">{bin.status !== "active" ? "Inactive bin" : heat.label}</div>}
-        </div>
-      </Html>
+      <GlowBars items={bars.items} colors={bars.colors} />
     </group>
   );
 }

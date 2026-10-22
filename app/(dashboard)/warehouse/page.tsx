@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { ErrorState } from "@/components/layout/ErrorState";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Preload3D } from "@/components/warehouse3d/Preload3D";
 import { WarehouseView } from "@/components/warehouse3d/WarehouseView";
 import { getHeatmaps, getLatestOpenPlan, getLayout } from "@/lib/services/warehouse";
 
@@ -40,6 +41,7 @@ async function WarehouseData() {
 function WarehouseSkeleton() {
   return (
     <div className="space-y-4" aria-busy aria-label="Loading the warehouse">
+      <Preload3D />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1.5">
           {[112, 96, 104, 72, 172].map((w) => (
