@@ -16,9 +16,9 @@ const FEATURE_TEXT: Record<string, string> = {
 };
 
 /** The demand model in use (§6.2a): how it was trained and how it did on days it never saw. */
-export function DemandModelCard({ model, skus }: { model: StoredModel | null; skus: number }) {
+export function DemandModelCard({ model, skus, action }: { model: StoredModel | null; skus: number; action?: React.ReactNode }) {
   if (!model) {
-    return <EmptyState icon={BrainCircuit} title="No demand model yet" description="Run npm run train:forecast (or npm run seed) to train it. Until then every SKU uses the trend-aware average." />;
+    return <EmptyState icon={BrainCircuit} title="No demand model yet" description="Train it to forecast with ML. Until then every SKU uses the trend-aware average." action={action} />;
   }
   const m = model.metrics;
   const h = m.horizon;
@@ -34,8 +34,11 @@ export function DemandModelCard({ model, skus }: { model: StoredModel | null; sk
           <h2 className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">Demand model</h2>
           <p className="text-fg-2">Global ridge regression over all SKUs, predicting packs sold per day. Trained on synthetic demo data.</p>
         </div>
-        <span className="rounded-full border border-border-strong px-2.5 text-[12px] leading-6 text-fg-2">
-          Trained {formatDateTime(model.trainedAt)} · as of {formatDisplayDate(model.asOf)}
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-border-strong px-2.5 text-[12px] leading-6 text-fg-2">
+            Trained {formatDateTime(model.trainedAt)} · as of {formatDisplayDate(model.asOf)}
+          </span>
+          {action}
         </span>
       </div>
 

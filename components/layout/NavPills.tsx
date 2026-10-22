@@ -23,7 +23,7 @@ export function NavPills({ pathname }: { pathname: string | null }) {
                   prefetch={false}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "relative flex h-9 items-center gap-2 rounded-full px-3.5 text-[13.5px] transition-all duration-200",
+                    "relative flex h-9 items-center gap-2 rounded-full px-3 text-[13.5px] transition-all duration-200 2xl:px-3.5",
                     active
                       ? "bg-white/[0.11] text-fg-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_6px_20px_-8px_rgba(0,0,0,0.8)]"
                       : "text-fg-2 hover:bg-white/[0.05] hover:text-fg-1 max-xl:px-2.5",

@@ -95,3 +95,6 @@ export const runAgentsBody = z
     maxSkus: z.number().int().min(1).max(30).default(15),
   })
   .strict();
+
+/** PATCH /api/settings: the Owner approval limit in rupees (a PO above it needs the Owner). */
+export const settingsBody = z.object({ poApprovalLimit: z.number().positive().max(1e9) }).strict();

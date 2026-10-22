@@ -9,7 +9,7 @@ import type { IsoDate, PlanningContext, SkuContext, SkuForecast, SupplierInput }
 import { buildFeatures } from "@/lib/ml/features";
 import { forecastRecursive, modelCategories } from "@/lib/ml/forecast";
 import { contributions, type RidgeModel } from "@/lib/ml/ridge";
-import { applyScenario } from "@/lib/scenarios/apply";
+import { type ScenarioParams, applyScenario } from "@/lib/scenarios/apply";
 import type { SqlHandle } from "./audit";
 import { type SkuMetric, loadLatestModel } from "./forecast-model";
 
@@ -38,7 +38,7 @@ export async function loadPlanningContext(
   productId?: string | string[],
   opts: { excludePlanId?: string } = {},
 ): Promise<PlanningContext> {
-  const [products, suppliers, offers, sales, firstSales, batches, balances, incoming, latestModel] = await Promise.all([
+  const [products, suppliers, offers, sales, firstSales, batches, balances, incoming, latestModel, scenarioParams] = await Promise.all([
     listActiveProducts(sql, productId),
     listSuppliers(sql),
     listOffers(sql, productId),
@@ -48,6 +48,9 @@ export async function loadPlanningContext(
     listBalances(sql, productId),
     listOpenIncoming(sql, productId, opts.excludePlanId),
     loadLatestModel(sql),
+    scenarioId === "baseline"
+      ? Promise.resolve({})
+      : sql<{ params: ScenarioParams }[]>`select params from scenarios where id = ${scenarioId}`.execute().then((r) => r[0]?.params ?? {}),
   ]);
 
   const supplierMap: Record<string, SupplierInput> = Object.fromEntries(suppliers.map((s) => [s.id, s]));
@@ -84,7 +87,7 @@ export async function loadPlanningContext(
   }));
 
   // Scenarios change the context in memory first; the ML forecast then reads the resulting sales (§6.2a).
-  const ctx = applyScenario({ asOf, skus }, scenarioId);
+  const ctx = applyScenario({ asOf, skus }, { id: scenarioId, params: scenarioParams });
   if (!latestModel) return ctx;
   return { ...ctx, skus: ctx.skus.map((sku) => ({ ...sku, forecast: forecastSku(sku, latestModel.model, latestModel.metrics.get(sku.product.id)) })) };
 }

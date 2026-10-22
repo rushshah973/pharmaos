@@ -19,7 +19,7 @@ export function TopBar({ demoUser }: { demoUser: string }) {
     <header className="sticky top-0 z-30 print:hidden">
       <div className="mx-auto flex h-[76px] w-full max-w-[1520px] items-center gap-4 px-8 max-lg:px-5">
         <Link href="/" prefetch={false} aria-label="PharmaOS home" className="shrink-0 rounded-full">
-          <Logo wordmarkClassName="max-[1180px]:hidden" />
+          <Logo wordmarkClassName="max-[1500px]:hidden" />
         </Link>
         <div className="flex min-w-0 flex-1 justify-center">
           {/* The active pill needs the URL, which is only known at request time: stream it in (Cache Components). */}
@@ -51,10 +51,16 @@ async function TopBarFacts() {
   return (
     <div className="flex items-center gap-2">
       {state.scenarioId !== "baseline" && (
-        <span className="inline-flex h-9 items-center gap-1.5 rounded-full border border-expiry/30 bg-expiry-bg px-3 text-[12px] font-medium text-expiry backdrop-blur-xl">
-          <FlaskConical className="size-3.5" strokeWidth={1.75} aria-hidden />
-          <span className="max-xl:sr-only">Scenario:</span> {state.scenarioName}
-        </span>
+        <Link
+          href="/data"
+          prefetch={false}
+          title={`Scenario running: ${state.scenarioName}. Open Data & Scenarios to reset it.`}
+          className="inline-flex h-9 max-w-[150px] items-center gap-1.5 rounded-full border border-expiry/30 bg-expiry-bg px-3 text-[12px] font-medium text-expiry backdrop-blur-xl hover:bg-expiry/20"
+        >
+          <FlaskConical className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
+          <span className="sr-only">Scenario: </span>
+          <span className="truncate">{state.scenarioName}</span>
+        </Link>
       )}
       <span className="glass-pill inline-flex h-9 items-center gap-1 px-1">
         <Fact icon={<CalendarDays className="size-3.5" strokeWidth={1.6} />} label="As of">
