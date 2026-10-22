@@ -6,9 +6,9 @@ export type RunWithSteps = AgentRun & { steps: AgentStep[] };
 export type AgentState = "waiting" | "thinking" | "done" | "fallback";
 
 export const AGENTS: { name: AgentName; title: string; role: string; terminal: string }[] = [
-  { name: "demand", title: "Demand Agent", role: "Picks the forecast method per SKU: ML blend or the average. Never a number.", terminal: "submit_demand_decisions" },
-  { name: "supplier", title: "Supplier Agent", role: "Compares offers for that forecast and may switch supplier. Excluded offers are refused.", terminal: "submit_supplier_decisions" },
-  { name: "order", title: "Order Agent", role: "Validates the lines and creates the POs. It can never send or Owner-approve a PO.", terminal: "submit_order_summary" },
+  { name: "demand", title: "Demand Agent", role: "Checks each medicine's sales and picks the more accurate forecast: ML or the average.", terminal: "submit_demand_decisions" },
+  { name: "supplier", title: "Supplier Agent", role: "Compares supplier offers for that forecast and keeps or switches to the best valid one.", terminal: "submit_supplier_decisions" },
+  { name: "order", title: "Order Agent", role: "Creates one purchase order per supplier. It cannot send a PO or approve one for the Owner.", terminal: "submit_order_summary" },
 ];
 
 function finishedState(run: RunWithSteps, agent: AgentName): AgentState | null {
@@ -98,10 +98,11 @@ export function decisions(run: RunWithSteps, agent: AgentName): DecisionRow[] {
       const accepted = s.kind === "decision";
       let decision = "";
       if (agent === "demand") {
-        const method = i.method === "ml" ? "ML blend" : i.method === "baseline" ? "Average" : String(i.method ?? "?");
+        const label = (m: unknown) => (m === "ml" ? "ML" : m === "baseline" ? "Average" : String(m ?? "?"));
+        const method = label(i.method);
         const before = obj(o.before);
         const after = obj(o.after);
-        decision = accepted && o.changed ? `${method} · ${before.qty} → ${after.qty} packs` : `${method}${accepted ? " · no change" : ""}`;
+        decision = accepted && o.changed ? `${label(before.method)} → ${label(after.method)} · ${before.qty} → ${after.qty} packs` : `${method}${accepted ? " · no change" : ""}`;
       } else {
         decision = accepted && o.changed ? `${o.from ?? "—"} → ${o.to}` : accepted ? `Keep ${o.supplierCode ?? "offer"}` : `Offer ${String(i.offerId ?? "").slice(0, 8)}`;
       }
@@ -132,4 +133,24 @@ export function orderResult(run: RunWithSteps): OrderResult | null {
 /** True when no agent decision changed the plan and no PO was created. */
 export function madeNoChanges(run: RunWithSteps): boolean {
   return !run.steps.some((s) => s.kind === "decision" && obj(s.output).changed === true) && !(orderResult(run)?.created.length);
+}
+
+/** One plain sentence for an agent's card: what it looked at and what it changed. */
+export function agentHeadline(run: RunWithSteps, agent: AgentName, state: AgentState): string {
+  if (state === "waiting") return "Starts when the agent before it is done.";
+  if (state === "fallback") return "AI unavailable, so this agent made no changes.";
+  if (agent === "order") {
+    const r = orderResult(run);
+    if (!r) return state === "thinking" ? "Checking the lines and creating purchase orders…" : "No purchase orders were created.";
+    const owner = r.created.filter((p) => p.status === "pending_approval").length;
+    const n = r.created.length;
+    return `Created ${n} purchase order${n === 1 ? "" : "s"}${n ? ` · ${owner ? `${owner} need${owner === 1 ? "s" : ""} the Owner` : "none need the Owner"}` : ""}${r.skipped.length ? ` · skipped ${r.skipped.length}` : ""}`;
+  }
+  const rows = decisions(run, agent);
+  if (rows.length === 0) return state === "thinking" ? "Reading the evidence and deciding…" : "No decisions recorded.";
+  const changed = rows.filter((r) => r.changed).length;
+  const refused = rows.filter((r) => !r.accepted).length;
+  const what = agent === "demand" ? ["changed", "forecast", "kept every forecast"] : ["switched", "supplier", "kept every supplier"];
+  const middle = changed ? `${what[0]} ${changed} ${what[1]}${changed === 1 ? "" : "s"}` : what[2];
+  return `Checked ${rows.length} medicine${rows.length === 1 ? "" : "s"} · ${middle}${refused ? ` · ${refused} refused by the guardrail` : ""}`;
 }

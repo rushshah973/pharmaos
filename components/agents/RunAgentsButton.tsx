@@ -82,7 +82,7 @@ export function RunAgentsButton({ planId, locked = false, className }: { planId:
         </button>
         {!active && runId && (
           <button type="button" onClick={() => setOpen(true)} className="rounded-full px-2.5 py-2 text-[12px] text-fg-3 transition-colors hover:text-fg-1">
-            Past runs
+            View last run
           </button>
         )}
       </span>

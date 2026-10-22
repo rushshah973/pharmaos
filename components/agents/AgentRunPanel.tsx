@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Bot, CircleCheck, CircleX, History, Loader2, PackageCheck, ShieldAlert, TriangleAlert } from "lucide-react";
+import { Bot, ChevronDown, CircleCheck, CircleX, History, Loader2, PackageCheck, ShieldAlert, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "cn";
 import { type PillStatus, StatusPill } from "@/components/layout/StatusPill";
@@ -11,7 +11,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { formatDateTime } from "@/lib/format/date";
 import { formatINR } from "@/lib/money";
 import type { AgentRun } from "@/lib/services/agent-runs";
-import { AGENTS, type AgentState, type RunWithSteps, agentState, decisions, madeNoChanges, orderResult, toolResult } from "./run-view";
+import { AGENTS, type AgentState, type RunWithSteps, agentHeadline, agentState, decisions, madeNoChanges, orderResult, toolResult } from "./run-view";
 
 const POLL_MS = 2000;
 const FALLBACK_TEXT = "AI unavailable — no changes were made. Review the plan and approve manually.";
@@ -142,6 +142,7 @@ export function AgentRunPanel({
         </header>
 
         <div className="space-y-5 px-6 py-5">
+          <HowItWorks />
           {error && (
             <p role="alert" className="rounded-xl border border-stockout/30 bg-stockout-bg px-3 py-2 text-[12.5px] text-stockout">
               {error} Retrying…
@@ -162,12 +163,13 @@ export function AgentRunPanel({
               {shown.status === "failed" && (
                 <p className="rounded-2xl border border-stockout/30 bg-stockout-bg px-4 py-3 text-[13px] text-stockout">The run stopped on a server error: {shown.error ?? "unknown error"}. Nothing after the error was applied.</p>
               )}
+              {shown.status !== "running" && <Results run={shown} planId={planId} />}
               <ol className="space-y-3">
                 {AGENTS.map((a, i) => (
                   <AgentCard key={a.name} run={shown} index={i} agent={a} planId={planId} />
                 ))}
               </ol>
-              <Results run={shown} planId={planId} />
+              {shown.status === "running" && <Results run={shown} planId={planId} />}
             </>
           )}
           {pastError && <p className="text-[12px] text-fg-3">Past runs could not load. Close and reopen the panel to try again.</p>}
@@ -184,9 +186,13 @@ const TIMELINE_VISIBLE = 4;
 function AgentCard({ run, index, agent, planId }: { run: RunWithSteps; index: number; agent: (typeof AGENTS)[number]; planId: string }) {
   const state = agentState(run, agent.name);
   const [allTools, setAllTools] = useState(false);
+  const [allRows, setAllRows] = useState(false);
   const tools = run.steps.filter((s) => s.agent === agent.name && s.kind === "tool_call");
   const hidden = allTools ? 0 : Math.max(0, tools.length - TIMELINE_VISIBLE);
-  const rows = decisions(run, agent.name);
+  const every = decisions(run, agent.name);
+  // What matters first: the lines the agent changed and the decisions the guardrail refused; "kept" rows on request.
+  const notable = every.filter((r) => r.changed || !r.accepted);
+  const rows = allRows ? every : notable;
   const fallback = run.steps.find((s) => s.agent === agent.name && s.kind === "fallback");
   const lineOf = new Map(run.skus.map((s) => [s.sku, s.lineId]));
   return (
@@ -202,6 +208,7 @@ function AgentCard({ run, index, agent, planId }: { run: RunWithSteps; index: nu
             </span>
           </div>
           <p className="text-[12px] text-fg-3">{agent.role}</p>
+          <p className={cn("mt-2 text-[13.5px] leading-5", state === "done" ? "text-fg-1" : "text-fg-2")}>{agentHeadline(run, agent.name, state)}</p>
         </div>
       </div>
 
@@ -212,8 +219,12 @@ function AgentCard({ run, index, agent, planId }: { run: RunWithSteps; index: nu
       )}
 
       {tools.length > 0 && (
-        <div className="px-4 pt-3">
-          <div className="mb-1.5 flex items-center justify-between">
+        <details className="group/trace px-4 pt-3">
+          <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 text-[12px] text-fg-3 hover:text-fg-1 [&::-webkit-details-marker]:hidden">
+            <ChevronDown className="size-3.5 transition-transform group-open/trace:rotate-180" aria-hidden />
+            Technical trace · {tools.length} step{tools.length === 1 ? "" : "s"} (the data the agent read)
+          </summary>
+          <div className="mt-2 mb-1.5 flex items-center justify-between">
             <p className="micro-label">Tool calls · {tools.length}</p>
             {tools.length > TIMELINE_VISIBLE && (
               <button type="button" onClick={() => setAllTools((v) => !v)} className="text-[11.5px] text-fg-3 hover:text-fg-1">
@@ -235,9 +246,14 @@ function AgentCard({ run, index, agent, planId }: { run: RunWithSteps; index: nu
               </li>
             ))}
           </ol>
-        </div>
+        </details>
       )}
 
+      {every.length > 0 && notable.length < every.length && (
+        <button type="button" onClick={() => setAllRows((v) => !v)} className="mx-4 mt-3 text-[12px] text-fg-3 hover:text-fg-1">
+          {allRows ? "Show only changes" : `Show all ${every.length} decisions (${every.length - notable.length} kept as they were)`}
+        </button>
+      )}
       {rows.length > 0 && (
         <div className="mt-3 border-t border-white/[0.06]">
           <table className="w-full table-fixed text-[12.5px]">
@@ -287,11 +303,27 @@ function AgentCard({ run, index, agent, planId }: { run: RunWithSteps; index: nu
           </table>
         </div>
       )}
-      {tools.length === 0 && rows.length === 0 && !fallback && (
-        <p className="px-4 pt-3 text-[12.5px] text-fg-3">{state === "thinking" ? "Reading the data…" : "Starts when the agent before it is done."}</p>
-      )}
       <div className="h-4" />
     </li>
+  );
+}
+
+/** The run in one line: who does what, and what stays with people. */
+function HowItWorks() {
+  const steps = ["Demand Agent picks the forecast", "Supplier Agent picks the supplier", "Order Agent creates the POs"];
+  return (
+    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] px-4 py-3">
+      <ol className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-fg-2">
+        {steps.map((s, i) => (
+          <li key={s} className="flex items-center gap-2">
+            <span className="flex size-5 items-center justify-center rounded-full bg-brand/15 text-[11px] text-brand">{i + 1}</span>
+            {s}
+            {i < steps.length - 1 && <span className="text-fg-3">→</span>}
+          </li>
+        ))}
+      </ol>
+      <p className="mt-1.5 text-[11.5px] text-fg-3">Every number comes from the engine. The agents choose within guardrails; a person sends POs and the Owner approves large ones.</p>
+    </div>
   );
 }
 
@@ -303,7 +335,10 @@ function Results({ run, planId }: { run: RunWithSteps; planId: string }) {
   return (
     <section className="surface-hero p-5" aria-label="Results">
       <h3 className="text-[15px] leading-[22px] text-fg-1">Results</h3>
-      {run.summary && <p className="mt-1 text-[12.5px] leading-[18px] text-fg-2">{run.summary}</p>}
+      <p className="mt-1 text-[13px] text-fg-2">
+        {changed.length} line{changed.length === 1 ? "" : "s"} changed · {order?.created.length ?? 0} purchase order{order?.created.length === 1 ? "" : "s"} created
+        {order && order.created.length > 0 && ` · ${order.created.filter((p) => p.status === "pending_approval").length || "none"} need${order.created.filter((p) => p.status === "pending_approval").length === 1 ? "s" : ""} the Owner`}
+      </p>
       <div className="mt-4 grid gap-5 sm:grid-cols-2">
         <div>
           <p className="micro-label mb-2">Lines changed · {changed.length}</p>
