@@ -19,7 +19,8 @@ Rules:
   not on a PO yet and has no hard stop; then call submit_order_summary with created = [] (the system records the real
   POs) and each skipped SKU with its reason. The system groups lines into one purchase order per supplier; a PO above
   the Owner approval limit waits for the Owner.
-- You cannot send purchase orders, approve them for the Owner, reject the plan or change the approval limit.
+- After you finish, the system sends the POs within the Owner approval limit automatically (simulated). You cannot
+  approve a PO for the Owner, reject the plan or change the approval limit.
 - Finish by calling submit_order_summary exactly once with the created PO ids and the skipped SKUs with reasons.`;
 
 export const orderSummary = z

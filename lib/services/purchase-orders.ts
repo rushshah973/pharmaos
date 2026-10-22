@@ -21,7 +21,10 @@ export type PoSummary = {
   sentBy: string | null;
 };
 
-type Who = { id: string };
+/** Who acts: a person (the default) or the procurement agents' automatic send after a run. */
+type Who = { id: string; type?: "user" | "agent" };
+/** The agents' sender: POs an agent run created are sent automatically (simulated) once they may be sent. */
+export const AGENT_SENDER: Who = { id: "order-agent", type: "agent" };
 const owner = (): Who => ({ id: process.env.DEMO_USER ?? "demo.owner" });
 
 async function lockPo(tx: postgres.TransactionSql, poId: string): Promise<PoSummary> {
@@ -58,6 +61,12 @@ export async function approvePo(poId: string, opts: { note?: string } = {}, who:
   });
 }
 
+/** True when the agent run created this PO (approveLines records the Order Agent as its approver). */
+export async function createdByAgents(poId: string, sql: postgres.Sql = getSql()): Promise<boolean> {
+  const [row] = await sql<{ agent: boolean }[]>`select approved_by = 'order-agent' as agent from purchase_orders where id = ${poId}`;
+  return row?.agent === true;
+}
+
 /** Owner rejection: pending_approval → rejected (reason ≥ 3). Its lines stay approved_for_po (not re-planned). */
 export async function rejectPo(poId: string, reason: string, who: Who = owner(), sql: postgres.Sql = getSql()): Promise<PoSummary> {
   const why = reason.trim();
@@ -92,13 +101,17 @@ export async function sendPo(poId: string, who: Who = owner(), sql: postgres.Sql
       `,
       writeAudit(
         {
-          actorType: "user",
+          actorType: who.type ?? "user",
           actorId: who.id,
           action: "po.sent",
           entityType: "purchase_order",
           entityId: poId,
           before: { status: po.status },
-          after: { status: "sent", simulated: true, note: "Marked as sent — simulated, nothing was emailed" },
+          after: {
+            status: "sent",
+            simulated: true,
+            note: who.type === "agent" ? "Sent automatically after the agent run — simulated, nothing was emailed" : "Marked as sent — simulated, nothing was emailed",
+          },
         },
         tx,
       ),

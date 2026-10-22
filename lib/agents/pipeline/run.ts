@@ -2,9 +2,12 @@
 // sees the database state the previous one left. Fallback (no key, API error, timeout, non-STOP finish, or an invalid
 // terminal call after 2 retries) → the remaining agents make no changes and the Order Agent creates NO POs; the run
 // ends 'fallback'. 'failed' only on an unexpected server error (stored). Audited agent.run_started / run_finished.
+// After the Order Agent, every PO of the run that may be sent (ready, within the Owner limit) is sent automatically
+// (simulated, nothing leaves the app, audited po.sent by order-agent); POs above the limit wait for the Owner.
 import { formatINR } from "@/lib/money";
 import { resolvePlanningState } from "@/lib/services/as-of";
 import { type AgentName, StepLog, finishRun, getRun, selectRunLines, setRunSkus } from "@/lib/services/agent-runs";
+import { AGENT_SENDER, sendPo } from "@/lib/services/purchase-orders";
 import type { RunContext } from "./context";
 import { type DemandSummary, runDemandAgent } from "./demand-agent";
 import { DEFAULT_GEMINI_MODEL } from "../retry";
@@ -50,11 +53,36 @@ export async function runPipeline(runId: string, deps: { client?: ModelClient | 
     if (order.status === "fallback") {
       return await finishRun(runId, "fallback", `${AI_UNAVAILABLE} ${demandText(demand.result)} ${supplierText(supplier.result)} Order Agent: ${order.reason}.`);
     }
-    await finishRun(runId, "succeeded", `${demandText(demand.result)} ${supplierText(supplier.result)} ${orderText(order.result, state.approvalLimit)}`);
+    const sent = await sendReadyPos(ctx, order.result);
+    await finishRun(runId, "succeeded", `${demandText(demand.result)} ${supplierText(supplier.result)} ${orderText(sent, state.approvalLimit)}`);
   } catch (err) {
     console.error("[agent run]", err);
     await finishRun(runId, "failed", "The run stopped on a server error; nothing after the error was applied.", err instanceof Error ? err.message.slice(0, 500) : String(err)).catch(() => {});
   }
+}
+
+/** Sends the run's ready POs (simulated) and records it in the trace; the result shows each PO's new status. */
+async function sendReadyPos(ctx: RunContext, o: OrderSummary): Promise<OrderSummary> {
+  const created: OrderSummary["created"] = [];
+  for (const po of o.created) {
+    if (po.status !== "ready") {
+      created.push(po);
+      continue;
+    }
+    const t0 = performance.now();
+    try {
+      const r = await sendPo(po.poId, AGENT_SENDER);
+      created.push({ ...po, status: r.status });
+      await ctx.log.add({ agent: "order", kind: "tool_call", toolName: "send_purchase_order", input: { poId: po.poId, poNumber: po.poNumber, automatic: true }, output: { ok: true, data: { status: "sent", simulated: true } }, ok: true, ms: Math.round(performance.now() - t0) });
+    } catch (err) {
+      created.push(po);
+      await ctx.log.add({ agent: "order", kind: "tool_call", toolName: "send_purchase_order", input: { poId: po.poId, poNumber: po.poNumber, automatic: true }, output: { ok: false, error: { message: err instanceof Error ? err.message : String(err) } }, ok: false, ms: Math.round(performance.now() - t0) });
+    }
+  }
+  const result = { ...o, created };
+  // The final word on the run's POs (the panel reads the last order decision).
+  await ctx.log.add({ agent: "order", kind: "decision", input: { autoSend: true }, output: result });
+  return result;
 }
 
 const demandText = (d: DemandSummary) =>
@@ -77,9 +105,11 @@ const orderText = (o: OrderSummary, limit: string) => {
     fresh.length ? `created ${fresh.length} new purchase order${fresh.length === 1 ? "" : "s"} (${list(fresh)})` : "",
     added.length ? `added lines to ${added.length} existing purchase order${added.length === 1 ? "" : "s"} of this plan (${list(added)})` : "",
   ].filter(Boolean);
+  const sent = o.created.filter((p) => p.status === "sent");
   return (
     `Order Agent: ${parts.join(" and ")}; ` +
-    (gated.length ? `${gated.map((p) => p.poNumber).join(", ")} need${gated.length === 1 ? "s" : ""} the Owner's approval (above ${formatINR(limit, { paise: false })}).` : `none needs the Owner's approval.`) +
+    (sent.length ? `sent ${sent.length} to the supplier${sent.length === 1 ? "" : "s"} automatically (simulated, nothing was emailed); ` : "") +
+    (gated.length ? `${gated.map((p) => p.poNumber).join(", ")} wait${gated.length === 1 ? "s" : ""} for the Owner's approval (above ${formatINR(limit, { paise: false })}) and will be sent once approved.` : `none needs the Owner's approval.`) +
     (o.skipped.length ? ` Skipped: ${o.skipped.map((s) => `${s.sku} (${s.reason})`).join("; ")}.` : "")
   );
 };

@@ -8,7 +8,7 @@ export type AgentState = "waiting" | "thinking" | "done" | "fallback";
 export const AGENTS: { name: AgentName; title: string; role: string; terminal: string }[] = [
   { name: "demand", title: "Demand Agent", role: "Checks each medicine's sales and picks the more accurate forecast: ML or the average.", terminal: "submit_demand_decisions" },
   { name: "supplier", title: "Supplier Agent", role: "Compares supplier offers for that forecast and keeps or switches to the best valid one.", terminal: "submit_supplier_decisions" },
-  { name: "order", title: "Order Agent", role: "Creates one purchase order per supplier. It cannot send a PO or approve one for the Owner.", terminal: "submit_order_summary" },
+  { name: "order", title: "Order Agent", role: "Creates one purchase order per supplier; those within the approval limit are sent automatically (simulated). It cannot approve a PO for the Owner.", terminal: "submit_order_summary" },
 ];
 
 function finishedState(run: RunWithSteps, agent: AgentName): AgentState | null {
@@ -151,7 +151,8 @@ export function agentHeadline(run: RunWithSteps, agent: AgentName, state: AgentS
       fresh ? `Created ${fresh} new purchase order${fresh === 1 ? "" : "s"}` : "",
       added ? `${fresh ? "added" : "Added"} lines to ${added} existing PO${added === 1 ? "" : "s"}` : "",
     ].filter(Boolean);
-    return `${parts.join(" · ")} · ${owner ? `${owner} need${owner === 1 ? "s" : ""} the Owner` : "none need the Owner"}${r.skipped.length ? ` · skipped ${r.skipped.length}` : ""}`;
+    const sent = r.created.filter((p) => p.status === "sent").length;
+    return `${parts.join(" · ")}${sent ? ` · ${sent} sent automatically` : ""} · ${owner ? `${owner} wait${owner === 1 ? "s" : ""} for the Owner` : "none need the Owner"}${r.skipped.length ? ` · skipped ${r.skipped.length}` : ""}`;
   }
   const rows = decisions(run, agent);
   if (rows.length === 0) return state === "thinking" ? "Reading the evidence and deciding…" : "No decisions recorded.";

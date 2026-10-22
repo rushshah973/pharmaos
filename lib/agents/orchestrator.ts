@@ -178,6 +178,7 @@ async function policyNote(): Promise<string> {
     "- Change a quantity or supplier in the line's **Edit** dialog.",
     "- Approve lines with the **Approve** button; PharmaOS then creates one purchase order per supplier.",
     `- A purchase order above **${formatINR(approvalLimit, { paise: false })}** needs the **Owner's approval** before it can be sent.`,
+    "- POs from a **procurement agents** run are sent automatically when within the limit; POs you approve yourself are sent with **Send to supplier**.",
     "- **Sending is simulated**: nothing leaves the app.",
   ].join("\n");
 }

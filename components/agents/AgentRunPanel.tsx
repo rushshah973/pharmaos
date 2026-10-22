@@ -137,7 +137,7 @@ export function AgentRunPanel({
           <SheetDescription className="mt-1.5 text-[12.5px] text-fg-3">
             {shown
               ? `Started ${formatDateTime(shown.startedAt)} · top ${shown.skus.length || shown.maxSkus} proposed lines${shown.finishedAt ? ` · finished ${formatDateTime(shown.finishedAt)}` : ""}`
-              : "The engine calculates, three agents decide within guardrails, a person sends and the Owner approves large orders."}
+              : "The engine calculates, three agents decide within guardrails, POs within the limit are sent automatically (simulated) and the Owner approves large ones."}
           </SheetDescription>
         </header>
 
@@ -310,7 +310,7 @@ function AgentCard({ run, index, agent, planId }: { run: RunWithSteps; index: nu
 
 /** The run in one line: who does what, and what stays with people. */
 function HowItWorks() {
-  const steps = ["Demand Agent picks the forecast", "Supplier Agent picks the supplier", "Order Agent creates the POs"];
+  const steps = ["Demand Agent picks the forecast", "Supplier Agent picks the supplier", "Order Agent creates and sends the POs"];
   return (
     <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] px-4 py-3">
       <ol className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-fg-2">
@@ -322,7 +322,7 @@ function HowItWorks() {
           </li>
         ))}
       </ol>
-      <p className="mt-1.5 text-[11.5px] text-fg-3">Every number comes from the engine. The agents choose within guardrails; a person sends POs and the Owner approves large ones.</p>
+      <p className="mt-1.5 text-[11.5px] text-fg-3">Every number comes from the engine. The agents choose within guardrails; POs up to the approval limit are then sent automatically (simulated, nothing is emailed) and larger ones wait for the Owner.</p>
     </div>
   );
 }
@@ -378,6 +378,9 @@ function Results({ run, planId }: { run: RunWithSteps; planId: string }) {
                     {p.supplierCode} · {formatINR(p.grandTotal, { paise: false })}
                   </span>
                   {p.addedTo && <span className="text-[11.5px] text-fg-3">· lines added to this existing PO</span>}
+                  {p.status === "sent" && (
+                    <span className="inline-flex h-[22px] items-center rounded-full border border-healthy/30 bg-healthy-bg px-2 text-[11.5px] text-healthy">Sent (simulated)</span>
+                  )}
                   {p.status === "pending_approval" && (
                     <span className="inline-flex h-[22px] items-center gap-1 rounded-full border border-expiry/30 bg-expiry-bg px-2 text-[11.5px] text-expiry">
                       <ShieldAlert className="size-3" aria-hidden /> Owner approval
@@ -392,7 +395,7 @@ function Results({ run, planId }: { run: RunWithSteps; planId: string }) {
           )}
         </div>
       </div>
-      <p className="mt-4 text-[11.5px] text-fg-3">The agents never send a PO or approve one for the Owner: sending and Owner approval stay with people.</p>
+      <p className="mt-4 text-[11.5px] text-fg-3">POs within the approval limit were sent automatically (simulated, nothing was emailed). No AI can approve a PO for the Owner: larger POs wait for the Owner and are sent once approved.</p>
     </section>
   );
 }
