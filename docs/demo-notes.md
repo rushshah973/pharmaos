@@ -16,9 +16,9 @@ numbers every time. Agent decisions come from Gemini and can differ from run to 
    (must end with `Validation passed.`).
 2. Open <https://pharmaos-gold.vercel.app/api/health>: expect `"ok":true` and `"gemini":true`.
 3. Open the Command Center once so the server is warm.
-4. **Gemini is the slow part.** On 22 Oct a full agent run took 4–5 minutes, and one run hit the 270-second limit
-   before the Order Agent finished. Do a rehearsal agent run on a plan before the demo, so you have a finished trace
-   to show if the live run is slow (see step 6).
+4. **Gemini is the slow part.** Since the one-call agents (22 Oct, evening), a full agent run takes **40–100 seconds**
+   on the live site and uses about 12 Gemini requests; models that are out of free quota are skipped automatically.
+   Do one rehearsal run before the demo anyway, so a finished trace is ready if Google is very busy.
 
 ---
 
@@ -161,10 +161,10 @@ up the active scenario.
 - **Order Agent** validates the lines and creates POs through the same approval service as the Approve button:
   **Ready** up to ₹10,00,000, **Pending approval** above it. It cannot send or Owner-approve.
 
-**Timing warning:** in the rehearsal this run took **277 seconds**. The Demand and Supplier agents finished; the Order
-Agent hit the time limit, so the run ended "AI unavailable — review and approve manually" and created **no POs**. An
-earlier run on the baseline plan (same seed) succeeded: the Demand Agent changed 10 lines and the Order Agent created
-6 POs. Decisions vary per run.
+**Timing:** a run takes 40–100 seconds. The panel opens with how it works, then shows each agent's one-line result
+("Checked 15 medicines · changed 10 forecasts", "Created 6 purchase orders · none need the Owner"); only the lines an
+agent changed are listed, the rest and the technical trace are one click away. In the rehearsal before this change
+the Order Agent timed out once; after it, every live run finished.
 
 **If it fails:** let the trace run for 20–30 seconds while you explain it, then say "this keeps going in the
 background" and continue to step 8 with the human Approve button. If it ends in fallback, that is the safety design:
