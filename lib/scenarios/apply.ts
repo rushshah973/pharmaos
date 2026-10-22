@@ -56,14 +56,15 @@ function applyToSku(sku: SkuContext, scenario: Scenario): SkuContext {
     case "expiry_risk": {
       const target = typeof p.sku === "string" ? p.sku : DEMO_CASES.expiry[0];
       if (sku.product.sku !== target) return sku;
-      // Its largest released, unexpired batch (by packs on hand) now expires `days_to_expiry` days after as-of.
+      // Its largest released, unexpired batch (by packs on hand) now expires `days_to_expiry` days after as-of: just
+      // past the 90-day sell-by window, so a little still sells and the rest is at risk (the reorder is capped).
       const onHand = new Map<string, number>();
       for (const b of sku.balances) onHand.set(b.batchId, (onHand.get(b.batchId) ?? 0) + b.onHandQty);
       const batch = sku.batches
         .filter((b) => b.qualityStatus === "released" && b.expiryDate > sku.asOf && (onHand.get(b.id) ?? 0) > 0)
         .sort((a, b) => (onHand.get(b.id) ?? 0) - (onHand.get(a.id) ?? 0) || a.id.localeCompare(b.id))[0];
       if (!batch) return sku;
-      const expiryDate = addDays(sku.asOf, num(p.days_to_expiry, 60));
+      const expiryDate = addDays(sku.asOf, num(p.days_to_expiry, 92));
       return { ...sku, batches: sku.batches.map((b) => (b.id === batch.id ? { ...b, expiryDate, receivedDate: b.receivedDate < expiryDate ? b.receivedDate : addDays(expiryDate, -1) } : b)) };
     }
     default:

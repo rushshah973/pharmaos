@@ -29,8 +29,8 @@ function effect(s: ScenarioView): { change: string; result: string } {
       };
     case "expiry_risk":
       return {
-        change: `One large batch of a demo expiry SKU now expires ${p.days_to_expiry ?? 60} days after the as-of date.`,
-        result: "Stock at expiry risk appears and its bin turns amber; stock too short-dated to sell no longer counts as available.",
+        change: `The largest batch of ${typeof p.sku === "string" ? p.sku : "a demo expiry SKU"} now expires ${p.days_to_expiry ?? 92} days after the as-of date.`,
+        result: "A little of it still sells before the 90-day sell-by window; the rest is at expiry risk, the reorder is capped and its bin turns amber.",
       };
     default:
       return { change: "No changes: the seeded data as it is.", result: "The reference numbers every scenario is compared with." };

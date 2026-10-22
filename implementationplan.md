@@ -992,7 +992,7 @@ Running a scenario sets `app_state.active_scenario_id` (audited) and its effects
 | `demand_spike` | Multiply the last 5 days of sales × 3 for the 3 SKUs listed in `demo-cases.json` (`spike`) | Higher d̄, lower cover, larger qty, higher rank; `DEMAND_SPIKE` flag |
 | `supplier_delay` | Preferred supplier (most wins in the baseline plan) lead time + 5 days, its prices + 8% | Re-ranked suppliers; urgent lines move to a faster supplier |
 | `seasonal_surge` | Monsoon fever season: the last 10 days of sales × 4 for SKUs in categories `analgesic`, `antibiotic`, `respiratory` | Larger quantities; at least one supplier PO crosses ₹4,00,000 → Owner approval badge, `pending_approval` on approve (P24 checks this and tunes the multiplier if not) |
-| `expiry_risk` | One large batch of a SKU in `demo-cases.json` (`expiry`) gets expiry = as-of + 60 days | At-risk value appears, reorder reduced or blocked, bin turns amber |
+| `expiry_risk` | The largest batch of PHX-0178 (a `demo-cases.json` `expiry` SKU, named in params) gets expiry = as-of + 92 days: just past the 90-day sell-by window, so a little still sells (at 60 days none could and the SKU turned stockout risk; at 130 days nothing needed ordering) | At-risk value appears, reorder reduced or blocked, bin turns amber |
 | `baseline` | none | — |
 
 ---

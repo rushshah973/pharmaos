@@ -55,15 +55,17 @@ describe("§12 scenarios (in memory)", () => {
     expect(applyScenario(ctxOf(sku), { id: "supplier_delay", params: {} }).skus[0]).toBe(sku);
   });
 
-  it("expiry_risk: the demo SKU's largest batch now expires as-of + 60 days, so stock becomes at risk", () => {
+  it("expiry_risk: the named SKU's largest batch now expires as-of + 92 days: part sells, the rest is at risk", () => {
     const sku = makeSku({
-      product: makeProduct({ sku: DEMO_CASES.expiry[0] }),
+      product: makeProduct({ sku: "PHX-0178" }),
       sales: flatSales(AS_OF, 1),
       batches: [makeBatch({ id: "small" }), makeBatch({ id: "big" })],
       balances: [makeBalance({ id: "b1", batchId: "small", onHandQty: 10 }), makeBalance({ id: "b2", batchId: "big", onHandQty: 300 })],
     });
-    const out = applyScenario(ctxOf(sku), { id: "expiry_risk", params: { days_to_expiry: 60 } }).skus[0];
-    expect(out.batches.find((b) => b.id === "big")!.expiryDate).toBe(addDaysUtc(AS_OF, 60));
+    const out = applyScenario(ctxOf(sku), { id: "expiry_risk", params: { sku: "PHX-0178", days_to_expiry: 92 } }).skus[0];
+    expect(out.batches.find((b) => b.id === "big")!.expiryDate).toBe(addDaysUtc(AS_OF, 92));
+    // Some of it still sells before the 90-day sell-by window, so it is not all written off.
+    expect(analyseSku(out).expiry.eligibleAvailable).toBeGreaterThan(0);
     expect(out.batches.find((b) => b.id === "small")!.expiryDate).toBe(sku.batches[0].expiryDate);
     expect(Number(analyseSku(out).expiry.atRiskValue)).toBeGreaterThan(Number(analyseSku(sku).expiry.atRiskValue));
   });
