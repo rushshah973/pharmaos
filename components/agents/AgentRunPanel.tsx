@@ -336,7 +336,8 @@ function Results({ run, planId }: { run: RunWithSteps; planId: string }) {
     <section className="surface-hero p-5" aria-label="Results">
       <h3 className="text-[15px] leading-[22px] text-fg-1">Results</h3>
       <p className="mt-1 text-[13px] text-fg-2">
-        {changed.length} line{changed.length === 1 ? "" : "s"} changed · {order?.created.length ?? 0} purchase order{order?.created.length === 1 ? "" : "s"} created
+        {changed.length} line{changed.length === 1 ? "" : "s"} changed · {order?.created.filter((p) => !p.addedTo).length ?? 0} new purchase order{order?.created.filter((p) => !p.addedTo).length === 1 ? "" : "s"}
+        {order && order.created.some((p) => p.addedTo) && ` · lines added to ${order.created.filter((p) => p.addedTo).length} existing`}
         {order && order.created.length > 0 && ` · ${order.created.filter((p) => p.status === "pending_approval").length || "none"} need${order.created.filter((p) => p.status === "pending_approval").length === 1 ? "s" : ""} the Owner`}
       </p>
       <div className="mt-4 grid gap-5 sm:grid-cols-2">
@@ -362,7 +363,7 @@ function Results({ run, planId }: { run: RunWithSteps; planId: string }) {
           )}
         </div>
         <div>
-          <p className="micro-label mb-2">POs created · {order?.created.length ?? 0}</p>
+          <p className="micro-label mb-2">Purchase orders · {order?.created.length ?? 0}</p>
           {!order || order.created.length === 0 ? (
             <p className="text-[12.5px] text-fg-3">{run.status === "running" ? "The Order Agent has not finished yet." : "No purchase orders were created."}</p>
           ) : (
@@ -376,6 +377,7 @@ function Results({ run, planId }: { run: RunWithSteps; planId: string }) {
                   <span className="text-fg-3">
                     {p.supplierCode} · {formatINR(p.grandTotal, { paise: false })}
                   </span>
+                  {p.addedTo && <span className="text-[11.5px] text-fg-3">· lines added to this existing PO</span>}
                   {p.status === "pending_approval" && (
                     <span className="inline-flex h-[22px] items-center gap-1 rounded-full border border-expiry/30 bg-expiry-bg px-2 text-[11.5px] text-expiry">
                       <ShieldAlert className="size-3" aria-hidden /> Owner approval

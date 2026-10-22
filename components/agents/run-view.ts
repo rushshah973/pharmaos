@@ -119,7 +119,8 @@ export function decisions(run: RunWithSteps, agent: AgentName): DecisionRow[] {
 }
 
 export type OrderResult = {
-  created: { poId: string; poNumber: string; supplierCode: string; status: string; grandTotal: string; lines: number }[];
+  /** addedTo: the run added lines to a PO an earlier approval of the plan created (absent in older runs). */
+  created: { poId: string; poNumber: string; supplierCode: string; status: string; grandTotal: string; lines: number; addedTo?: boolean }[];
   skipped: { sku: string; reason: string }[];
 };
 
@@ -143,8 +144,14 @@ export function agentHeadline(run: RunWithSteps, agent: AgentName, state: AgentS
     const r = orderResult(run);
     if (!r) return state === "thinking" ? "Checking the lines and creating purchase orders…" : "No purchase orders were created.";
     const owner = r.created.filter((p) => p.status === "pending_approval").length;
-    const n = r.created.length;
-    return `Created ${n} purchase order${n === 1 ? "" : "s"}${n ? ` · ${owner ? `${owner} need${owner === 1 ? "s" : ""} the Owner` : "none need the Owner"}` : ""}${r.skipped.length ? ` · skipped ${r.skipped.length}` : ""}`;
+    const fresh = r.created.filter((p) => !p.addedTo).length;
+    const added = r.created.length - fresh;
+    if (r.created.length === 0) return `No purchase orders created${r.skipped.length ? ` · skipped ${r.skipped.length}` : ""}`;
+    const parts = [
+      fresh ? `Created ${fresh} new purchase order${fresh === 1 ? "" : "s"}` : "",
+      added ? `${fresh ? "added" : "Added"} lines to ${added} existing PO${added === 1 ? "" : "s"}` : "",
+    ].filter(Boolean);
+    return `${parts.join(" · ")} · ${owner ? `${owner} need${owner === 1 ? "s" : ""} the Owner` : "none need the Owner"}${r.skipped.length ? ` · skipped ${r.skipped.length}` : ""}`;
   }
   const rows = decisions(run, agent);
   if (rows.length === 0) return state === "thinking" ? "Reading the evidence and deciding…" : "No decisions recorded.";

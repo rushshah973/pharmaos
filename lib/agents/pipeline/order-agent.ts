@@ -29,7 +29,8 @@ export const orderSummary = z
   })
   .strict();
 
-export type OrderSummary = { created: { poId: string; poNumber: string; supplierCode: string; status: string; grandTotal: string; lines: number; ownerApproval: string }[]; skipped: { sku: string; reason: string }[] };
+/** created = every PO this run's lines are on; addedTo = the run added its lines to a PO an earlier approval created. */
+export type OrderSummary = { created: { poId: string; poNumber: string; supplierCode: string; status: string; grandTotal: string; lines: number; ownerApproval: string; addedTo: boolean }[]; skipped: { sku: string; reason: string }[] };
 
 /** POs created by this run: the approval's own audit row for the run's idempotency key. */
 async function runPoIds(ctx: RunContext): Promise<string[]> {
@@ -82,7 +83,7 @@ export function orderTools(ctx: RunContext): AgentTool[] {
           const r = await approveLines(ctx.planId, ids, ctx.runId, { type: "agent", id: "order-agent" });
           return {
             alreadyProcessed: r.alreadyProcessed,
-            purchaseOrders: r.purchaseOrders.map((po) => ({ poId: po.id, poNumber: po.poNumber, supplierCode: po.supplierCode, status: po.status, grandTotal: po.grandTotal, lines: po.lines, ownerApproval: po.needsApproval ? "required" : "not required" })),
+            purchaseOrders: r.purchaseOrders.map((po) => ({ poId: po.id, poNumber: po.poNumber, supplierCode: po.supplierCode, status: po.status, grandTotal: po.grandTotal, lines: po.lines, ownerApproval: po.needsApproval ? "required" : "not required", newPo: !po.addedTo })),
           };
         } catch (err) {
           if (err instanceof ServiceError && err.code === "HARD_STOP") {
@@ -117,7 +118,8 @@ export async function applyOrderSummary(ctx: RunContext, summary: unknown): Prom
     ? await getSql()<OrderSummary["created"]>`
         select po.id as "poId", po.po_number as "poNumber", s.supplier_code as "supplierCode", po.status, po.grand_total::text as "grandTotal",
           (select count(*)::int from purchase_order_lines l where l.po_id = po.id) as lines,
-          case when po.status = 'pending_approval' then 'required' else 'not required' end as "ownerApproval"
+          case when po.status = 'pending_approval' then 'required' else 'not required' end as "ownerApproval",
+          po.idempotency_key is distinct from ${ctx.runId} as "addedTo"
         from purchase_orders po join suppliers s on s.id = po.supplier_id where po.id = any(${[...real]}::uuid[]) order by po.po_number
       `
     : [];

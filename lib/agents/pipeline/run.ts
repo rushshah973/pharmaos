@@ -70,8 +70,15 @@ const supplierText = (s: SupplierSummary) =>
 const orderText = (o: OrderSummary, limit: string) => {
   if (o.created.length === 0) return `Order Agent: no purchase orders created${o.skipped.length ? ` (${o.skipped.length} skipped)` : ""}.`;
   const gated = o.created.filter((p) => p.status === "pending_approval");
+  const fresh = o.created.filter((p) => !p.addedTo);
+  const added = o.created.filter((p) => p.addedTo);
+  const list = (ps: typeof o.created) => ps.map((p) => `${p.poNumber} ${p.supplierCode} ${formatINR(p.grandTotal)}`).join("; ");
+  const parts = [
+    fresh.length ? `created ${fresh.length} new purchase order${fresh.length === 1 ? "" : "s"} (${list(fresh)})` : "",
+    added.length ? `added lines to ${added.length} existing purchase order${added.length === 1 ? "" : "s"} of this plan (${list(added)})` : "",
+  ].filter(Boolean);
   return (
-    `Order Agent: created ${o.created.length} purchase order${o.created.length === 1 ? "" : "s"} (${o.created.map((p) => `${p.poNumber} ${p.supplierCode} ${formatINR(p.grandTotal)}`).join("; ")}); ` +
+    `Order Agent: ${parts.join(" and ")}; ` +
     (gated.length ? `${gated.map((p) => p.poNumber).join(", ")} need${gated.length === 1 ? "s" : ""} the Owner's approval (above ${formatINR(limit, { paise: false })}).` : `none needs the Owner's approval.`) +
     (o.skipped.length ? ` Skipped: ${o.skipped.map((s) => `${s.sku} (${s.reason})`).join("; ")}.` : "")
   );

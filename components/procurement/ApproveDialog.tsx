@@ -69,12 +69,15 @@ export function ApproveDialog({
     try {
       const res = await apiCall<ApproveResult>(`/api/purchase-plans/${planId}/approve`, "POST", { lineIds: lines.map((l) => l.id), idempotencyKey: key });
       const waiting = res.purchaseOrders.filter((p) => p.status === "pending_approval").length;
-      toast.success(`${res.purchaseOrders.length} purchase order${res.purchaseOrders.length === 1 ? "" : "s"} created`, {
+      const fresh = res.purchaseOrders.filter((p) => !p.addedTo).length;
+      const added = res.purchaseOrders.length - fresh;
+      toast.success([fresh ? `${fresh} purchase order${fresh === 1 ? "" : "s"} created` : "", added ? `lines added to ${added} existing PO${added === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · "), {
         description: (
           <span className="flex flex-col gap-0.5">
             {res.purchaseOrders.map((p) => (
               <Link key={p.id} href={`/purchase-orders/${p.id}`} className="text-brand hover:underline">
                 {p.poNumber} · {p.supplierCode} · {formatINR(p.grandTotal, { paise: false })}
+                {p.addedTo ? " · lines added" : ""}
                 {p.status === "pending_approval" ? " · needs Owner approval" : " · ready to send"}
               </Link>
             ))}

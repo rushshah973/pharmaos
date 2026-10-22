@@ -31,6 +31,8 @@ export type CreatedPo = {
   lines: number;
   expectedDeliveryDate: string;
   needsApproval: boolean;
+  /** True when this approval added its lines to a PO an earlier approval of the plan created (one PO per supplier). */
+  addedTo: boolean;
 };
 
 export type ApproveResult = { purchaseOrders: CreatedPo[]; alreadyProcessed: boolean };
@@ -54,11 +56,11 @@ export type AlreadyOnOrder = { lineId: string; sku: string; qty: number; stillNe
 
 const PO_STATUS_TEXT: Record<string, string> = { ready: "Ready to send", pending_approval: "awaiting Owner approval", approved: "Owner approved", sent: "sent" };
 
-async function posForIds(sql: postgres.TransactionSql | postgres.Sql, poIds: string[], approvalLimit: Money): Promise<CreatedPo[]> {
+async function posForIds(sql: postgres.TransactionSql | postgres.Sql, poIds: string[], approvalLimit: Money, idempotencyKey: string): Promise<CreatedPo[]> {
   const rows = await sql<
-    { id: string; po_number: string; supplier_id: string; code: string; name: string; status: CreatedPo["status"]; grand_total: string; lines: number; expected: string }[]
+    { id: string; po_number: string; supplier_id: string; code: string; name: string; status: CreatedPo["status"]; grand_total: string; lines: number; expected: string; key: string | null }[]
   >`
-    select po.id, po.po_number, po.supplier_id, s.supplier_code as code, s.name, po.status, po.grand_total::text as grand_total,
+    select po.id, po.po_number, po.supplier_id, s.supplier_code as code, s.name, po.status, po.grand_total::text as grand_total, po.idempotency_key as key,
       (select count(*)::int from purchase_order_lines l where l.po_id = po.id) as lines,
       to_char(po.expected_delivery_date, 'YYYY-MM-DD') as expected
     from purchase_orders po join suppliers s on s.id = po.supplier_id
@@ -76,6 +78,8 @@ async function posForIds(sql: postgres.TransactionSql | postgres.Sql, poIds: str
     lines: r.lines,
     expectedDeliveryDate: r.expected,
     needsApproval: needsOwnerApproval(r.grand_total, approvalLimit),
+    // A PO keeps the key of the approval that created it; any other key means lines were added to it.
+    addedTo: r.key !== idempotencyKey,
   }));
 }
 
@@ -105,7 +109,7 @@ export async function approveLines(
       `,
     ]);
     if (!plan) throw notFound("Plan", planId);
-    if (prior[0]?.ids?.length) return { purchaseOrders: await posForIds(tx, prior[0].ids, state.approvalLimit), alreadyProcessed: true };
+    if (prior[0]?.ids?.length) return { purchaseOrders: await posForIds(tx, prior[0].ids, state.approvalLimit, idempotencyKey), alreadyProcessed: true };
     if (plan.status === "approved" || plan.status === "rejected") {
       throw new ServiceError("PLAN_LOCKED", 409, `The plan is ${plan.status}; no more lines can be approved.`);
     }
@@ -325,7 +329,7 @@ export async function approveLines(
       ),
     ]);
 
-    return { purchaseOrders: await posForIds(tx, created.map((c) => c.id), state.approvalLimit), alreadyProcessed: false };
+    return { purchaseOrders: await posForIds(tx, created.map((c) => c.id), state.approvalLimit, idempotencyKey), alreadyProcessed: false };
   });
 }
 
