@@ -53,7 +53,7 @@ export function PoWorkflow({ pipeline, approvalLimit }: { pipeline: PoPipeline; 
   return (
     <section className="surface p-5" aria-label="How purchase orders work">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-[15px] leading-[22px] font-semibold text-fg-1">How a purchase order is made</h2>
+        <h2 className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">How a purchase order is made</h2>
         <span className="inline-flex items-center gap-1.5 text-[12px] text-fg-3">
           <CheckCheck className="size-3.5" aria-hidden /> Every step is recorded in the Activity log
         </span>
@@ -61,7 +61,7 @@ export function PoWorkflow({ pipeline, approvalLimit }: { pipeline: PoPipeline; 
       <ol className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {steps.map((s, i) => (
           <li key={s.n} className="relative">
-            <Link href={s.href} className="group flex h-full flex-col rounded-lg border border-border bg-surface-2 p-4 transition-colors hover:border-border-strong hover:bg-surface-3">
+            <Link href={s.href} className="group flex h-full flex-col rounded-lg border border-border bg-surface-2 p-4 transition-colors hover:border-border-strong hover:bg-white/[0.04]">
               <div className="flex items-center gap-2.5">
                 <span className={cn("flex size-8 items-center justify-center rounded-full ring-1", TONE[s.tone])}>
                   <s.icon className="size-4" strokeWidth={1.75} aria-hidden />

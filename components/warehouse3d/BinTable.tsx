@@ -56,7 +56,7 @@ export function BinTable({
                 onClick={() => onSelect(b.id)}
                 aria-selected={selected}
                 className={cn(
-                  "h-11 cursor-pointer border-t border-border transition-colors hover:bg-surface-3",
+                  "h-11 cursor-pointer border-t border-border transition-colors hover:bg-white/[0.04]",
                   selected && "bg-brand-glow shadow-[inset_2px_0_0_var(--brand)]",
                 )}
               >

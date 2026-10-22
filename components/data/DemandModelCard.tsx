@@ -30,7 +30,7 @@ export function DemandModelCard({ model, skus }: { model: StoredModel | null; sk
     <section className="surface p-6" aria-label="Demand model">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-[15px] leading-[22px] font-semibold text-fg-1">Demand model</h2>
+          <h2 className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">Demand model</h2>
           <p className="text-fg-2">Global ridge regression over all SKUs, predicting packs sold per day. Trained on synthetic demo data.</p>
         </div>
         <span className="rounded-full border border-border-strong px-2.5 text-[12px] leading-6 text-fg-2">
@@ -86,7 +86,7 @@ function Figure({ label, value, note, tone }: { label: string; value: string; no
   return (
     <div>
       <p className="micro-label">{label}</p>
-      <p className={`num mt-2 text-[32px] leading-9 font-semibold tracking-[-0.02em] ${tone === "brand" ? "text-brand" : "text-fg-1"}`}>{value}</p>
+      <p className={`num mt-2 display text-[40px] leading-[44px] ${tone === "brand" ? "text-brand" : "text-fg-1"}`}>{value}</p>
       <p className="mt-1 text-fg-2">{note}</p>
     </div>
   );

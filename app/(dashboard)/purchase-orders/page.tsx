@@ -91,7 +91,7 @@ async function PoList({ searchParams }: Pick<PageProps<"/purchase-orders">, "sea
               </thead>
               <tbody>
                 {data.pos.map((po) => (
-                  <tr key={po.id} className="group relative border-b border-border align-top transition-colors duration-150 last:border-b-0 hover:bg-surface-3">
+                  <tr key={po.id} className="group relative border-b border-border align-top transition-colors duration-150 last:border-b-0 hover:bg-white/[0.04]">
                     <td className="py-3 pr-4 pl-5 whitespace-nowrap">
                       <Link href={`/purchase-orders/${po.id}`} className="font-mono text-[12.5px] font-medium text-fg-1 after:absolute after:inset-0 after:content-['']">
                         {po.poNumber}

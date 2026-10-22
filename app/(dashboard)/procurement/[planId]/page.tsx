@@ -135,7 +135,7 @@ function PlanSkeleton() {
       <div className="surface h-[124px]" />
       <div className="surface overflow-hidden">
         <div className="h-[76px]" />
-        <div className="h-10 border-y border-border bg-surface-2" />
+        <div className="h-10 border-y border-white/[0.06] bg-white/[0.025]" />
         {Array.from({ length: 8 }, (_, i) => (
           <div key={i} className="flex h-14 items-center gap-6 border-b border-border px-5">
             <span className="shimmer h-8 w-60 rounded" />

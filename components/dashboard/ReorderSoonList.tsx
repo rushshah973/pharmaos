@@ -19,7 +19,7 @@ export function ReorderSoonList({ items, total }: { items: ReorderSoon[]; total:
     <section className="surface overflow-hidden" aria-label="Reorder in the next 7 days">
       <header className="flex flex-wrap items-end justify-between gap-3 px-5 pt-5 pb-4">
         <div>
-          <h2 className="text-[15px] leading-[22px] font-semibold text-fg-1">Reorder in the next 7 days</h2>
+          <h2 className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">Reorder in the next 7 days</h2>
           <p className="text-fg-2">
             Not urgent yet: these reach their reorder point soon at forecast demand · {total} SKU{total === 1 ? "" : "s"}, showing the soonest {items.length}
           </p>
@@ -29,7 +29,7 @@ export function ReorderSoonList({ items, total }: { items: ReorderSoon[]; total:
       <div className="overflow-x-auto">
         <table className="w-full min-w-[680px] border-collapse whitespace-nowrap">
           <thead>
-            <tr className="border-y border-border bg-surface-2">
+            <tr className="border-y border-white/[0.06] bg-white/[0.025]">
               {["SKU", "Order by", "Stock", "Demand / day", "Lead", ""].map((h, i) => (
                 <th key={h || i} className={`micro-label h-9 px-4 font-medium first:pl-5 last:pr-5 ${i >= 2 && i <= 4 ? "text-right" : "text-left"}`}>
                   {h}
@@ -39,7 +39,7 @@ export function ReorderSoonList({ items, total }: { items: ReorderSoon[]; total:
           </thead>
           <tbody>
             {items.map((s) => (
-              <tr key={s.productId} className="group h-14 border-b border-border transition-colors duration-150 last:border-b-0 hover:bg-surface-3">
+              <tr key={s.productId} className="group h-14 border-b border-border transition-colors duration-150 last:border-b-0 hover:bg-white/[0.04]">
                 <td className="py-2 pr-4 pl-5">
                   <div className="font-mono text-[12.5px] text-fg-1">{s.sku}</div>
                   <div className="max-w-[220px] truncate text-[12.5px] text-fg-2 xl:max-w-[300px]">

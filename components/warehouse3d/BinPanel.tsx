@@ -30,7 +30,7 @@ export function BinPanelEmpty({ mode, highlighted }: { mode: ModeMeta; highlight
       <span className="flex size-10 items-center justify-center rounded-full bg-brand-glow text-brand ring-1 ring-brand/20">
         <MousePointerClick className="size-[18px]" strokeWidth={1.75} aria-hidden />
       </span>
-      <h2 className="mt-4 text-[15px] leading-[22px] font-semibold text-fg-1">Select a bin</h2>
+      <h2 className="mt-4 text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">Select a bin</h2>
       <p className="mt-1 max-w-[260px] text-fg-2">
         {highlighted > 0
           ? `${highlighted} bin${highlighted === 1 ? "" : "s"} highlighted for ${mode.label.toLowerCase()}. Click one to see its stock, batches and status.`

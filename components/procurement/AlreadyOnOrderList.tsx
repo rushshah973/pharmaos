@@ -18,7 +18,7 @@ export function AlreadyOnOrderList({ items, lines }: { items: OnOrderItem[]; lin
   return (
     <section className="surface overflow-hidden" aria-label="Already on order">
       <header className="px-5 pt-5 pb-4">
-        <h2 className="text-[15px] leading-[22px] font-semibold text-fg-1">Already on order</h2>
+        <h2 className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">Already on order</h2>
         <p className="text-fg-2">
           {groups.length} SKU{groups.length === 1 ? " is" : "s are"} on purchase orders from earlier plans. That stock counts as incoming, so this plan
           does not order it again{topUps ? `; ${topUps} still need${topUps === 1 ? "s" : ""} a top-up and ${topUps === 1 ? "is" : "are"} in the plan above` : ""}.

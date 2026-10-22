@@ -60,7 +60,16 @@ export type CommandCenter = {
   /** Reaching the reorder point in the next 7 days (not urgent yet), soonest first. */
   reorderSoon: ReorderSoon[];
   reorderSoonCount: number;
+  /** Packs sold per day across all SKUs (last 42 days), then the engine's demand for the next 14 days. */
+  demandTrend: DemandPoint[];
+  /** How many active SKUs are in each stock status. */
+  statusMix: { status: SkuStatus; count: number }[];
 };
+
+export type DemandPoint = { date: string; actual: number | null; forecast: number | null };
+
+const TREND_PAST_DAYS = 42;
+const TREND_FUTURE_DAYS = 14;
 
 const CRITICAL_LIMIT = 8;
 const REORDER_HORIZON_DAYS = 7;
@@ -144,6 +153,27 @@ export async function getCommandCenter(sql: postgres.Sql = getSql()): Promise<Co
     leadTimeDays: a.leadFastest,
   }));
 
+  // Demand trend: actual packs per day from the sales window, then each SKU's planning demand (the ML series where
+  // the engine uses ML, its daily average otherwise) summed per future day.
+  const sold = new Map<string, number>();
+  for (const s of ctx.skus) for (const p of s.sales) sold.set(p.date, (sold.get(p.date) ?? 0) + p.units);
+  const future = Array.from({ length: TREND_FUTURE_DAYS }, () => 0);
+  const skuById = new Map(ctx.skus.map((s) => [s.product.id, s]));
+  for (const { a } of analysed) {
+    const sku = skuById.get(a.productId);
+    const series = a.demand.method === "ml" ? sku?.forecast?.series14 : undefined;
+    for (let i = 0; i < TREND_FUTURE_DAYS; i++) future[i] += series?.[i] ?? a.demand.avgDailyDemand;
+  }
+  const demandTrend: DemandPoint[] = [
+    ...Array.from({ length: TREND_PAST_DAYS }, (_, i) => {
+      const date = addDays(asOf, i - TREND_PAST_DAYS + 1);
+      return { date, actual: Math.round(sold.get(date) ?? 0), forecast: i === TREND_PAST_DAYS - 1 ? Math.round(sold.get(date) ?? 0) : null };
+    }),
+    ...future.map((v, i) => ({ date: addDays(asOf, i + 1), actual: null, forecast: Math.round(v) })),
+  ];
+  const statuses: SkuStatus[] = ["STOCKOUT_RISK", "BELOW_ROP", "HEALTHY", "EXCESS", "NO_DEMAND"];
+  const statusMix = statuses.map((status) => ({ status, count: analysed.filter((x) => x.a.status === status).length }));
+
   return {
     asOf,
     scenario: { id: scenarioId, name: state?.scenario_name ?? "Baseline" },
@@ -159,5 +189,7 @@ export async function getCommandCenter(sql: postgres.Sql = getSql()): Promise<Co
     criticalSkus,
     reorderSoon,
     reorderSoonCount: soon.length,
+    demandTrend,
+    statusMix,
   };
 }

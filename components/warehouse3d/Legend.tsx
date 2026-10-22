@@ -85,7 +85,7 @@ export function ModeSelect({
               "inline-flex h-8 items-center gap-2 rounded-full border px-3 text-[12.5px] font-medium transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-brand",
               active
                 ? "border-brand/40 bg-brand-glow text-fg-1"
-                : "border-border bg-surface-1 text-fg-2 hover:bg-surface-3 hover:text-fg-1",
+                : "border-border bg-surface-1 text-fg-2 hover:bg-white/[0.04] hover:text-fg-1",
               disabled &&
                 "cursor-not-allowed opacity-45 hover:bg-surface-1 hover:text-fg-2",
             )}

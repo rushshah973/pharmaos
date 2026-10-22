@@ -111,7 +111,7 @@ export function ApproveDialog({
           className="gap-0 border border-border-strong bg-surface-2 p-0 shadow-(--shadow-pop) ring-0 sm:max-w-[540px]"
         >
           <div className="space-y-1.5 px-6 pt-6">
-            <DialogTitle className="text-[15px] leading-[22px] font-semibold text-fg-1">Create purchase orders</DialogTitle>
+            <DialogTitle className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">Create purchase orders</DialogTitle>
             <DialogDescription className="text-fg-2">
               {lines.length} line{lines.length === 1 ? "" : "s"} · {formatINR(total)}. One PO per supplier; each line is re-checked against fresh stock, prices
               and quotes first.

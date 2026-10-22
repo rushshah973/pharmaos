@@ -96,7 +96,7 @@ export function PoActions({ poId, poNumber, status, pharmaos }: { poId: string; 
       <Dialog open={mode !== null} onOpenChange={(o) => !o && !busy && (setMode(null), setText(""))}>
         <DialogContent showCloseButton={!busy} className="gap-0 border border-border-strong bg-surface-2 p-0 shadow-(--shadow-pop) ring-0 sm:max-w-[440px]">
           <div className="space-y-1.5 px-6 pt-6">
-            <DialogTitle className="text-[15px] leading-[22px] font-semibold text-fg-1">
+            <DialogTitle className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">
               {mode === "approve" ? "Approve" : "Reject"} <span className="font-mono text-[14px]">{poNumber}</span> as Owner
             </DialogTitle>
             <DialogDescription className="text-fg-2">

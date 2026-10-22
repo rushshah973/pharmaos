@@ -140,14 +140,14 @@ export function PlanTable({
       <section className="surface overflow-hidden" aria-label="Plan lines">
         <header className="flex flex-wrap items-end justify-between gap-3 px-5 pt-5 pb-4">
           <div>
-            <h2 className="text-[15px] leading-[22px] font-semibold text-fg-1">Plan lines</h2>
+            <h2 className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">Plan lines</h2>
             <p className="text-fg-2">Ranked by loss prevented per rupee · most urgent first · {rows.length} lines</p>
           </div>
         </header>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1040px] border-collapse whitespace-nowrap">
             <thead>
-              <tr className="border-y border-border bg-surface-2">
+              <tr className="border-y border-white/[0.06] bg-white/[0.025]">
                 <th className={cn("h-10 w-9 pl-5", STICKY[0], "bg-surface-2")}>
                   <Checkbox
                     aria-label="Select all lines"
@@ -219,7 +219,7 @@ function PlanRow({
   return (
     <tr
       className={cn(
-        "group h-14 border-b border-border transition-colors duration-150 last:border-b-0 hover:bg-surface-3",
+        "group h-14 border-b border-border transition-colors duration-150 last:border-b-0 hover:bg-white/[0.04]",
         checked && "bg-brand-glow shadow-[inset_2px_0_0_var(--brand)] hover:bg-brand-glow",
       )}
     >

@@ -40,7 +40,7 @@ function Figure({ label, value, note, tone }: { label: string; value: React.Reac
   return (
     <div className="min-w-0">
       <div className="text-[12px] text-fg-3">{label}</div>
-      <div className={cn("num text-[15px] leading-[22px] font-semibold", tone === "stockout" ? "text-stockout" : tone === "expiry" ? "text-expiry" : "text-fg-1")}>
+      <div className={cn("num text-[17px] leading-[24px] font-normal tracking-[-0.015em]", tone === "stockout" ? "text-stockout" : tone === "expiry" ? "text-expiry" : "text-fg-1")}>
         {value}
       </div>
       {note && <div className="text-[11.5px] leading-4 text-fg-3">{note}</div>}

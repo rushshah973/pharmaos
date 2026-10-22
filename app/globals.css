@@ -78,64 +78,70 @@
   --radius-4xl: calc(var(--radius) * 3);
 }
 
-/* Dark is the only theme; :root and .dark carry the same values. */
+/* Dark is the only theme; :root and .dark carry the same values.
+   Glass design system: near-black canvas with a warm and a cool ambient glow, frosted glass cards, thin type,
+   one warm accent (brand) for focus and highlights, and the four status colours (always with a label). */
 :root,
 .dark {
-  /* §10.1 colour tokens */
-  --bg: #070b14;
-  --surface-1: #0d1424;
-  --surface-2: #121b2f;
-  --surface-3: #18233a;
-  --border-strong: #2a3954;
-  --text-1: #e6edf7;
-  --text-2: #94a3b8;
-  --text-3: #5b6b85;
-  --brand: #2dd4bf; /* "--accent" in the plan; named brand so it does not clash with shadcn's --accent (hover) */
-  --brand-strong: #14b8a6;
-  --brand-glow: rgba(45, 212, 191, 0.1);
-  --stockout: #f87171;
-  --stockout-bg: rgba(248, 113, 113, 0.12);
-  --expiry: #fbbf24;
-  --expiry-bg: rgba(251, 191, 36, 0.12);
+  --bg: #08080a;
+  /* Opaque fallbacks (sticky table cells, menus): close to the average colour of a glass card on the canvas. */
+  --surface-1: #121214;
+  --surface-2: #19191c;
+  --surface-3: #232327;
+  --border-strong: rgba(255, 255, 255, 0.13);
+  --text-1: #f4f4f5;
+  --text-2: #a1a1aa;
+  --text-3: #66666e;
+  --brand: #ff8d4d; /* warm copper accent ("--accent" in the plan; named brand to avoid shadcn's --accent) */
+  --brand-strong: #f97316;
+  --brand-glow: rgba(255, 141, 77, 0.12);
+  --stockout: #ff5c5c;
+  --stockout-bg: rgba(255, 92, 92, 0.12);
+  --expiry: #f2c94c;
+  --expiry-bg: rgba(242, 201, 76, 0.12);
   --excess: #a78bfa;
   --excess-bg: rgba(167, 139, 250, 0.12);
-  --healthy: #34d399;
-  --healthy-bg: rgba(52, 211, 153, 0.12);
-  --neutral: #94a3b8;
-  --neutral-bg: rgba(148, 163, 184, 0.1);
-  --proposed: rgba(34, 211, 238, 0.35);
-  /* One soft shadow for popovers, dialogs and the drawer. */
-  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --healthy: #4ade80;
+  --healthy-bg: rgba(74, 222, 128, 0.11);
+  --neutral: #a1a1aa;
+  --neutral-bg: rgba(161, 161, 170, 0.1);
+  --proposed: rgba(255, 141, 77, 0.35);
+  /* Glass */
+  --glass: linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.025) 100%);
+  --glass-border: rgba(255, 255, 255, 0.075);
+  --glass-blur: blur(22px) saturate(150%);
+  --shadow-pop: 0 24px 60px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 24px 48px -28px rgba(0, 0, 0, 0.8);
 
   /* shadcn variables mapped onto the tokens */
   --background: var(--bg);
   --foreground: var(--text-1);
   --card: var(--surface-1);
   --card-foreground: var(--text-1);
-  --popover: var(--surface-2);
+  --popover: rgba(26, 26, 30, 0.86);
   --popover-foreground: var(--text-1);
-  --primary: var(--brand-strong);
-  --primary-foreground: #03201c;
-  --secondary: var(--surface-2);
+  --primary: #f4f4f5;
+  --primary-foreground: #0b0b0d;
+  --secondary: rgba(255, 255, 255, 0.06);
   --secondary-foreground: var(--text-1);
-  --muted: var(--surface-2);
+  --muted: rgba(255, 255, 255, 0.06);
   --muted-foreground: var(--text-2);
-  --accent: var(--surface-3);
+  --accent: rgba(255, 255, 255, 0.08);
   --accent-foreground: var(--text-1);
   --destructive: var(--stockout);
-  --border: #1c2740;
-  --input: var(--border-strong);
+  --border: rgba(255, 255, 255, 0.07);
+  --input: rgba(255, 255, 255, 0.12);
   --ring: var(--brand);
   --chart-1: var(--brand);
   --chart-2: var(--expiry);
   --chart-3: var(--excess);
   --chart-4: var(--healthy);
   --chart-5: var(--stockout);
-  --radius: 0.5rem;
+  --radius: 0.75rem;
   --sidebar: var(--surface-1);
   --sidebar-foreground: var(--text-2);
   --sidebar-primary: var(--brand);
-  --sidebar-primary-foreground: #03201c;
+  --sidebar-primary-foreground: #1a0b02;
   --sidebar-accent: var(--surface-3);
   --sidebar-accent-foreground: var(--text-1);
   --sidebar-border: var(--border);
@@ -157,9 +163,33 @@
     @apply bg-bg text-fg-1;
     font-size: 13.5px;
     line-height: 20px;
+    letter-spacing: -0.003em;
+  }
+  /* Ambient canvas: a warm glow top-right, a cool green-teal glow bottom-left, and fine grain, fixed behind the app. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(60% 50% at 88% -6%, rgba(255, 128, 56, 0.16) 0%, rgba(255, 128, 56, 0) 70%),
+      radial-gradient(45% 45% at 102% 40%, rgba(255, 170, 110, 0.06) 0%, rgba(255, 170, 110, 0) 70%),
+      radial-gradient(55% 55% at -8% 108%, rgba(56, 160, 120, 0.13) 0%, rgba(56, 160, 120, 0) 70%),
+      radial-gradient(40% 40% at 30% 40%, rgba(120, 130, 150, 0.05) 0%, rgba(120, 130, 150, 0) 70%),
+      var(--bg);
+  }
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
   ::selection {
-    background: rgba(45, 212, 191, 0.25);
+    background: rgba(255, 141, 77, 0.28);
   }
   :focus-visible {
     outline: 2px solid var(--brand);
@@ -168,27 +198,77 @@
 }
 
 @layer components {
-  /* Card surface: hairline border and a faint top highlight (§10.1 elevation). */
+  /* Glass card: frosted translucent fill, hairline border, top highlight, deep soft shadow. */
   .surface {
-    background: var(--surface-1);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    background: var(--glass);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 24px;
+    box-shadow: var(--shadow-card);
   }
-  /* The one signature gradient: Command Center hero and Plan Impact Card only. */
+  /* Hero glass: a soft light bloom from the top-left (the "selected card" look). */
   .surface-hero {
     background:
-      radial-gradient(120% 140% at 0% 0%, rgba(45, 212, 191, 0.1) 0%, rgba(45, 212, 191, 0) 55%),
-      var(--surface-1);
-    border: 1px solid var(--border);
-    border-radius: 16px;
+      radial-gradient(90% 120% at 0% 0%, rgba(255, 255, 255, 0.11) 0%, rgba(255, 255, 255, 0) 55%),
+      radial-gradient(70% 90% at 100% 0%, rgba(255, 141, 77, 0.08) 0%, rgba(255, 141, 77, 0) 60%),
+      var(--glass);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 28px;
+    box-shadow: var(--shadow-card);
+  }
+  /* Warm glass: copper light sweep for the one figure that matters most on a page. */
+  .surface-warm {
+    background:
+      linear-gradient(125deg, rgba(0, 0, 0, 0) 20%, rgba(255, 141, 77, 0.32) 55%, rgba(120, 50, 10, 0.1) 80%),
+      radial-gradient(80% 80% at 100% 100%, rgba(255, 141, 77, 0.22) 0%, rgba(255, 141, 77, 0) 70%),
+      rgba(20, 14, 10, 0.6);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid rgba(255, 180, 130, 0.14);
+    border-radius: 28px;
+    box-shadow: var(--shadow-card);
+  }
+  /* Alert glass: a muted red-brown tint for warnings. */
+  .surface-alert {
+    background:
+      radial-gradient(90% 90% at 30% 0%, rgba(255, 92, 92, 0.14) 0%, rgba(255, 92, 92, 0) 70%),
+      linear-gradient(180deg, rgba(90, 50, 40, 0.35) 0%, rgba(40, 24, 20, 0.35) 100%);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid rgba(255, 150, 130, 0.1);
+    border-radius: 22px;
+    box-shadow: var(--shadow-card);
+  }
+  /* Glass pill: chips, segmented controls, the nav. */
+  .glass-pill {
+    background: rgba(255, 255, 255, 0.045);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 9999px;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+  /* Big thin numbers: the decimal / unit part is dimmed with .dim. */
+  .display {
+    font-weight: 300;
+    letter-spacing: -0.045em;
+    font-variant-numeric: tabular-nums;
+  }
+  .display .dim {
+    color: var(--text-3);
+  }
+  /* Dashed guide lines and the tick rail used by charts and timelines. */
+  .tick-rail {
+    background-image: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.28) 0 1px, transparent 1px 5px);
   }
   .micro-label {
     font-size: 11px;
     line-height: 16px;
     font-weight: 500;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--text-3);
   }
@@ -198,7 +278,7 @@
   }
   /* Skeleton shimmer; disabled for reduced motion. */
   .shimmer {
-    background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-3) 50%, var(--surface-2) 100%);
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.09) 50%, rgba(255, 255, 255, 0.04) 100%);
     background-size: 200% 100%;
     animation: shimmer 1.4s ease-in-out infinite;
   }
@@ -219,7 +299,7 @@
 
 @keyframes flash-change {
   0% {
-    background-color: rgba(45, 212, 191, 0.18);
+    background-color: rgba(255, 141, 77, 0.18);
   }
   100% {
     background-color: transparent;
@@ -252,6 +332,19 @@
     background: #fff;
     color: #000;
   }
+  body::before,
+  body::after {
+    display: none;
+  }
+  .surface,
+  .surface-hero,
+  .surface-warm,
+  .surface-alert {
+    background: #fff !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    border-color: #d4d4d8 !important;
+  }
   main {
     padding: 0 !important;
     max-width: none !important;
@@ -259,6 +352,12 @@
   nextjs-portal {
     display: none;
   }
+}
+
+/* Menus, popovers and sheets are frosted glass too. */
+.bg-popover {
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  backdrop-filter: blur(28px) saturate(160%);
 }
 
 /* Icon-only row action (plan tables): 28 px, quiet until hovered. */
@@ -269,14 +368,14 @@
     height: 28px;
     align-items: center;
     justify-content: center;
-    border-radius: 6px;
+    border-radius: 9999px;
     color: var(--text-2);
     transition:
       background-color 150ms ease-out,
       color 150ms ease-out;
   }
   .row-action:hover:not(:disabled) {
-    background: var(--surface-2);
+    background: rgba(255, 255, 255, 0.08);
     color: var(--text-1);
   }
   .row-action:disabled {

@@ -50,7 +50,7 @@ export function CreatePlanDialog({ variant = "default" }: { variant?: "default" 
       >
         <form onSubmit={submit}>
           <div className="space-y-1.5 px-6 pt-6">
-            <DialogTitle className="text-[15px] leading-[22px] font-semibold text-fg-1">Create purchase plan</DialogTitle>
+            <DialogTitle className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">Create purchase plan</DialogTitle>
             <DialogDescription className="text-fg-2">
               PharmaOS checks every active SKU against demand, stock, expiry and supplier offers, then ranks what to buy first.
               Purchase orders above the Owner approval limit will need approval before they are sent.

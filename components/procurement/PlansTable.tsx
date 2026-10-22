@@ -33,7 +33,7 @@ export function PlansTable({ plans }: { plans: PlanListItem[] }) {
           </thead>
           <tbody>
             {plans.map((p) => (
-              <tr key={p.id} className="group relative h-11 border-b border-border transition-colors duration-150 last:border-b-0 hover:bg-surface-3">
+              <tr key={p.id} className="group relative h-11 border-b border-border transition-colors duration-150 last:border-b-0 hover:bg-white/[0.04]">
                 <td className="pr-4 pl-5">
                   <Link href={`/procurement/${p.id}`} className="text-fg-1 after:absolute after:inset-0 after:content-['']">
                     {formatDateTime(p.createdAt)}

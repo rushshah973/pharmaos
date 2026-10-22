@@ -23,7 +23,7 @@ export function CriticalSkuList({ skus, latestPlanId, totalAtRisk }: { skus: Cri
     <section className="surface overflow-hidden">
       <header className="flex items-end justify-between gap-4 px-5 pt-5 pb-4">
         <div>
-          <h2 className="text-[15px] leading-[22px] font-semibold text-fg-1">Critical SKUs</h2>
+          <h2 className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">Critical SKUs</h2>
           <p className="text-fg-2">
             Lowest cover first · {totalAtRisk} at stockout risk, showing the top {skus.length}
           </p>
@@ -32,7 +32,7 @@ export function CriticalSkuList({ skus, latestPlanId, totalAtRisk }: { skus: Cri
       <div className="overflow-x-auto">
         <table className="w-full min-w-[680px] border-collapse whitespace-nowrap">
           <thead>
-            <tr className="border-y border-border bg-surface-2">
+            <tr className="border-y border-white/[0.06] bg-white/[0.025]">
               {["SKU", "Status", "Cover", "Lead", "Expiry risk", ""].map((h, i) => (
                 <th key={h || i} className={`micro-label h-9 px-4 first:pl-5 last:pr-5 font-medium ${i >= 2 && i <= 4 ? "text-right" : "text-left"}`}>
                   {h}
@@ -45,7 +45,7 @@ export function CriticalSkuList({ skus, latestPlanId, totalAtRisk }: { skus: Cri
               const tag = CRITICALITY[s.criticality];
               const atRisk = dec(s.atRiskValue).greaterThan(0);
               return (
-                <tr key={s.productId} className="group h-14 border-b border-border transition-colors duration-150 last:border-b-0 hover:bg-surface-3">
+                <tr key={s.productId} className="group h-14 border-b border-border transition-colors duration-150 last:border-b-0 hover:bg-white/[0.04]">
                   <td className="py-2 pr-4 pl-5">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-[12.5px] text-fg-1">{s.sku}</span>
@@ -100,7 +100,7 @@ export function CriticalSkuListSkeleton() {
         <span className="shimmer block h-5 w-32 rounded" />
         <span className="shimmer block h-4 w-64 rounded" />
       </div>
-      <div className="h-9 border-y border-border bg-surface-2" />
+      <div className="h-9 border-y border-white/[0.06] bg-white/[0.025]" />
       {Array.from({ length: 8 }, (_, i) => (
         <div key={i} className="flex h-14 items-center gap-6 border-b border-border px-5 last:border-b-0">
           <span className="shimmer h-8 w-56 rounded" />

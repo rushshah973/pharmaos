@@ -63,7 +63,7 @@ export function PoTimeline({ po }: { po: PoDetail }) {
   return (
     <section className="surface p-5 print:hidden" aria-label="Where this purchase order is">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-[15px] leading-[22px] font-semibold text-fg-1">Where this PO is</h2>
+        <h2 className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">Where this PO is</h2>
         <span className="text-[12.5px] text-fg-2">
           Goes to <span className="font-medium text-fg-1">{po.supplierName}</span> <span className="font-mono text-fg-3">{po.supplierCode}</span>
         </span>

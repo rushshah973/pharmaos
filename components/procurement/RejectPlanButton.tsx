@@ -45,7 +45,7 @@ export function RejectPlanButton({ planId, disabled }: { planId: string; disable
         <DialogContent showCloseButton={!pending} className="gap-0 border border-border-strong bg-surface-2 p-0 shadow-(--shadow-pop) ring-0 sm:max-w-[440px]">
           <form onSubmit={submit}>
             <div className="space-y-1.5 px-6 pt-6">
-              <DialogTitle className="text-[15px] leading-[22px] font-semibold text-fg-1">Reject this plan</DialogTitle>
+              <DialogTitle className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">Reject this plan</DialogTitle>
               <DialogDescription className="text-fg-2">The plan is closed and no purchase orders are created from it. POs already created stay as they are.</DialogDescription>
             </div>
             <div className="space-y-2 px-6 py-5">

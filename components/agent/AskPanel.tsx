@@ -132,7 +132,7 @@ export function AskPanel({ planId, lines }: { planId: string; lines: { id: strin
                     <button
                       type="button"
                       onClick={() => ask(p)}
-                      className="w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-[12.5px] leading-[18px] text-fg-2 transition-colors hover:border-border-strong hover:bg-surface-3 hover:text-fg-1"
+                      className="w-full rounded-lg border border-border bg-surface-1 px-3 py-2 text-left text-[12.5px] leading-[18px] text-fg-2 transition-colors hover:border-border-strong hover:bg-white/[0.04] hover:text-fg-1"
                     >
                       {p}
                     </button>

@@ -65,7 +65,7 @@ function Headline({ label, value, children }: { label: string; value: React.Reac
   return (
     <div>
       <p className="micro-label">{label}</p>
-      <p className="mt-2 text-[32px] leading-9 font-semibold tracking-[-0.02em] text-fg-1">{value}</p>
+      <p className="mt-2 display text-[40px] leading-[44px] text-fg-1">{value}</p>
       <p className="mt-1 text-fg-2">{children}</p>
     </div>
   );

@@ -65,7 +65,7 @@ export function SkuSearch({ selected, onPick, onClear }: { selected: ProductSear
         <span className="truncate text-fg-2">
           {selected.brandName} {selected.strength}
         </span>
-        <button type="button" onClick={onClear} className="flex size-6 shrink-0 items-center justify-center rounded-md text-fg-3 hover:bg-surface-3 hover:text-fg-1" aria-label="Clear search">
+        <button type="button" onClick={onClear} className="flex size-6 shrink-0 items-center justify-center rounded-md text-fg-3 hover:bg-white/[0.04] hover:text-fg-1" aria-label="Clear search">
           <X className="size-3.5" />
         </button>
       </div>

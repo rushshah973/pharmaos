@@ -82,7 +82,7 @@ export function AuditTable({ initial }: { initial: Row[] }) {
       <div className="overflow-x-auto">
         <table className="w-full min-w-[900px] border-collapse text-[12.5px]">
           <thead>
-            <tr className="border-y border-border bg-surface-2">
+            <tr className="border-y border-white/[0.06] bg-white/[0.025]">
               {["Time", "Actor", "Action", "Entity", "Change", "Reason"].map((h) => (
                 <th key={h} className="micro-label h-9 px-4 text-left font-medium first:pl-5 last:pr-5">
                   {h}
@@ -102,7 +102,7 @@ export function AuditTable({ initial }: { initial: Row[] }) {
               const href = entityLink(r);
               const summary = changeSummary(r.before, r.after);
               return (
-                <tr key={r.id} className="border-b border-border align-top transition-colors duration-150 last:border-b-0 hover:bg-surface-3">
+                <tr key={r.id} className="border-b border-border align-top transition-colors duration-150 last:border-b-0 hover:bg-white/[0.04]">
                   <td className="py-2.5 pr-4 pl-5 whitespace-nowrap text-fg-2">{formatDateTime(r.createdAt)}</td>
                   <td className="px-4 py-2.5 whitespace-nowrap">
                     <span className={cn("rounded px-1.5 py-0.5 text-[10.5px] font-semibold uppercase", ACTOR_TONE[r.actorType] ?? ACTOR_TONE.system)}>{r.actorType}</span>

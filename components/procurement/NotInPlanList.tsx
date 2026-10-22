@@ -43,7 +43,7 @@ export function NotInPlanList({ planId, planStatus, lines }: { planId: string; p
   return (
     <section className="surface overflow-hidden" aria-label="Not in this plan">
       <header className="px-5 pt-5 pb-4">
-        <h2 className="text-[15px] leading-[22px] font-semibold text-fg-1">Not in this plan</h2>
+        <h2 className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">Not in this plan</h2>
         <p className="text-fg-2">Deferred or rejected by you, and SKUs that need stock but have no supplier offer that can be used.</p>
       </header>
       <ul className="border-t border-border">
@@ -76,7 +76,7 @@ export function NotInPlanList({ planId, planStatus, lines }: { planId: string; p
                     type="button"
                     disabled={locked || busy !== null}
                     onClick={() => restore(l)}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-strong bg-surface-2 px-3 text-[12.5px] font-medium text-fg-1 transition-colors duration-150 hover:bg-surface-3 disabled:opacity-50"
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-strong bg-surface-2 px-3 text-[12.5px] font-medium text-fg-1 transition-colors duration-150 hover:bg-white/[0.04] disabled:opacity-50"
                   >
                     {busy === l.id ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <RotateCcw className="size-3.5" aria-hidden />}
                     Restore

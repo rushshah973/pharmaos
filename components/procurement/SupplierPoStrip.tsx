@@ -10,7 +10,7 @@ export function SupplierPoStrip({ pos, approvalLimit }: { pos: SupplierPo[]; app
   return (
     <section className="surface p-5" aria-label="Projected purchase orders">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-[15px] leading-[22px] font-semibold text-fg-1">Projected purchase orders</h2>
+        <h2 className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">Projected purchase orders</h2>
         {/* State the outcome for this plan, not only the rule, so nobody reads the rule as a pending request. */}
         <p className={`text-[12.5px] ${gated > 0 ? "text-expiry" : "text-fg-3"}`}>
           One PO per supplier ·{" "}

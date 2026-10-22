@@ -17,7 +17,7 @@ function format(n: number, kind: "inr" | "int" | "inr-paise") {
  * it moves from the old value to the new one and flashes once, so the eye sees what changed (§10.1 Motion).
  * Static when reduced motion is on.
  */
-export function CountUp({ value, kind = "int" }: { value: number; kind?: "inr" | "int" | "inr-paise" }) {
+export function CountUp({ value, kind = "int", dimDecimals = false }: { value: number; kind?: "inr" | "int" | "inr-paise"; dimDecimals?: boolean }) {
   // `frame` is the in-between value while animating; null shows `value` itself.
   const [frame, setFrame] = useState<number | null>(null);
   const [flash, setFlash] = useState(0);
@@ -49,9 +49,18 @@ export function CountUp({ value, kind = "int" }: { value: number; kind?: "inr" |
     };
   }, [value]);
 
+  const text = format(frame ?? value, kind);
+  const dot = dimDecimals ? text.lastIndexOf(".") : -1;
   return (
     <span key={flash} className={cn("num rounded-sm", flash > 0 && "flash-change")}>
-      {format(frame ?? value, kind)}
+      {dot < 0 ? (
+        text
+      ) : (
+        <>
+          {text.slice(0, dot)}
+          <span className="dim">{text.slice(dot)}</span>
+        </>
+      )}
     </span>
   );
 }

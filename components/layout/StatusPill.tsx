@@ -2,12 +2,13 @@ import { cn } from "cn";
 
 export type PillStatus = "stockout" | "expiry" | "excess" | "healthy" | "neutral";
 
+// Outlined glass pills: a tinted hairline and a faint fill of the status colour.
 const STYLES: Record<PillStatus, string> = {
-  stockout: "bg-stockout-bg text-stockout",
-  expiry: "bg-expiry-bg text-expiry",
-  excess: "bg-excess-bg text-excess",
-  healthy: "bg-healthy-bg text-healthy",
-  neutral: "bg-neutral-bg text-neutral",
+  stockout: "border-stockout/30 bg-stockout-bg text-stockout",
+  expiry: "border-expiry/30 bg-expiry-bg text-expiry",
+  excess: "border-excess/30 bg-excess-bg text-excess",
+  healthy: "border-healthy/30 bg-healthy-bg text-healthy",
+  neutral: "border-white/12 bg-white/[0.04] text-fg-2",
 };
 
 /** Status is always dot + label, never colour alone (§10.1). */
@@ -15,7 +16,7 @@ export function StatusPill({ status, children, className }: { status: PillStatus
   return (
     <span
       className={cn(
-        "inline-flex h-[22px] items-center gap-1.5 rounded-full px-2.5 text-[12px] font-medium whitespace-nowrap",
+        "inline-flex h-[24px] items-center gap-1.5 rounded-full border px-2.5 text-[12px] font-normal whitespace-nowrap",
         STYLES[status],
         className,
       )}

@@ -1,21 +1,46 @@
+import Link from "next/link";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { CalendarDays, FlaskConical, ShieldCheck } from "lucide-react";
 import { formatDisplayDate } from "@/lib/format/date";
 import { formatINR } from "@/lib/money";
 import { getShellState } from "@/lib/services/app-state";
-import { TopBarTitle } from "./TopBarTitle";
+import { Logo } from "./Logo";
+import { ActiveNavPills, NavPills } from "./NavPills";
 
-/** Sticky, blurred top bar (§10.1 Layout). The right-hand facts are read server-side. */
-export function TopBar() {
+/** Floating glass top bar: logo, section pills, and the planning facts (read server-side) with the demo user. */
+export function TopBar({ demoUser }: { demoUser: string }) {
+  const initials = demoUser
+    .split(/[.\s_-]+/)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("")
+    .slice(0, 2);
   return (
-    <header className="sticky top-0 z-30 flex h-14 print:hidden shrink-0 items-center justify-between gap-4 border-b border-border bg-bg/80 px-8 backdrop-blur-md max-lg:px-6">
-      <Suspense fallback={<span className="h-5 w-40" aria-hidden />}>
-        <TopBarTitle />
-      </Suspense>
-      <Suspense fallback={<TopBarFactsSkeleton />}>
-        <TopBarFacts />
-      </Suspense>
+    <header className="sticky top-0 z-30 print:hidden">
+      <div className="mx-auto flex h-[76px] w-full max-w-[1520px] items-center gap-4 px-8 max-lg:px-5">
+        <Link href="/" prefetch={false} aria-label="PharmaOS home" className="shrink-0 rounded-full">
+          <Logo wordmarkClassName="max-[1180px]:hidden" />
+        </Link>
+        <div className="flex min-w-0 flex-1 justify-center">
+          {/* The active pill needs the URL, which is only known at request time: stream it in (Cache Components). */}
+          <Suspense fallback={<NavPills pathname={null} />}>
+            <ActiveNavPills />
+          </Suspense>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Suspense fallback={<span className="shimmer h-9 w-[180px] rounded-full" aria-hidden />}>
+            <TopBarFacts />
+          </Suspense>
+          <span
+            className="glass-pill flex size-9 items-center justify-center text-[11.5px] font-medium text-fg-1"
+            title={`${demoUser} · Owner · demo account · synthetic demo data`}
+          >
+            {initials || "D"}
+          </span>
+        </div>
+      </div>
+      {/* A soft fade under the bar instead of a hard border. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[96px] bg-gradient-to-b from-bg via-bg/80 to-transparent" aria-hidden />
     </header>
   );
 }
@@ -24,40 +49,34 @@ async function TopBarFacts() {
   await connection();
   const state = await getShellState();
   return (
-    <div className="flex shrink-0 items-center gap-2">
+    <div className="flex items-center gap-2">
       {state.scenarioId !== "baseline" && (
-        <span className="inline-flex h-7 items-center gap-1.5 rounded-full border border-expiry/30 bg-expiry-bg px-2.5 text-[12px] font-medium text-expiry">
+        <span className="inline-flex h-9 items-center gap-1.5 rounded-full border border-expiry/30 bg-expiry-bg px-3 text-[12px] font-medium text-expiry backdrop-blur-xl">
           <FlaskConical className="size-3.5" strokeWidth={1.75} aria-hidden />
-          Scenario: {state.scenarioName}
+          <span className="max-xl:sr-only">Scenario:</span> {state.scenarioName}
         </span>
       )}
-      <Fact icon={<CalendarDays className="size-3.5" strokeWidth={1.75} />} label="As of">
-        {formatDisplayDate(state.asOf)}
-      </Fact>
-      <Fact icon={<ShieldCheck className="size-3.5" strokeWidth={1.75} />} label="Approval above">
-        {formatINR(state.approvalLimit, { paise: false })}
-      </Fact>
+      <span className="glass-pill inline-flex h-9 items-center gap-1 px-1">
+        <Fact icon={<CalendarDays className="size-3.5" strokeWidth={1.6} />} label="As of">
+          {formatDisplayDate(state.asOf)}
+        </Fact>
+        <span className="h-4 w-px bg-white/10" aria-hidden />
+        <Fact icon={<ShieldCheck className="size-3.5" strokeWidth={1.6} />} label="Owner approval above">
+          {formatINR(state.approvalLimit, { paise: false })}
+        </Fact>
+      </span>
     </div>
   );
 }
 
 function Fact({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
   return (
-    <span className="inline-flex h-7 items-center gap-2 rounded-md border border-border bg-surface-1 px-2.5">
+    <span className="inline-flex items-center gap-1.5 px-2.5" title={label}>
       <span className="text-fg-3" aria-hidden>
         {icon}
       </span>
-      <span className="text-[11px] font-medium tracking-[0.06em] text-fg-3 uppercase">{label}</span>
-      <span className="num text-[12.5px] font-medium text-fg-1">{children}</span>
+      <span className="text-[12px] text-fg-3 max-2xl:sr-only">{label}</span>
+      <span className="num text-[12.5px] text-fg-1">{children}</span>
     </span>
-  );
-}
-
-function TopBarFactsSkeleton() {
-  return (
-    <div className="flex shrink-0 items-center gap-2" aria-hidden>
-      <span className="shimmer h-7 w-[150px] rounded-md" />
-      <span className="shimmer h-7 w-[200px] rounded-md" />
-    </div>
   );
 }

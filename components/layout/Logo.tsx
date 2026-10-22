@@ -1,28 +1,21 @@
 import { cn } from "cn";
 
-/** Logo mark (§10.1 Brand): teal gradient rounded square with a capsule crossed by a check. */
+/** Logo mark: five diagonal strokes (a stack of strips) fading from white to copper. */
 export function LogoMark({ size = 24, className }: { size?: number; className?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden className={cn("shrink-0", className)}>
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden className={cn("shrink-0", className)}>
       <defs>
-        <linearGradient id="pharmaos-mark" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#2DD4BF" />
-          <stop offset="1" stopColor="#0EA5A4" />
+        <linearGradient id="pharmaos-mark" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#FFFFFF" />
+          <stop offset="1" stopColor="#FF8D4D" />
         </linearGradient>
       </defs>
-      <rect width="24" height="24" rx="6" fill="url(#pharmaos-mark)" />
-      <rect
-        x="4.6"
-        y="9.2"
-        width="14.8"
-        height="5.6"
-        rx="2.8"
-        transform="rotate(-40 12 12)"
-        stroke="white"
-        strokeOpacity="0.55"
-        strokeWidth="1.5"
-      />
-      <path d="M8.2 12.3l2.5 2.5 5.1-5.3" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      {[0, 1, 2, 3, 4].map((i) => {
+        // Strips get shorter towards the corners, like a hatched tile.
+        const x = 4 + i * 5;
+        const inset = Math.abs(i - 2) * 3;
+        return <path key={i} d={`M${x + inset * 0.5} ${27 - inset}L${x + 10 - inset * 0.5} ${5 + inset}`} stroke="url(#pharmaos-mark)" strokeWidth="2.6" strokeLinecap="round" />;
+      })}
     </svg>
   );
 }
@@ -30,8 +23,8 @@ export function LogoMark({ size = 24, className }: { size?: number; className?: 
 export function Logo({ wordmarkClassName }: { wordmarkClassName?: string }) {
   return (
     <span className="flex items-center gap-2.5">
-      <LogoMark size={26} />
-      <span className={cn("text-[15px] font-semibold tracking-[-0.01em] text-fg-1", wordmarkClassName)}>PharmaOS</span>
+      <LogoMark size={30} />
+      <span className={cn("text-[16px] font-medium tracking-[-0.02em] text-fg-1", wordmarkClassName)}>PharmaOS</span>
     </span>
   );
 }

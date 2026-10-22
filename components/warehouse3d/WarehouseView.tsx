@@ -246,7 +246,7 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <section className="surface min-w-0 p-5" aria-label="Warehouse map">
           <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <h2 className="text-[15px] leading-[22px] font-semibold text-fg-1">
+            <h2 className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">
               WH-01 · {meta.label}
             </h2>
             <span className="num text-[12px] text-fg-3">
