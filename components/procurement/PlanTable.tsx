@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import {
@@ -221,7 +222,18 @@ function PlanRow({
             {l.sku}
           </button>
           {l.status === "edited" && <Tag className="border-brand/30 text-brand">Edited</Tag>}
-          {onPo && <Tag className="border-healthy/30 text-healthy">On PO</Tag>}
+          {onPo &&
+            (l.poId ? (
+              <Link
+                href={`/purchase-orders/${l.poId}`}
+                title={`This line is on ${l.poNumber}, sent to ${l.supplierName ?? "its supplier"} when the PO is sent`}
+                className="rounded border border-healthy/30 px-1.5 font-mono text-[10.5px] leading-4 font-medium text-healthy hover:bg-healthy-bg"
+              >
+                {l.poNumber}
+              </Link>
+            ) : (
+              <Tag className="border-healthy/30 text-healthy">On PO</Tag>
+            ))}
         </div>
         <div className="max-w-[168px] truncate text-[12.5px] text-fg-2" title={`${l.brandName} · ${l.strength} · ${l.packSize}/pack`}>
           {l.brandName} · {l.strength} · {l.packSize}/pack

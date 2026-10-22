@@ -36,12 +36,15 @@ function hash(s: string): number {
  * Big cartons packed straight onto the shelf: 3 across × 2 deep × up to 2 high, more the fuller the bin
  * (front row first, then the back row, then the second layer). Pharma cartons and kraft boxes are mixed.
  */
-export function Loads({ slots }: { slots: Slot[] }) {
-  const tex = useMemo(() => ({ red: pharmaCarton("#dc2626", "Paracetamol"), blue: pharmaCarton("#2563eb", "Amoxicillin"), kraft: kraftCarton() }), []);
+export function Loads({ slots, located }: { slots: Slot[]; /** Searched SKU's share of each bin's packs (0–1): that many front boxes glow teal. */ located?: Map<string, number> }) {
+  const tex = useMemo(
+    () => ({ red: pharmaCarton("#dc2626", "Paracetamol"), blue: pharmaCarton("#2563eb", "Amoxicillin"), kraft: kraftCarton(), found: pharmaCarton("#0d9488", "Searched SKU") }),
+    [],
+  );
   useEffect(() => () => Object.values(tex).forEach((t) => t.dispose()), [tex]);
 
   const cartons = useMemo(() => {
-    const out: [Inst[], Inst[], Inst[]] = [[], [], []];
+    const out: [Inst[], Inst[], Inst[], Inst[]] = [[], [], [], []];
     const across = 3;
     const deep = 2;
     const pitchZ = (BAY.length - 0.1) / across;
@@ -54,6 +57,9 @@ export function Loads({ slots }: { slots: Slot[] }) {
       const boxH = 0.36 + ((h >>> 3) % 5) * 0.015;
       // Square-root curve: low fills still read as stocked shelves; fuller bins always show more boxes.
       let n = Math.max(1, Math.ceil(Math.sqrt(fill) * across * deep * 2));
+      const share = located?.get(b.id);
+      // The searched SKU's boxes: its share of the bin, at least one, front row first.
+      let mine = share === undefined ? 0 : Math.max(1, Math.round(share * n));
       for (let layer = 0; layer < 2 && n > 0; layer++) {
         for (let row = 0; row < deep && n > 0; row++) {
           // Row 0 is the front, facing the walkway.
@@ -62,7 +68,9 @@ export function Loads({ slots }: { slots: Slot[] }) {
             const i = layer * 6 + row * 3 + k;
             const z = s.center.z - (BAY.length - 0.1) / 2 + pitchZ * (k + 0.5);
             const jit = (((h >>> (i % 24)) & 7) - 3.5) * 0.006;
-            out[((h >>> (i % 29)) + i) % 3].push({
+            const bucket = mine > 0 ? 3 : ((h >>> (i % 29)) + i) % 3;
+            if (mine > 0) mine--;
+            out[bucket].push({
               p: [x + jit, s.floorY + boxH / 2 + layer * (boxH + 0.01), z + jit],
               s: [pitchX - 0.03, boxH, pitchZ - 0.04],
               r: new THREE.Euler(0, jit * 2, 0),
@@ -72,25 +80,33 @@ export function Loads({ slots }: { slots: Slot[] }) {
       }
     }
     return out;
-  }, [slots]);
+  }, [slots, located]);
 
   return (
     <group>
       <Textured items={cartons[0]} map={tex.red} roughness={0.65} />
       <Textured items={cartons[1]} map={tex.blue} roughness={0.65} />
       <Textured items={cartons[2]} map={tex.kraft} roughness={0.85} />
+      <Textured items={cartons[3]} map={tex.found} roughness={0.5} glow />
     </group>
   );
 }
 
-function Textured({ items, map, roughness }: { items: Inst[]; map: THREE.Texture; roughness: number }) {
+function Textured({ items, map, roughness, glow = false }: { items: Inst[]; map: THREE.Texture; roughness: number; glow?: boolean }) {
   const ref = useRef<THREE.InstancedMesh>(null);
   useInstances(ref, items);
   if (items.length === 0) return null;
   return (
-    <instancedMesh ref={ref} args={[undefined, undefined, items.length]} castShadow receiveShadow>
+    <instancedMesh key={items.length} ref={ref} args={[undefined, undefined, items.length]} castShadow receiveShadow>
       <boxGeometry />
-      <meshStandardMaterial map={map} roughness={roughness} metalness={0} />
+      <meshStandardMaterial
+        map={map}
+        roughness={roughness}
+        metalness={0}
+        emissive={glow ? "#2dd4bf" : "#000000"}
+        emissiveIntensity={glow ? 0.9 : 0}
+        toneMapped={!glow}
+      />
     </instancedMesh>
   );
 }
@@ -162,7 +178,20 @@ function GlowBars({ items, colors }: { items: Inst[]; colors: THREE.Color[] }) {
 }
 
 /** At-risk bins: a solid glowing tint and frame; their rack: a full-height glowing frame and a glowing floor patch. */
-export function HeatOverlay({ slots, bays, heat, mode }: { slots: Slot[]; bays: Bay[]; heat: Map<string, BinHeat>; mode: HeatmapMode }) {
+export function HeatOverlay({
+  slots,
+  bays,
+  heat,
+  mode,
+  clearFill,
+}: {
+  slots: Slot[];
+  bays: Bay[];
+  heat: Map<string, BinHeat>;
+  mode: HeatmapMode;
+  /** Bins that keep their frame but lose the tint (the located SKU's bins, so its teal boxes stay visible). */
+  clearFill?: Set<string>;
+}) {
   const fillRef = useRef<THREE.InstancedMesh>(null);
   const invalidate = useThree((s) => s.invalidate);
   const built = useMemo(() => {
@@ -174,8 +203,10 @@ export function HeatOverlay({ slots, bays, heat, mode }: { slots: Slot[]; bays: 
     const barColors: THREE.Color[] = [];
     for (const s of hot) {
       const sev = heat.get(s.bin.id)!.severity;
-      fills.push({ p: s.center.toArray() as THREE.Vector3Tuple, s: [SLOT.x + 0.04, SLOT.y + 0.02, SLOT.z + 0.04] });
-      fillColors.push({ c: tone.clone(), o: FILL[sev] });
+      if (!clearFill?.has(s.bin.id)) {
+        fills.push({ p: s.center.toArray() as THREE.Vector3Tuple, s: [SLOT.x + 0.04, SLOT.y + 0.02, SLOT.z + 0.04] });
+        fillColors.push({ c: tone.clone(), o: FILL[sev] });
+      }
       for (const b of edgeBars(s.center, { x: SLOT.x + 0.06, y: SLOT.y + 0.04, z: SLOT.z + 0.06 }, sev === 3 ? 0.07 : 0.05)) {
         bars.push(b);
         barColors.push(tone.clone().multiplyScalar(GLOW[sev]));
@@ -206,7 +237,7 @@ export function HeatOverlay({ slots, bays, heat, mode }: { slots: Slot[]; bays: 
       }
     }
     return { fills, fillColors, bars, barColors, hotBays };
-  }, [slots, bays, heat, mode]);
+  }, [slots, bays, heat, mode, clearFill]);
 
   useInstances(fillRef, built.fills);
   useLayoutEffect(() => {

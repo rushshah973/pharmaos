@@ -11,7 +11,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { AdaptiveDpr, BakeShadows, CameraControls, Environment, Lightformer } from "@react-three/drei";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
-import { ChevronDown, Eye, Footprints, Map as MapIcon, Maximize2, Minimize2, MapPin, RotateCcw } from "lucide-react";
+import { ChevronDown, Eye, Footprints, Map as MapIcon, Maximize2, Minimize2, MapPin, RotateCcw, X } from "lucide-react";
 import { cn } from "cn";
 import type { BinHeat, HeatmapMode } from "@/lib/business-logic/heatmap";
 import type { HeatmapView, WarehouseLayout } from "@/lib/services/warehouse";
@@ -22,7 +22,9 @@ import { AisleSigns, ColdRoom, Hall, RackLabels, Racks, Staging } from "./scene/
 
 const BG = "#070b14";
 type Controls = React.ComponentRef<typeof CameraControls>;
-type Shot = { kind: "overview" | "top" | "aisle" | "visit"; nonce: number; binId?: string };
+type Shot = { kind: "overview" | "top" | "aisle" | "visit" | "locate"; nonce: number; binId?: string };
+/** A SKU being located (from a Locate link or the search box): its bins with packs. */
+export type Locate = { sku: string; name: string; bins: { binId: string; binCode: string; packs: number }[]; unmappedPacks: number };
 type Heatmaps = Partial<Record<HeatmapMode, HeatmapView>>;
 
 export type Scene3DProps = {
@@ -35,6 +37,8 @@ export type Scene3DProps = {
   matchBinIds: Set<string>;
   /** Changes when the camera should fly to a bin (e.g. a ?sku= search); null = stay. */
   focus: { binId: string; nonce: number } | null;
+  locate: Locate | null;
+  onClearLocate: () => void;
   placements: HeatmapView["placements"];
   onSelect: (binId: string) => void;
 };
@@ -73,7 +77,7 @@ export default function Scene3D(props: Scene3DProps) {
   const [lastFocus, setLastFocus] = useState(props.focus?.nonce ?? null);
   if (props.focus && props.focus.nonce !== lastFocus) {
     setLastFocus(props.focus.nonce);
-    setShot({ kind: "visit", nonce: props.focus.nonce, binId: props.focus.binId });
+    setShot({ kind: "locate", nonce: props.focus.nonce, binId: props.focus.binId });
   }
 
   const selected = props.selectedBinId ? slotById.get(props.selectedBinId) : undefined;
@@ -90,6 +94,17 @@ export default function Scene3D(props: Scene3DProps) {
   }, [slots, heat, mode]);
 
   const go = (kind: Shot["kind"], binId?: string) => setShot((s) => ({ kind, nonce: s.nonce + 1, binId }));
+  // The located SKU's share of each bin it is in, for the teal boxes.
+  const located = useMemo(() => {
+    if (!props.locate) return undefined;
+    const m = new Map<string, number>();
+    for (const b of props.locate.bins) {
+      const used = slotById.get(b.binId)?.bin.used ?? 0;
+      m.set(b.binId, used > 0 ? Math.min(1, b.packs / used) : 1);
+    }
+    return m;
+  }, [props.locate, slotById]);
+  const locatedIds = useMemo(() => (located ? new Set(located.keys()) : undefined), [located]);
 
   useEffect(() => {
     const onChange = () => setFull(document.fullscreenElement === box.current);
@@ -161,8 +176,8 @@ export default function Scene3D(props: Scene3DProps) {
 
         <Hall aisleCount={layout.aisles.length} racks={racks} aisles={layout.aisles} />
         <Racks aisleCount={layout.aisles.length} racks={racks} />
-        <Loads slots={slots} />
-        <HeatOverlay slots={slots} bays={bays} heat={heat} mode={mode} />
+        <Loads slots={slots} located={located} />
+        <HeatOverlay slots={slots} bays={bays} heat={heat} mode={mode} clearFill={locatedIds} />
         <RackLabels bays={bays} hot={hotBays} tone={tone} />
         <AisleSigns aisles={layout.aisles} subs={subs} z={bounds.racks.z1 + 1.2} />
         {coldAisle >= 0 && <ColdRoom aisleIndex={coldAisle} racks={racks} />}
@@ -229,8 +244,30 @@ export default function Scene3D(props: Scene3DProps) {
 
       {selected && (
         <div ref={labelRef} className="pointer-events-none absolute top-0 left-0 z-[5]" style={{ visibility: "hidden" }}>
-          <BinLabel slot={selected} heat={heat.get(selected.bin.id)} tone={tone} />
+          <BinLabel
+            slot={selected}
+            heat={heat.get(selected.bin.id)}
+            tone={tone}
+            located={
+              props.locate?.bins.find((b) => b.binId === selected.bin.id)
+                ? { sku: props.locate.sku, name: props.locate.name, packs: props.locate.bins.find((b) => b.binId === selected.bin.id)!.packs }
+                : null
+            }
+          />
         </div>
+      )}
+
+      {props.locate && (
+        <Locator
+          locate={props.locate}
+          slotById={slotById}
+          selectedBinId={props.selectedBinId}
+          onGo={(binId) => {
+            props.onSelect(binId);
+            go("locate", binId);
+          }}
+          onClear={props.onClearLocate}
+        />
       )}
 
       {selected && (
@@ -240,7 +277,7 @@ export default function Scene3D(props: Scene3DProps) {
           bays={bays}
           heatmaps={props.heatmaps}
           mode={mode}
-          collapsed={shot.kind === "visit"}
+          collapsed={shot.kind === "visit" || shot.kind === "locate"}
           onVisit={() => go("visit", selected.bin.id)}
           onOverview={() => go("overview")}
         />
@@ -513,6 +550,13 @@ function CameraRig({
     } else if (shot.kind === "aisle") {
       const x = walkwayX(aisleOf);
       void ctl.setLookAt(x, 1.75, bounds.racks.z1 + 6, x, 1.6, bounds.racks.z0, true);
+    } else if (shot.kind === "locate" && shot.binId) {
+      const s = slotById.get(shot.binId);
+      if (s) {
+        // Face the shelf from across the walkway at shelf height, close enough to see the glowing boxes.
+        const camX = walkwayX(s.aisleIndex) + s.facing * (WALK / 2 - 0.4);
+        void ctl.setLookAt(camX, Math.min(s.center.y + 0.9, RACK_HEIGHT + 0.3), s.center.z + 2.8, s.center.x, s.center.y, s.center.z, true);
+      }
     } else if (shot.kind === "visit" && shot.binId) {
       const s = slotById.get(shot.binId);
       if (s) {
@@ -543,8 +587,34 @@ function CameraRig({
 }
 
 /** The selected bin's label card: a white chip with a pointer, outlined in the mode colour when the bin is hot. */
-function BinLabel({ slot, heat, tone }: { slot: Slot; heat: BinHeat | undefined; tone: string }) {
+function BinLabel({
+  slot,
+  heat,
+  tone,
+  located,
+}: {
+  slot: Slot;
+  heat: BinHeat | undefined;
+  tone: string;
+  located: { sku: string; name: string; packs: number } | null;
+}) {
   const border = heat && heat.severity > 0 ? tone : "#2dd4bf";
+  if (located) {
+    return (
+      <div className="-translate-x-1/2 -translate-y-full">
+        <div className="rounded-xl border-2 border-[#2dd4bf] bg-white px-3 py-1.5 text-center whitespace-nowrap shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+          <div className="text-[10.5px] font-semibold tracking-[0.06em] text-teal-700 uppercase">Your SKU is here</div>
+          <div className="font-mono text-[13px] font-semibold text-slate-900">
+            {located.sku} · {located.packs} packs
+          </div>
+          <div className="text-[11px] leading-4 text-slate-600">
+            {located.name} · {slot.bin.binCode} (shelf {slot.bin.shelf})
+          </div>
+        </div>
+        <div className="mx-auto -mt-[7px] size-3 rotate-45 border-r-2 border-b-2 border-[#2dd4bf] bg-white" />
+      </div>
+    );
+  }
   return (
     <div className="-translate-x-1/2 -translate-y-full">
       <div
@@ -577,4 +647,77 @@ function LabelTracker({ slot, onMove }: { slot: Slot | undefined; onMove: (x: nu
     onMove(((v.x + 1) / 2) * size.width, ((1 - v.y) / 2) * size.height, visible);
   });
   return null;
+}
+
+/** Locator card (top left): the searched SKU and every bin holding it, with packs and a Go button for each. */
+function Locator({
+  locate,
+  slotById,
+  selectedBinId,
+  onGo,
+  onClear,
+}: {
+  locate: Locate;
+  slotById: Map<string, Slot>;
+  selectedBinId: string | null;
+  onGo: (binId: string) => void;
+  onClear: () => void;
+}) {
+  const total = locate.bins.reduce((n, b) => n + b.packs, 0) + locate.unmappedPacks;
+  return (
+    <div className={glass("absolute top-14 left-3 z-10 w-[300px] p-4")}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="micro-label text-brand">Locating SKU</div>
+          <div className="mt-0.5 font-mono text-[15px] font-semibold text-fg-1">{locate.sku}</div>
+          <div className="truncate text-[12px] text-fg-2">{locate.name}</div>
+        </div>
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label="Stop locating"
+          className="-mt-1 -mr-1 flex size-7 items-center justify-center rounded-md text-fg-3 hover:bg-white/10 hover:text-fg-1"
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+      <p className="mt-2 text-[12px] text-fg-3">
+        {total} packs in {locate.bins.length} bin{locate.bins.length === 1 ? "" : "s"}
+        {locate.unmappedPacks > 0 ? ` + ${locate.unmappedPacks} unmapped` : ""}. Its boxes glow teal on the shelf.
+      </p>
+      {locate.bins.length === 0 ? (
+        <p className="mt-2 text-[12.5px] text-fg-2">This SKU has no stock in any bin.</p>
+      ) : (
+        <ul className="mt-2.5 space-y-1.5">
+          {locate.bins.map((b) => {
+            const s = slotById.get(b.binId);
+            const active = b.binId === selectedBinId;
+            return (
+              <li key={b.binId}>
+                <button
+                  type="button"
+                  onClick={() => onGo(b.binId)}
+                  className={cn(
+                    "flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition-colors",
+                    active ? "border-brand/50 bg-brand-glow" : "border-white/10 hover:bg-white/5",
+                  )}
+                >
+                  <span className="min-w-0">
+                    <span className="block font-mono text-[12.5px] text-fg-1">{b.binCode}</span>
+                    <span className="block text-[11px] text-fg-3">
+                      Aisle {s?.bin.aisle} · {s?.bin.side === "L" ? "left" : "right"} · rack {s?.bin.rackNumber} · shelf {s?.bin.shelf}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-right">
+                    <span className="num block text-[12.5px] font-semibold text-fg-1">{b.packs} packs</span>
+                    <span className="block text-[11px] text-brand">{active ? "Showing" : "Go →"}</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
 }

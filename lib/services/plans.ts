@@ -96,6 +96,10 @@ export type LineView = {
   userNote: string | null;
   lossPrevented: Money;
   expiryAvoidedValue: Money;
+  /** The PO this line was approved onto (null until the line is approved). */
+  poId: string | null;
+  poNumber: string | null;
+  poStatus: string | null;
 };
 
 export type PlanView = PlanSummary & { lines: LineView[] };
@@ -212,12 +216,15 @@ async function selectLines(sql: SqlHandle, planId: string, opts: { lineId?: stri
       r.status, r.reason_codes as reasons, r.warnings,
       r.defer_reason as "deferReason", r.user_note as "userNote",
       coalesce(r.evidence_json->>'lossPrevented', '0.00') as "lossPrevented",
-      coalesce(r.evidence_json->>'expiryAvoidedValue', '0.00') as "expiryAvoidedValue"
+      coalesce(r.evidence_json->>'expiryAvoidedValue', '0.00') as "expiryAvoidedValue",
+      po.id as "poId", po.po_number as "poNumber", po.status as "poStatus"
       ${evidence}
     from purchase_recommendations r
     join products p on p.id = r.product_id
     left join suppliers s on s.id = r.selected_supplier_id
     left join supplier_offers o on o.id = r.selected_offer_id
+    left join purchase_order_lines pol on pol.recommendation_id = r.id
+    left join purchase_orders po on po.id = pol.po_id
     where r.plan_id = ${planId} ${one}
     order by r.rank
   `;

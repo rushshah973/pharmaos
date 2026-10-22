@@ -289,6 +289,8 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
                     selectedBinId={selectedBinId}
                     matchBinIds={matchBinIds}
                     focus={focus}
+                    locate={search ? { sku: search.sku, name: `${search.brandName} ${search.strength}`, bins: search.bins, unmappedPacks: search.unmappedPacks } : null}
+                    onClearLocate={clearSku}
                     placements={mode === "proposed" ? (current?.placements ?? []) : []}
                     onSelect={select}
                   />
@@ -305,7 +307,7 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
         <aside className="min-w-0 space-y-4 self-start xl:sticky xl:top-[72px]">
           <div ref={panelRef} className="surface scroll-mt-[72px] overflow-hidden">
             {selected ? (
-              <BinPanel key={selected.id} binId={selected.id} heat={heat.get(selected.id)} mode={meta} asOf={asOf} placements={mode === "proposed" ? (current?.placements ?? []) : []} onClose={() => select(null)} />
+              <BinPanel key={selected.id} binId={selected.id} heat={heat.get(selected.id)} mode={meta} asOf={asOf} placements={mode === "proposed" ? (current?.placements ?? []) : []} highlightSku={search?.sku ?? null} onClose={() => select(null)} />
             ) : (
               <BinPanelEmpty mode={meta} highlighted={highlighted} />
             )}

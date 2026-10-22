@@ -7,6 +7,7 @@ import { ArrowLeft } from "lucide-react";
 import { ErrorState } from "@/components/layout/ErrorState";
 import { PoActions } from "@/components/purchase-orders/PoActions";
 import { PoStatusPill } from "@/components/purchase-orders/PoStatusPill";
+import { PoTimeline } from "@/components/purchase-orders/PoTimeline";
 import { ServiceError } from "@/lib/api/errors";
 import { formatDateTime, formatDisplayDate } from "@/lib/format/date";
 import { formatINR } from "@/lib/money";
@@ -47,6 +48,8 @@ async function Po({ params }: { params: PageProps<"/purchase-orders/[poId]">["pa
         </Link>
         <PoActions poId={po.id} poNumber={po.poNumber} status={po.status} pharmaos={pharmaos} />
       </div>
+
+      {pharmaos && <PoTimeline po={po} />}
 
       <article className="surface relative overflow-hidden p-8 print:border-0 print:p-0 print:shadow-none" aria-label={`Purchase order ${po.poNumber}`}>
         {watermark && (

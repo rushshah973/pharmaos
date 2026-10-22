@@ -74,6 +74,40 @@ describe.skipIf(!url)("approval (integration)", () => {
   );
 
   it(
+    "adds later lines to the supplier's open PO from the same plan; a sent PO is never changed",
+    async () => {
+      const { planId, groups } = await freshPlan();
+      const g = groups.find((x) => x.length >= 3);
+      if (!g) return; // the seeded plan always has a supplier with 3+ lines; guard anyway
+      try {
+        await setLimit("99999999.00"); // keep every PO "ready" so it can be sent below
+        const first = await approveLines(planId, [g[0].id], crypto.randomUUID(), actor, sql);
+        const key = crypto.randomUUID();
+        const second = await approveLines(planId, [g[1].id], key, actor, sql);
+        expect(second.purchaseOrders).toHaveLength(1);
+        expect(second.purchaseOrders[0].id).toBe(first.purchaseOrders[0].id);
+        expect(second.purchaseOrders[0].lines).toBe(2);
+        const [{ sum, total }] = await sql<{ sum: string; total: string }[]>`
+          select (select sum(line_total) from purchase_order_lines where po_id = ${first.purchaseOrders[0].id})::text as sum, grand_total::text as total
+          from purchase_orders where id = ${first.purchaseOrders[0].id}`;
+        expect(sum).toBe(total);
+        // A replay of the merge returns the same PO and changes nothing.
+        const replay = await approveLines(planId, [g[1].id], key, actor, sql);
+        expect(replay.alreadyProcessed).toBe(true);
+        expect(replay.purchaseOrders.map((p) => p.id)).toEqual([first.purchaseOrders[0].id]);
+        // Once sent, the PO is closed: the next line for that supplier gets a new PO.
+        await sendPo(first.purchaseOrders[0].id, actor, sql);
+        const third = await approveLines(planId, [g[2].id], crypto.randomUUID(), actor, sql);
+        expect(third.purchaseOrders[0].id).not.toBe(first.purchaseOrders[0].id);
+        expect(third.purchaseOrders[0].lines).toBe(1);
+      } finally {
+        await setLimit(originalLimit);
+      }
+    },
+    T,
+  );
+
+  it(
     "a rejected plan creates no POs",
     async () => {
       const { planId, lines } = await freshPlan();

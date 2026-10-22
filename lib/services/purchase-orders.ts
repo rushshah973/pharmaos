@@ -124,7 +124,17 @@ export type PoListItem = {
   expectedDeliveryDate: string | null;
   /** PharmaOS-created (from a plan) or seeded history from the stockist's earlier process. */
   origin: "pharmaos" | "external";
+  /** The PO's largest lines (by value), for the list: which products this PO is for. */
+  products: { sku: string; brandName: string; strength: string; qty: number }[];
 };
+
+/** Top lines of a PO by value (shared by the list and the detail query). */
+const PRODUCTS_SQL = `coalesce((
+  select json_agg(x) from (
+    select p.sku, p.brand_name as "brandName", p.strength, l.quantity_packs as qty
+    from purchase_order_lines l join products p on p.id = l.product_id
+    where l.po_id = po.id order by l.line_total desc, p.sku limit 3
+  ) x), '[]'::json)`;
 
 const PHARMAOS_STATUSES = ["ready", "pending_approval", "approved", "sent", "rejected"];
 
@@ -146,12 +156,32 @@ export async function listPurchaseOrders(filter: PoFilter = "all", limit = 100, 
       po.grand_total::text as "grandTotal", po.source_plan_id as "sourcePlanId",
       to_char(po.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as "createdAt",
       to_char(po.expected_delivery_date, 'YYYY-MM-DD') as "expectedDeliveryDate",
-      case when po.source_plan_id is null then 'external' else 'pharmaos' end as origin
+      case when po.source_plan_id is null then 'external' else 'pharmaos' end as origin,
+      ${sql.unsafe(PRODUCTS_SQL)} as products
     from purchase_orders po join suppliers s on s.id = po.supplier_id
     where ${where}
     order by (po.status = any(${PHARMAOS_STATUSES})) desc, po.created_at desc, po.po_number desc
     limit ${Math.min(Math.max(Math.trunc(limit), 1), 500)}
   `;
+}
+
+/** How many items sit at each step of the approval → PO → Owner → send flow (PharmaOS POs; lines from the latest open plan). */
+export type PoPipeline = { linesAwaitingPo: number; ready: number; awaitingOwner: number; sent: number; rejected: number };
+
+export async function getPoPipeline(sql: SqlRead = getSql()): Promise<PoPipeline> {
+  const [r] = await sql<PoPipeline[]>`
+    select
+      (select count(*)::int from purchase_recommendations rec
+        where rec.in_basket and rec.status in ('proposed', 'edited')
+          and rec.plan_id = (select id from purchase_plans where status in ('draft', 'partially_approved') order by created_at desc limit 1)) as "linesAwaitingPo",
+      count(*) filter (where po.status in ('ready', 'approved'))::int as ready,
+      count(*) filter (where po.status = 'pending_approval')::int as "awaitingOwner",
+      count(*) filter (where po.status = 'sent')::int as sent,
+      count(*) filter (where po.status = 'rejected')::int as rejected
+    from purchase_orders po
+    where po.source_plan_id is not null
+  `;
+  return r ?? { linesAwaitingPo: 0, ready: 0, awaitingOwner: 0, sent: 0, rejected: 0 };
 }
 
 export async function countAwaitingApproval(sql: SqlRead = getSql()): Promise<number> {
@@ -202,6 +232,7 @@ export async function getPurchaseOrder(poId: string, sql: SqlRead = getSql()): P
       to_char(po.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as "createdAt",
       to_char(po.expected_delivery_date, 'YYYY-MM-DD') as "expectedDeliveryDate",
       case when po.source_plan_id is null then 'external' else 'pharmaos' end as origin,
+      ${sql.unsafe(PRODUCTS_SQL)} as products,
       po.approved_by as "approvedBy",
       to_char(po.approved_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as "approvedAt",
       to_char(po.sent_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as "sentAt", po.sent_by as "sentBy"

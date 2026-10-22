@@ -46,6 +46,7 @@ export function BinPanel({
   mode,
   asOf,
   placements,
+  highlightSku,
   onClose,
 }: {
   binId: string;
@@ -53,6 +54,8 @@ export function BinPanel({
   mode: ModeMeta;
   asOf: string;
   placements: HeatmapView["placements"];
+  /** The SKU being located: listed first and outlined. */
+  highlightSku?: string | null;
   onClose: () => void;
 }) {
   const [state, setState] = useState<{ status: "loading" } | { status: "error"; message: string } | { status: "ready"; bin: BinDetails }>({ status: "loading" });
@@ -125,12 +128,13 @@ export function BinPanel({
         </div>
       )}
 
-      {state.status === "ready" && <BinBody bin={state.bin} asOf={asOf} here={here} />}
+      {state.status === "ready" && <BinBody bin={state.bin} asOf={asOf} here={here} highlightSku={highlightSku ?? null} />}
     </div>
   );
 }
 
-function BinBody({ bin, asOf, here }: { bin: BinDetails; asOf: string; here: HeatmapView["placements"] }) {
+function BinBody({ bin, asOf, here, highlightSku }: { bin: BinDetails; asOf: string; here: HeatmapView["placements"]; highlightSku: string | null }) {
+  const products = [...bin.products].sort((a, b) => Number(b.sku === highlightSku) - Number(a.sku === highlightSku));
   const fill = Math.min(100, Math.round((bin.used / bin.capacityUnits) * 100));
   const proposed = here.reduce((n, p) => n + p.packs, 0);
   const after = Math.min(100, Math.round(((bin.used + proposed) / bin.capacityUnits) * 100));
@@ -176,8 +180,13 @@ function BinBody({ bin, asOf, here }: { bin: BinDetails; asOf: string; here: Hea
           </div>
         ) : (
           <ul className="space-y-3">
-            {bin.products.map((p) => (
-              <li key={p.productId} className="rounded-lg border border-border bg-surface-1">
+            {products.map((p) => (
+              <li key={p.productId} className={cn("rounded-lg border bg-surface-1", p.sku === highlightSku ? "border-brand/60 shadow-[0_0_0_1px_var(--brand)]" : "border-border")}>
+                {p.sku === highlightSku && (
+                  <div className="rounded-t-lg bg-brand-glow px-3 py-1 text-[11px] font-semibold text-brand">
+                    Searched SKU · {p.packs} of {bin.used} packs in this bin
+                  </div>
+                )}
                 <div className="flex items-start justify-between gap-3 px-3 pt-2.5">
                   <div className="min-w-0">
                     <div className="font-mono text-[12.5px] text-fg-1">{p.sku}</div>
