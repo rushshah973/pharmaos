@@ -6,11 +6,18 @@ import type { SupplierPo } from "@/lib/services/plans";
 export function SupplierPoStrip({ pos, approvalLimit }: { pos: SupplierPo[]; approvalLimit: string }) {
   if (pos.length === 0) return null;
   const limit = formatINR(approvalLimit, { paise: false });
+  const gated = pos.filter((p) => p.needsApproval).length;
   return (
     <section className="surface p-5" aria-label="Projected purchase orders">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-[15px] leading-[22px] font-semibold text-fg-1">Projected purchase orders</h2>
-        <p className="text-[12.5px] text-fg-3">One PO per supplier · above {limit} needs Owner approval before it is sent</p>
+        {/* State the outcome for this plan, not only the rule, so nobody reads the rule as a pending request. */}
+        <p className={`text-[12.5px] ${gated > 0 ? "text-expiry" : "text-fg-3"}`}>
+          One PO per supplier ·{" "}
+          {gated > 0
+            ? `${gated} PO${gated === 1 ? " is" : "s are"} above ${limit} and will need the Owner's approval before sending`
+            : `no Owner approval needed: every PO is at or below ${limit}`}
+        </p>
       </div>
       <ul className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-6">
         {pos.map((po) => (
