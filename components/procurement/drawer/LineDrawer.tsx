@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { MapPin } from "lucide-react";
+import { Bot, MapPin } from "lucide-react";
 import { DataSourceBadge } from "@/components/layout/DataSourceBadge";
 import { SkuStatusPill } from "@/components/layout/SkuStatusPill";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
@@ -121,11 +121,12 @@ function DrawerBody({ planId, detail, planTotal, supplierPos, locked }: { planId
       </header>
 
       <div className="space-y-7 px-6 py-6">
+        {(detail.agents.demand || detail.agents.supplier) && <AgentDecisions agents={detail.agents} />}
         <Section title="Edit this line">
           <EditPanel key={`${line.id}:${line.qty}:${line.offerId}`} planId={planId} detail={detail} planTotal={planTotal} supplierPos={supplierPos} locked={locked} />
         </Section>
 
-        <Section title={demand.forecast14?.length ? "Demand · last 28 days and the next 14" : "Demand · last 28 days"} aside={demand.method === "ml" ? "d̄ = ML forecast" : "d̄ = 0.6 × d7 + 0.4 × d28"}>
+        <Section title={demand.forecast14?.length ? "Demand · last 28 days and the next 14" : "Demand · last 28 days"} aside={demand.method === "ml" ? "d̄ = ML blend (ML + trend-aware average)" : "d̄ = trend-aware average"}>
           <div className="rounded-lg border border-border bg-surface-1 px-3 pt-3 pb-1">
             <DemandChart series={demand.dailySeries} forecast={demand.forecast14} d7={demand.d7} d28={demand.d28} dbar={demand.avgDailyDemand} />
           </div>
@@ -169,6 +170,29 @@ function MethodLine({ demand }: { demand: LineDetail["demand"] }) {
         <span className="text-fg-3"> · {by} · model trained on synthetic demo data</span>
       </p>
     </div>
+  );
+}
+
+/** The pipeline agents' decisions on this line, each with the agent's own reason (checked by the guardrail). */
+function AgentDecisions({ agents }: { agents: LineDetail["agents"] }) {
+  return (
+    <section aria-label="Agent decisions" className="space-y-2 rounded-2xl border border-brand/20 bg-brand-glow px-4 py-3">
+      <p className="micro-label flex items-center gap-1.5 text-brand">
+        <Bot className="size-3.5" aria-hidden /> Agent decisions
+      </p>
+      {agents.demand && (
+        <p className="text-[12.5px] leading-[18px] text-fg-2">
+          Demand method chosen by the Demand Agent: <span className="text-fg-1">{agents.demand.method === "ml" ? "ML blend" : "Average"}</span>
+          <span className="text-fg-3"> ({agents.demand.reason})</span>
+        </p>
+      )}
+      {agents.supplier && (
+        <p className="text-[12.5px] leading-[18px] text-fg-2">
+          Supplier chosen by the Supplier Agent: <span className="font-mono text-fg-1">{agents.supplier.supplierCode ?? "—"}</span>
+          <span className="text-fg-3"> ({agents.supplier.reason})</span>
+        </p>
+      )}
+    </section>
   );
 }
 

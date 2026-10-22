@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { ArrowUpRight, ChevronRight, ClipboardList, PackageX, Send, ShieldCheck, Sparkles, TimerOff } from "lucide-react";
 import { cn } from "cn";
+import { RunAgentsButton } from "@/components/agents/RunAgentsButton";
 import { CountUp } from "@/components/dashboard/CountUp";
 import { CriticalCards } from "@/components/dashboard/CriticalCards";
 import { CriticalSkuList, CriticalSkuListSkeleton } from "@/components/dashboard/CriticalSkuList";
@@ -69,7 +70,8 @@ function Header({ data }: { data: CommandCenter }) {
         </p>
         <h1 className="mt-1 text-[56px] leading-[60px] font-light tracking-[-0.05em] text-fg-1 max-lg:text-[40px] max-lg:leading-[46px]">Command Center</h1>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {data.latestPlan && (data.latestPlan.status === "draft" || data.latestPlan.status === "partially_approved") && <RunAgentsButton planId={data.latestPlan.id} />}
         {data.latestPlan && (
           <Link href={`/procurement/${data.latestPlan.id}`} className="glass-pill inline-flex h-9 items-center gap-2 px-4 text-[13px] text-fg-1 transition-colors hover:bg-white/[0.08]">
             <ClipboardList className="size-4 text-fg-2" strokeWidth={1.6} aria-hidden />

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { AskPanel } from "@/components/agent/AskPanel";
+import { RunAgentsButton } from "@/components/agents/RunAgentsButton";
 import { PlanSummaryCard } from "@/components/agent/PlanSummaryCard";
 import { ErrorState } from "@/components/layout/ErrorState";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -92,6 +93,7 @@ async function Plan({ params }: { params: PageProps<"/procurement/[planId]">["pa
           <>
             <RejectPlanButton planId={plan.id} disabled={locked} />
             <RecalculateButton planId={plan.id} disabled={locked} />
+            <RunAgentsButton planId={plan.id} locked={locked} />
             {/* The panel reads ?line= (the line in focus), so it renders inside its own Suspense boundary. */}
             <Suspense fallback={null}>
               <AskPanel planId={plan.id} lines={plan.lines.map((l) => ({ id: l.id, sku: l.sku, rank: l.rank }))} />

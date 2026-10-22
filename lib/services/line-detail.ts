@@ -49,6 +49,9 @@ type EvidenceOffer = {
 
 type Evidence = {
   asOf: string;
+  /** Saved by the pipeline agents (§9.5) when they changed this line. */
+  demandDecision?: { method: "ml" | "baseline"; reason: string; by: string };
+  supplierDecision?: { offerId: string; supplierCode: string | null; reason: string; by: string };
   product: ProductInput;
   demand: {
     d7: number;
@@ -125,6 +128,11 @@ export type LineDetail = {
   offers: OfferRow[];
   formulas: Formula[];
   engine: { qty: number; freeQty: number; offerId: string | null; lineTotal: Money | null };
+  /** What the pipeline agents decided for this line, with their reasons (null when an agent did not change it). */
+  agents: {
+    demand: { method: "ml" | "baseline"; reason: string } | null;
+    supplier: { supplierCode: string | null; reason: string } | null;
+  };
 };
 
 const FEATURE_LABEL: Record<string, string> = {
@@ -210,6 +218,11 @@ export async function getLineDetail(planId: string, lineId: string): Promise<Lin
     offers,
     formulas: buildFormulas(ev),
     engine: { qty: ev.qty, freeQty: ev.freeQty, offerId: ev.chosenOfferId, lineTotal: ev.totals?.lineTotal ?? null },
+    agents: {
+      demand: ev.demandDecision ? { method: ev.demandDecision.method, reason: ev.demandDecision.reason } : null,
+      // Only while the line still uses the offer the Supplier Agent chose (a later manual edit replaces it).
+      supplier: ev.supplierDecision && ev.supplierDecision.offerId === line.offerId ? { supplierCode: ev.supplierDecision.supplierCode ?? line.supplierCode, reason: ev.supplierDecision.reason } : null,
+    },
   };
 }
 
