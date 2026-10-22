@@ -50,8 +50,8 @@ const WARNING_ICON: Record<WarningCode, { icon: LucideIcon; tone: string }> = {
 const HEADERS: { label: string; className?: string }[] = [
   { label: "#", className: "w-9 text-right" },
   { label: "SKU" },
-  { label: "Status" },
-  { label: "Cover", className: "text-right" },
+  { label: "Status at plan" },
+  { label: "Runs out", className: "text-right" },
   { label: "Qty", className: "text-right" },
   { label: "Supplier" },
   { label: "Cost/pack", className: "text-right" },

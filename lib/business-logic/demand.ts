@@ -3,7 +3,7 @@
 import { dec } from "@/lib/money";
 import { ENGINE_CONFIG, type EngineConfig } from "./config";
 import { addDays, daysBetween } from "./dates";
-import { methodReason as mlMethodReason } from "@/lib/ml/backtest";
+import { baselineDaily, blendDaily, methodReason as mlMethodReason } from "@/lib/ml/backtest";
 import type { DemandMethod, DemandResult, IsoDate, SalesPoint, SkuForecast, WarningCode } from "./types";
 
 const SHORT_WINDOW = 7;
@@ -33,7 +33,10 @@ export function computeDemand(
 
   const d7 = sum7.dividedBy(SHORT_WINDOW);
   const d28 = sum28.dividedBy(LONG_WINDOW);
-  const baseline = d7.times(config.demandWeight7).plus(d28.times(config.demandWeight28));
+  // The average: trend-aware over the last 56 days (the reactive 0.6·d7 + 0.4·d28 on a spike), see lib/ml/backtest.
+  const history56 = Array.from({ length: 56 }, (_, i) => byDate.get(addDays(asOf, i - 55)) ?? 0);
+  const firstIdx = firstSaleDate === null ? 56 : Math.max(0, 55 - daysBetween(firstSaleDate, asOf));
+  const baseline = dec(baselineDaily(history56.slice(firstIdx)));
 
   // §6.2a: d̄ is the chosen method's value — the Demand Agent's decision, else the default rule, else the baseline.
   const historyDays = firstSaleDate === null ? 0 : daysBetween(firstSaleDate, asOf) + 1;
@@ -47,7 +50,7 @@ export function computeDemand(
       ? forecast.override.reason
       : mlMethodReason({ method, mlWape: forecast.mlWape, baselineWape: forecast.baselineWape, historyDays });
   }
-  const avg = method === "ml" && forecast ? dec(forecast.mlDaily) : baseline;
+  const avg = method === "ml" && forecast ? dec(blendDaily(forecast.mlDaily, baseline.toNumber())) : baseline;
 
   const flags: WarningCode[] = [];
   if (avg.isZero()) flags.push("NO_DEMAND");

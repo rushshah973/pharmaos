@@ -176,6 +176,11 @@ export type SyntheticDataset = {
     demandBySku: Record<string, { kind: DemandKind; basePacksPerDay: number }>;
     /** Per SKU: the target days of cover used to size stock. */
     coverDaysBySku: Record<string, number>;
+    /**
+     * Per product id: true customer demand per day (oldest first, the same days as salesHistory). Recorded sales
+     * are what stock allowed, so they are lower on stock-out days. In memory only (forecast evaluation); never written.
+     */
+    trueDemand: Record<string, number[]>;
     profileUsed: { catalogue: boolean; sales: boolean };
   };
 };
@@ -817,6 +822,7 @@ export function generate(profile: Profile, asOf: string, seed = 42, options: Gen
       seed,
       demandBySku,
       coverDaysBySku,
+      trueDemand: Object.fromEntries(demandUnits),
       profileUsed: { catalogue: !!(formShare || priceQ || categoryShare), sales: !!(demandQ || expiryQ) },
     },
   };

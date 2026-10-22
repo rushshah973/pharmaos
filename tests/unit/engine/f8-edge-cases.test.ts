@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { analyseSku } from "@/lib/business-logic/engine";
 import { projectExpiry } from "@/lib/business-logic/expiry";
-import { confirmedIncoming, stockPosition } from "@/lib/business-logic/inventory";
+import { confirmedIncoming, runOutDays, stockPosition } from "@/lib/business-logic/inventory";
 import { offerExclusions } from "@/lib/business-logic/supplier-scoring";
 import { needsOwnerApproval } from "@/lib/business-logic/totals";
 import { hardStops } from "@/lib/business-logic/validation";
@@ -36,6 +36,45 @@ describe("F8 edge cases", () => {
       makeIncoming({ poId: "cxl", status: "cancelled", expectedDeliveryDate: addDaysUtc(AS_OF, 3), quantityPacks: 77 }),
     ];
     expect(confirmedIncoming(incoming, AS_OF)).toBe(32);
+  });
+
+  it("run-out counts each PO on its delivery day: stock that empties before a PO arrives is a gap", () => {
+    // 10 packs, 5/day → empty on day 2; a 100-pack PO on day 4 arrives too late.
+    const late = [makeIncoming({ status: "ready", expectedDeliveryDate: addDaysUtc(AS_OF, 4), quantityPacks: 100 })];
+    expect(runOutDays(10, late, 5, AS_OF)).toBe(2);
+    // The same PO on day 1 arrives in time: 10 − 5 + 100 = 105 packs on day 1 → empty on day 22.
+    const early = [makeIncoming({ status: "sent", expectedDeliveryDate: addDaysUtc(AS_OF, 1), quantityPacks: 100 })];
+    expect(runOutDays(10, early, 5, AS_OF)).toBe(22);
+    // No POs: position ÷ d̄. No demand: null. Received POs never count.
+    expect(runOutDays(30, [], 6, AS_OF)).toBe(5);
+    expect(runOutDays(30, [], 0, AS_OF)).toBeNull();
+    expect(runOutDays(10, [makeIncoming({ status: "received", expectedDeliveryDate: addDaysUtc(AS_OF, 1), quantityPacks: 100 })], 5, AS_OF)).toBe(2);
+  });
+
+  it("runs out before its PO arrives → stockout risk and a bridge top-up for the gap days only (never the full order again)", () => {
+    // 40 packs at 9/day → empty on day ~4.4; 400 packs arrive on day 6. A 2-day supplier can bridge day 4.4 → 6.
+    const sku = makeSku({ incoming: [makeIncoming({ status: "ready", expectedDeliveryDate: addDaysUtc(AS_OF, 6), quantityPacks: 400 })] });
+    const a = analyseSku(sku);
+    expect(a.shortBeforeDelivery).toBe(true);
+    expect(a.status).toBe("STOCKOUT_RISK");
+    expect(a.cover!).toBeCloseTo(40 / 9, 5);
+    expect(a.candidate).toBe(true);
+    expect(a.reasons).toContain("BRIDGE_UNTIL_DELIVERY");
+    expect(a.reasons).not.toContain("BELOW_REORDER_POINT");
+    // d̄ × (6 − 4.44) ≈ 14 packs before pack rounding: a top-up, not the target quantity.
+    expect(a.chosen!.order!.qRaw).toBeCloseTo(9 * (6 - 40 / 9), 5);
+    expect(a.qty).toBeLessThan(60);
+  });
+
+  it("no bridge when no supplier can deliver before the PO already on order", () => {
+    const sku = makeSku({
+      offers: [makeOffer({ leadTimeDays: 6 })],
+      incoming: [makeIncoming({ status: "sent", expectedDeliveryDate: addDaysUtc(AS_OF, 6), quantityPacks: 400 })],
+    });
+    const a = analyseSku(sku);
+    expect(a.status).toBe("STOCKOUT_RISK");
+    expect(a.candidate).toBe(false);
+    expect(a.reasons).not.toContain("NO_ELIGIBLE_OFFER");
   });
 
   it("unsent PharmaOS POs (ready, awaiting the Owner, approved) count as on order, so a new plan does not buy the same stock again", () => {

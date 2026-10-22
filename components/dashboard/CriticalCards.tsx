@@ -23,10 +23,13 @@ export function CriticalCards({ skus, latestPlanId }: { skus: CriticalSku[]; lat
 
 function Card({ s, hero, latestPlanId }: { s: CriticalSku; hero: boolean; latestPlanId: string | null }) {
   const cover = s.cover ?? 0;
-  const span = Math.max(cover, s.leadTimeDays, 1) * 1.15;
+  // The next stock is the PO already on order when the shelf empties before it, else a new order's delivery.
+  const waitingPo = s.shortBeforeDelivery && s.nextArrival ? s.nextArrival : null;
+  const deliveryDay = waitingPo ? waitingPo.inDays : s.leadTimeDays;
+  const span = Math.max(cover, deliveryDay, 1) * 1.15;
   const out = Math.min(1, cover / span);
-  const lead = Math.min(1, s.leadTimeDays / span);
-  const gap = Math.max(0, s.leadTimeDays - cover);
+  const lead = Math.min(1, deliveryDay / span);
+  const gap = Math.max(0, deliveryDay - cover);
   const href = latestPlanId && s.planLineId ? `/procurement/${latestPlanId}?line=${s.planLineId}` : null;
   return (
     <article className={cn("group relative flex min-h-[248px] flex-col overflow-hidden p-5", hero ? "surface-hero" : "surface")}>
@@ -50,6 +53,7 @@ function Card({ s, hero, latestPlanId }: { s: CriticalSku; hero: boolean; latest
         </span>
         <div className="flex flex-col gap-1.5">
           <SkuStatusPill status={s.status} expiryRisk={dec(s.atRiskValue).greaterThan(0)} />
+          {s.bridge && <span className="text-[11.5px] text-brand">Bridge top-up in a new plan</span>}
           <Link href={`/warehouse?sku=${encodeURIComponent(s.sku)}`} className="inline-flex items-center gap-1 text-[12px] text-fg-3 transition-colors hover:text-fg-1">
             <MapPin className="size-3" aria-hidden /> Locate in warehouse
           </Link>
@@ -67,7 +71,9 @@ function Card({ s, hero, latestPlanId }: { s: CriticalSku; hero: boolean; latest
           </div>
           <div className="text-right">
             <div className={cn("num text-[13px]", gap > 0 ? "text-stockout" : "text-fg-2")}>{gap > 0 ? `${gap.toFixed(1)} d short` : "covered"}</div>
-            <div className="text-[11.5px] text-fg-3">delivery in {s.leadTimeDays} d</div>
+            <div className="text-[11.5px] text-fg-3">
+              {waitingPo ? `${waitingPo.poNumber ?? "PO"} arrives in ${waitingPo.inDays} d` : `delivery in ${s.leadTimeDays} d`}
+            </div>
           </div>
         </div>
         <div className="relative h-6">
@@ -83,7 +89,8 @@ function Card({ s, hero, latestPlanId }: { s: CriticalSku; hero: boolean; latest
           <span>{Math.round(span)} d</span>
         </div>
         <span className="sr-only">
-          {s.cover === null ? "No cover figure." : `Runs out in ${s.cover.toFixed(1)} days.`} The fastest supplier delivers in {s.leadTimeDays} days.
+          {s.cover === null ? "No cover figure." : `Runs out in ${s.cover.toFixed(1)} days.`}{" "}
+          {waitingPo ? `The PO on order arrives in ${waitingPo.inDays} days.` : `The fastest supplier delivers in ${s.leadTimeDays} days.`}
         </span>
       </div>
     </article>

@@ -8,11 +8,11 @@ import { AS_OF, addDaysUtc, salesSeries } from "@/tests/fixtures/engine";
 describe("F1 demand and quantity", () => {
   const sales = salesSeries(AS_OF, [10, 12, 8, 10, 10, 14, 6], 224 - 70);
 
-  it("d7 = 10, d28 = 8, d̄ = 9.2", () => {
-    const d = computeDemand(sales, AS_OF, addDaysUtc(AS_OF, -89));
+  it("d7 = 10, d28 = 8; under 56 days of history the average is the 28-day mean, d̄ = 8", () => {
+    const d = computeDemand(sales, AS_OF, addDaysUtc(AS_OF, -40));
     expect(d.d7).toBeCloseTo(10, 10);
     expect(d.d28).toBeCloseTo(8, 10);
-    expect(d.avgDailyDemand).toBeCloseTo(9.2, 10);
+    expect(d.avgDailyDemand).toBeCloseTo(8, 10);
     expect(d.flags).toEqual([]);
     expect(d.dailySeries).toHaveLength(28);
   });

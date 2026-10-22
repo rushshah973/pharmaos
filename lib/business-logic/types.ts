@@ -19,7 +19,8 @@ export type ReasonCode =
   | "SCHEME_TAKEN"
   | "SCHEME_SKIPPED_EXPIRY"
   | "EXPIRY_REDUCED_QTY"
-  | "NO_ELIGIBLE_OFFER";
+  | "NO_ELIGIBLE_OFFER"
+  | "BRIDGE_UNTIL_DELIVERY";
 
 export type WarningCode =
   | "NO_DEMAND"
@@ -186,7 +187,7 @@ export type PlanningContext = {
 export type DemandResult = {
   d7: number;
   d28: number;
-  baseline: number; // 0.6 × d7 + 0.4 × d28
+  baseline: number; // trend-aware average (0.6 × d7 + 0.4 × d28 on a spike), lib/ml/backtest baselineDaily
   ml: number | null; // ML forecast mean (null without a model)
   method: DemandMethod;
   methodReason: string;
@@ -290,7 +291,12 @@ export type SkuAnalysis = {
   expiry: ExpiryResult;
   incomingQty: number;
   stockPosition: number;
+  /** Days until stock runs out, each PO counted on its delivery day; null when d̄ = 0. */
   cover: number | null; // null when d̄ = 0
+  /** Stock runs out before the next PO on order arrives (that PO does not prevent the gap). */
+  shortBeforeDelivery: boolean;
+  /** The earliest PO on order within the horizon, if any. */
+  nextArrival: { poId: string; poNumber: string | null; date: IsoDate } | null;
   leadFastest: number;
   reorderPoint: number; // at leadFastest
   targetStock: number; // at leadFastest

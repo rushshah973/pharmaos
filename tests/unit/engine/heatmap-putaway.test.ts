@@ -31,7 +31,17 @@ describe("§6.13 heatmap: one highlighted bin per mode", () => {
   it("stockout: only the bin holding the STOCKOUT_RISK SKU, valued at its cover", () => {
     expect(highlighted("stockout")).toEqual(["A-L-01-1"]);
     const b = computeHeatmap({ mode: "stockout", bins, balances, facts: f }).bins[0];
-    expect(b).toMatchObject({ severity: 3, value: 0.5, label: "Stockout risk · 0.5 d cover", skus: ["P1"] });
+    expect(b).toMatchObject({ severity: 3, value: 0.5, label: "Stockout risk · runs out in 0.5 d", skus: ["P1"] });
+  });
+
+  it("stockout: an empty home bin still shows its out-of-stock SKU; a SKU with no bin is listed off the map", () => {
+    const p1 = [...f.values()].find((x) => x.sku === "P1")!.productId;
+    const empty = balances.map((x) => (x.productId === p1 ? { ...x, onHandQty: 0 } : x));
+    const r = computeHeatmap({ mode: "stockout", bins, balances: empty, facts: f });
+    expect(r.bins.filter((x) => x.severity > 0).map((x) => x.binCode)).toEqual(["A-L-01-1"]);
+    const noBin = computeHeatmap({ mode: "stockout", bins, balances: balances.filter((x) => x.productId !== p1), facts: f });
+    expect(noBin.bins.every((x) => x.severity === 0)).toBe(true);
+    expect(noBin.offShelf.map((x) => x.sku)).toEqual(["P1"]);
   });
 
   it("expiry: only the bin holding the at-risk batch", () => {

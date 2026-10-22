@@ -2,11 +2,12 @@
 // no I/O, no clock, no randomness; the same context always gives the same result.
 import { dec, sumMoney } from "@/lib/money";
 import { ENGINE_CONFIG, type EngineConfig } from "./config";
+import { addDays, daysBetween } from "./dates";
 import { computeDemand } from "./demand";
 import { projectExpiry } from "./expiry";
 import { computeImpact } from "./impact";
-import { confirmedIncoming, coverDays, daysUntilReorder, reorderPoint, safetyStock, skuStatus, stockPosition, targetStock } from "./inventory";
-import { applyScheme, isCandidate, orderQuantity } from "./ordering";
+import { ON_ORDER_STATUSES, bridgeQuantity, confirmedIncoming, coverDays, daysUntilReorder, reorderPoint, runOutDays, safetyStock, skuStatus, stockPosition, targetStock } from "./inventory";
+import { applyScheme, isCandidate, orderQuantity, roundToPackRules } from "./ordering";
 import { comparePriority, criticalityWeight, lossPrevented, priorityScore } from "./priority";
 import { applyUrgencyRule, effectiveUnitCost, offerExclusions, priceAnomalies, scoreOffers } from "./supplier-scoring";
 import { lineTotals, supplierTotals } from "./totals";
@@ -42,7 +43,18 @@ export function analyseSku(sku: SkuContext, config: EngineConfig = ENGINE_CONFIG
   const expiry = projectExpiry({ batches: sku.batches, balances: sku.balances, avgDailyDemand: dbar, asOf }, config);
   const incomingQty = confirmedIncoming(sku.incoming, asOf, config);
   const position = stockPosition(expiry.eligibleAvailable, incomingQty);
-  const cover = coverDays(position, dbar);
+  // Cover = days until the shelf is empty, with each PO counted on its delivery day. Quantities still use the
+  // position (everything on order counts), so nothing already ordered is bought again.
+  const cover = runOutDays(expiry.eligibleAvailable, sku.incoming, dbar, asOf, config);
+  const positionCover = coverDays(position, dbar);
+  const horizonEnd = addDays(asOf, config.planningHorizonDays);
+  const nextArrival =
+    sku.incoming
+      .filter((i) => (ON_ORDER_STATUSES as readonly string[]).includes(i.status) && i.expectedDeliveryDate <= horizonEnd)
+      .sort((a, b) => (a.expectedDeliveryDate < b.expectedDeliveryDate ? -1 : 1))[0] ?? null;
+  // Stock runs out before the next PO arrives: a gap the existing order does not close.
+  const shortBeforeDelivery =
+    cover !== null && nextArrival !== null && cover < Math.max(0, daysBetween(asOf, nextArrival.expectedDeliveryDate));
   const hasAtRisk = expiry.batches.some((b) => b.atRiskQty > 0);
 
   // 2. Offers usable before quantity is known (availability is checked per offer below).
@@ -58,10 +70,15 @@ export function analyseSku(sku: SkuContext, config: EngineConfig = ENGINE_CONFIG
     : defaultLeads.length
       ? Math.min(...defaultLeads)
       : config.reviewPeriodDays;
-  const status = skuStatus({ avgDailyDemand: dbar, stockPosition: position, leadFastest }, config);
+  const status = skuStatus({ avgDailyDemand: dbar, stockPosition: position, leadFastest, cover, shortBeforeDelivery }, config);
   const rop = reorderPoint(dbar, leadFastest, config);
   const target = targetStock(dbar, leadFastest, config);
-  const needsStock = isCandidate({ avgDailyDemand: dbar, stockPosition: position, leadFastest }, config);
+  const belowRop = isCandidate({ avgDailyDemand: dbar, stockPosition: position, leadFastest }, config);
+  // Enough on order overall, but the shelf empties before that PO arrives: a bridge top-up (only the gap days)
+  // from a supplier that delivers before the PO, so the medicine is not out of stock in between.
+  const arrivalDay = nextArrival ? Math.max(0, daysBetween(asOf, nextArrival.expectedDeliveryDate)) : 0;
+  const bridge = !belowRop && shortBeforeDelivery && cover !== null && leadFastest < arrivalDay;
+  const needsStock = belowRop || bridge;
   // At-risk batches cap the order at ROP (EXPIRY_REDUCED_QTY) — except on stockout-risk lines:
   // a medicine about to run out is never under-ordered, and under FEFO the new, long-dated stock
   // sells after the old batch, so ordering less would not save that batch anyway.
@@ -86,10 +103,15 @@ export function analyseSku(sku: SkuContext, config: EngineConfig = ENGINE_CONFIG
     const w: Working = { offer, evaluation, baseCost: null };
     if (!needsStock || evaluation.exclusions.length > 0 || offer.unitPrice === null) return w;
 
-    const order = orderQuantity(
-      { avgDailyDemand: dbar, stockPosition: position, leadTimeDays: offer.leadTimeDays, moq: offer.moq, packMultiple: offer.packMultiple, hasAtRiskBatches: reduceForExpiry },
-      config,
-    );
+    const order = bridge
+      ? (() => {
+          const qRaw = bridgeQuantity({ avgDailyDemand: dbar, cover: cover!, arrivalDay, leadTimeDays: offer.leadTimeDays });
+          return { qRaw, q: roundToPackRules(qRaw, offer.moq, offer.packMultiple), reasons: [] };
+        })()
+      : orderQuantity(
+          { avgDailyDemand: dbar, stockPosition: position, leadTimeDays: offer.leadTimeDays, moq: offer.moq, packMultiple: offer.packMultiple, hasAtRiskBatches: reduceForExpiry },
+          config,
+        );
     evaluation.order = order;
     if (order.q <= 0) return w;
 
@@ -157,17 +179,22 @@ export function analyseSku(sku: SkuContext, config: EngineConfig = ENGINE_CONFIG
   const candidate = needsStock && chosen !== null;
 
   // 5. Reasons, money, warnings.
-  if (needsStock) reasons.push("BELOW_REORDER_POINT");
-  if (needsStock && !chosen) reasons.push("NO_ELIGIBLE_OFFER");
+  if (belowRop) reasons.push("BELOW_REORDER_POINT");
+  if (bridge && chosen) reasons.push("BRIDGE_UNTIL_DELIVERY");
+  if (belowRop && !chosen) reasons.push("NO_ELIGIBLE_OFFER");
   if (candidate) reasons.push(...urgency.lineReasons);
   if (chosen?.order) reasons.push(...chosen.order.reasons);
   if (chosen?.scheme?.reason) reasons.push(chosen.scheme.reason);
 
   const qty = chosen?.scheme?.qty ?? 0;
   const freeQty = chosen?.scheme?.freeQty ?? 0;
+  // A bridge prevents the gap days it covers (stock-out from max(cover, L) until the PO arrives); a normal order
+  // the shortfall before its own delivery.
   const loss =
     candidate && chosenWork
-      ? lossPrevented({ leadTimeDays: chosenWork.offer.leadTimeDays, cover, avgDailyDemand: dbar, unitMargin: product.unitMargin, criticality: product.criticality }, config)
+      ? bridge
+        ? lossPrevented({ leadTimeDays: arrivalDay, cover: Math.max(cover!, chosenWork.offer.leadTimeDays), avgDailyDemand: dbar, unitMargin: product.unitMargin, criticality: product.criticality }, config)
+        : lossPrevented({ leadTimeDays: chosenWork.offer.leadTimeDays, cover, avgDailyDemand: dbar, unitMargin: product.unitMargin, criticality: product.criticality }, config)
       : "0.00";
   const priority = chosen?.totals ? priorityScore(loss, chosen.totals.lineTotal) : 0;
 
@@ -206,8 +233,11 @@ export function analyseSku(sku: SkuContext, config: EngineConfig = ENGINE_CONFIG
       incoming: incomingQty,
       stockPosition: position,
       cover,
+      positionCover,
+      nextArrival: nextArrival ? { poId: nextArrival.poId, poNumber: nextArrival.poNumber ?? null, date: nextArrival.expectedDeliveryDate, qty: nextArrival.quantityPacks + nextArrival.freeQty } : null,
+      shortBeforeDelivery,
     },
-    policy: { leadFastest, safetyStock: safetyStock(dbar, config), reorderPoint: rop, targetStock: target, needsStock },
+    policy: { leadFastest, safetyStock: safetyStock(dbar, config), reorderPoint: rop, targetStock: target, needsStock, bridge, arrivalDay: nextArrival ? arrivalDay : null },
     offers: working.map((w) => ({
       ...w.evaluation,
       leadTimeDays: w.offer.leadTimeDays,
@@ -248,6 +278,8 @@ export function analyseSku(sku: SkuContext, config: EngineConfig = ENGINE_CONFIG
     incomingQty,
     stockPosition: position,
     cover,
+    shortBeforeDelivery,
+    nextArrival: nextArrival ? { poId: nextArrival.poId, poNumber: nextArrival.poNumber ?? null, date: nextArrival.expectedDeliveryDate } : null,
     leadFastest,
     reorderPoint: rop,
     targetStock: target,

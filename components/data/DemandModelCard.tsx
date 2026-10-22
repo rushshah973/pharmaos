@@ -18,10 +18,11 @@ const FEATURE_TEXT: Record<string, string> = {
 /** The demand model in use (§6.2a): how it was trained and how it did on days it never saw. */
 export function DemandModelCard({ model, skus }: { model: StoredModel | null; skus: number }) {
   if (!model) {
-    return <EmptyState icon={BrainCircuit} title="No demand model yet" description="Run npm run train:forecast (or npm run seed) to train it. Until then every SKU uses the 7/28-day average." />;
+    return <EmptyState icon={BrainCircuit} title="No demand model yet" description="Run npm run train:forecast (or npm run seed) to train it. Until then every SKU uses the trend-aware average." />;
   }
   const m = model.metrics;
-  const mlWins = m.mlWape !== null && m.baselineWape !== null && m.mlWape < m.baselineWape;
+  const h = m.horizon;
+  const blendWins = h ? h.blend !== null && h.oldAverage !== null && h.blend < h.oldAverage : m.mlWape !== null && m.baselineWape !== null && m.mlWape < m.baselineWape;
   const base = model.featureNames.filter((n) => FEATURE_TEXT[n]);
   const dows = model.featureNames.filter((n) => n.startsWith("dow_")).length;
   const cats = model.featureNames.filter((n) => n.startsWith("cat_")).length;
@@ -39,14 +40,29 @@ export function DemandModelCard({ model, skus }: { model: StoredModel | null; sk
       </div>
 
       <div className="mt-5 grid gap-6 md:grid-cols-3">
-        <Figure label="ML error (holdout)" value={pct(m.mlWape)} note={`Last ${model.holdoutDays} days, never seen in training`} tone={mlWins ? "brand" : undefined} />
-        <Figure label="Average error (holdout)" value={pct(m.baselineWape)} note="0.6 × d7 + 0.4 × d28, held flat" />
-        <Figure label="SKUs using ML" value={`${m.skusUsingMl} / ${skus}`} note="ML is used only where it was at least 5% better" />
+        {h ? (
+          <>
+            <Figure
+              label="14-day demand error · ML blend"
+              value={pct(h.blend)}
+              note={`Last ${model.holdoutDays} days, never seen in training · ML alone ${pct(h.ml)}`}
+              tone={blendWins ? "brand" : undefined}
+            />
+            <Figure label="14-day error · averages" value={pct(h.average)} note={`Trend-aware average · old 0.6 × d7 + 0.4 × d28: ${pct(h.oldAverage)}`} />
+          </>
+        ) : (
+          <>
+            <Figure label="ML error (holdout)" value={pct(m.mlWape)} note={`Last ${model.holdoutDays} days, never seen in training`} tone={blendWins ? "brand" : undefined} />
+            <Figure label="Average error (holdout)" value={pct(m.baselineWape)} note="Held flat over the holdout" />
+          </>
+        )}
+        <Figure label="SKUs using the ML blend" value={`${m.skusUsingMl} / ${skus}`} note="50% ML + 50% trend-aware average; the rest keep the average" />
       </div>
 
       <p className="mt-4 text-[12.5px] text-fg-3">
-        Error is WAPE: Σ|actual − forecast| ÷ Σ actual, pooled over SKUs, per day. Daily sales of a few packs are noisy, so both errors are high; what matters is the gap, measured
-        per SKU.
+        The plan orders on 14-day demand, so that is the error that matters: |Σ14 forecast − Σ14 sold| ÷ Σ14 sold, pooled over SKUs. Per-day error stays near{" "}
+        {pct(m.mlWape)} for any method because daily sales of a few packs are random. On this synthetic data the true demand is known: against it the ML blend is off by about 11%
+        over 14 days, the old average by 15% (npm run eval:forecast).
       </p>
 
       <dl className="mt-5 grid gap-4 border-t border-border pt-5 text-[12.5px] md:grid-cols-3">

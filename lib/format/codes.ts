@@ -12,11 +12,16 @@ export const REASON_TEXT: Record<ReasonCode, { short: string; meaning: string }>
     meaning: "Quantity reduced to the reorder point because existing batches are at expiry risk (never on stockout-risk lines)",
   },
   NO_ELIGIBLE_OFFER: { short: "No offer", meaning: "No approved, valid, available offer for this SKU" },
+  BRIDGE_UNTIL_DELIVERY: {
+    short: "Bridge order",
+    meaning: "Stock runs out before the PO already on order arrives; a small top-up from a faster supplier covers the gap",
+  },
 };
 
 /** Most specific first: the reason column shows the first one present. */
 export const REASON_ORDER: ReasonCode[] = [
   "NO_ELIGIBLE_OFFER",
+  "BRIDGE_UNTIL_DELIVERY",
   "STOCKOUT_BEFORE_DELIVERY",
   "CHEAPER_OFFER_TOO_SLOW",
   "SCHEME_SKIPPED_EXPIRY",

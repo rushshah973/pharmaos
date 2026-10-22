@@ -1,7 +1,7 @@
 // §6.2a — train the global ridge model, pick λ on a validation slice, refit, and backtest every SKU.
 // Pure and deterministic: the same series give the same model.
 import { HISTORY_DAYS, buildFeatures, featureNames } from "./features";
-import { baselineDaily, defaultMethod, type DemandMethod, wape } from "./backtest";
+import { baselineDaily, blendDaily, defaultMethod, type DemandMethod, reactiveDaily, wape } from "./backtest";
 import { forecastRecursive } from "./forecast";
 import { type RidgeModel, fitRidge } from "./ridge";
 
@@ -25,6 +25,8 @@ export type TrainResult = {
     skusUsingMl: number;
     trainRows: number;
     validation: { lambda: number; wape: number | null }[];
+    /** Error on 14-day totals (what a plan orders), pooled over SKUs, on the holdout vs recorded sales. */
+    horizon?: { blend: number | null; ml: number | null; average: number | null; oldAverage: number | null };
   };
 };
 
@@ -83,13 +85,26 @@ export function trainModel(args: { series: TrainingSeries[]; firstDow: number; h
   const perSku: SkuBacktest[] = [];
   const mlPairs: { actual: number[]; forecast: number[] }[] = [];
   const basePairs: { actual: number[]; forecast: number[] }[] = [];
+  const totals = { actual: [] as number[], blend: [] as number[], ml: [] as number[], average: [] as number[], oldAverage: [] as number[] };
+  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
   for (const s of series) {
     const historyDays = holdoutStart - s.firstIndex;
     const actual = s.values.slice(holdoutStart, N);
     const history = s.values.slice(0, holdoutStart);
     const canForecast = historyDays >= HISTORY_DAYS;
-    const ml = canForecast ? forecastRecursive(model, history, (args.firstDow + holdoutStart) % 7, s.category, H) : null;
-    const base = new Array<number>(H).fill(baselineDaily(history.slice(Math.max(0, s.firstIndex))));
+    const own = history.slice(Math.max(0, s.firstIndex));
+    const baseDaily = baselineDaily(own);
+    const pureMl = canForecast ? forecastRecursive(model, history, (args.firstDow + holdoutStart) % 7, s.category, H) : null;
+    // The "ml" method is the blend: each day's ML forecast mixed with the average (as the engine uses it).
+    const ml = pureMl ? pureMl.map((v) => blendDaily(v, baseDaily)) : null;
+    const base = new Array<number>(H).fill(baseDaily);
+    if (pureMl) {
+      totals.actual.push(sum(actual));
+      totals.blend.push(sum(ml!));
+      totals.ml.push(sum(pureMl));
+      totals.average.push(baseDaily * H);
+      totals.oldAverage.push(reactiveDaily(own) * H);
+    }
     const mlWape = ml ? wape(actual, ml) : null;
     const baselineWape = wape(actual, base);
     if (ml) {
@@ -108,6 +123,12 @@ export function trainModel(args: { series: TrainingSeries[]; firstDow: number; h
       skusUsingMl: perSku.filter((s) => s.defaultMethod === "ml").length,
       trainRows: train.X.length,
       validation,
+      horizon: {
+        blend: wape(totals.actual, totals.blend),
+        ml: wape(totals.actual, totals.ml),
+        average: wape(totals.actual, totals.average),
+        oldAverage: wape(totals.actual, totals.oldAverage),
+      },
     },
   };
 }

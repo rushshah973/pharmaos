@@ -197,6 +197,7 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
   }, [heat, layout.bins]);
   const highlighted = counts[1] + counts[2] + counts[3];
   const unmapped = heatmaps.normal?.unmapped ?? [];
+  const offShelf = mode === "stockout" ? (current?.offShelf ?? []) : [];
   const asOf = (current ?? heatmaps.normal)?.asOf ?? "";
   const selected = selectedBinId ? layout.bins.find((b) => b.id === selectedBinId) : undefined;
 
@@ -340,6 +341,26 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
               </Link>
               . It is not received until the POs are delivered.
             </p>
+          )}
+
+          {offShelf.length > 0 && (
+            <div className="surface-alert px-5 py-4">
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="micro-label">Out of stock · not on any shelf</h3>
+                <span className="num text-[12px] text-fg-3">
+                  {offShelf.length} SKU{offShelf.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <p className="mt-1 text-[12px] text-fg-3">Stockout risk with no stock in any bin, so nothing to colour on the map. Same engine status as the Command Center.</p>
+              <ul className="mt-2.5 max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                {offShelf.map((u) => (
+                  <li key={u.productId} className="flex justify-between gap-3 text-[12.5px]">
+                    <span className="font-mono text-fg-1">{u.sku}</span>
+                    <span className="num text-stockout">{(u.cover ?? 0) <= 0 ? "out of stock now" : `runs out in ${(u.cover ?? 0).toFixed(1)} d`}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
 
           <div className="surface px-5 py-4">

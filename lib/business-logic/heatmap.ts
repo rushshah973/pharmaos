@@ -57,6 +57,8 @@ export type HeatmapResult = {
   bins: BinHeat[];
   /** Stock with no bin, per SKU — shown as a list, never placed on the map. */
   unmapped: { productId: string; sku: string; packs: number }[];
+  /** Stockout mode: stockout-risk SKUs with no stock in any bin (nothing on a shelf to colour), soonest first. */
+  offShelf: { productId: string; sku: string; cover: number | null }[];
   /** Proposed mode: lines whose stock fits no bin. */
   capacityReview: { productId: string; sku: string; packs: number }[];
 };
@@ -70,6 +72,9 @@ function band(n: number, steps: [number, number, number]): Severity {
 export function computeHeatmap({ mode, bins, balances, facts, placements = [] }: HeatmapInput): HeatmapResult {
   const inBin = new Map<string, HeatmapBalance[]>();
   const unmappedBy = new Map<string, number>();
+  // A SKU's home bins, including ones that are empty now: an out-of-stock SKU still shows where it belongs.
+  const homeBins = new Map<string, Set<string>>();
+  for (const b of balances) if (b.binId !== null) (homeBins.get(b.binId) ?? homeBins.set(b.binId, new Set()).get(b.binId)!).add(b.productId);
   for (const b of balances) {
     if (b.onHandQty <= 0) continue;
     if (b.binId === null) {
@@ -102,11 +107,13 @@ export function computeHeatmap({ mode, bins, balances, facts, placements = [] }:
 
     switch (mode) {
       case "stockout": {
-        const hit = products.map((p) => facts.get(p)).filter((f) => f?.status === "STOCKOUT_RISK") as SkuHeatFacts[];
+        const home = [...(homeBins.get(bin.id) ?? [])];
+        const hit = home.map((p) => facts.get(p)).filter((f) => f?.status === "STOCKOUT_RISK") as SkuHeatFacts[];
         if (hit.length === 0) return { ...base, severity: 0, label: "No stockout risk", value: null, skus: [] };
         const cover = Math.min(...hit.map((f) => f.cover ?? 0));
         const severity: Severity = cover < 1 ? 3 : cover < 3 ? 2 : 1;
-        return { ...base, severity, label: `Stockout risk · ${round1(cover)} d cover`, value: round1(cover), skus: hit.map((f) => f.sku).sort() };
+        const label = cover <= 0 ? "Out of stock now" : `Stockout risk · runs out in ${round1(cover)} d`;
+        return { ...base, severity, label, value: round1(cover), skus: hit.map((f) => f.sku).sort() };
       }
       case "expiry": {
         let earliest = Infinity;
@@ -168,6 +175,13 @@ export function computeHeatmap({ mode, bins, balances, facts, placements = [] }:
     mode,
     bins: out,
     unmapped: [...unmappedBy].map(([productId, packs]) => ({ productId, sku: sku(productId), packs })).sort((a, b) => a.sku.localeCompare(b.sku)),
+    offShelf:
+      mode === "stockout"
+        ? [...facts.values()]
+            .filter((f) => f.status === "STOCKOUT_RISK" && ![...homeBins.values()].some((set) => set.has(f.productId)))
+            .map((f) => ({ productId: f.productId, sku: f.sku, cover: f.cover }))
+            .sort((a, b) => (a.cover ?? 0) - (b.cover ?? 0) || a.sku.localeCompare(b.sku))
+        : [],
     capacityReview: mode === "proposed" ? placements.filter((p) => !p.binId).map((p) => ({ productId: p.productId, sku: sku(p.productId), packs: p.packs })) : [],
   };
 }

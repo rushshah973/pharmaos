@@ -257,14 +257,14 @@ function buildFormulas(ev: Evidence): Formula[] {
   out.push(
     {
       label: "Stock position",
-      expr: "position = eligible available + incoming (open or sent POs due within 14 days)",
+      expr: "position = eligible available + incoming (POs on order due within 14 days)",
       subst: `${s.eligibleAvailable} + ${s.incoming}`,
       result: `${n2(s.stockPosition)} packs`,
     },
     {
-      label: "Cover",
-      expr: "cover = position ÷ d̄",
-      subst: d > 0 ? `${n2(s.stockPosition)} ÷ ${n2(d)}` : "no demand",
+      label: "Runs out in",
+      expr: "first day stock hits 0: available − d̄ × t, plus each PO on its delivery day",
+      subst: d > 0 ? `${s.eligibleAvailable} packs at ${n2(d)}/day${s.incoming > 0 ? `, ${s.incoming} on order` : ""}` : "no demand",
       result: s.cover === null ? "—" : `${n1(s.cover)} days`,
     },
     {

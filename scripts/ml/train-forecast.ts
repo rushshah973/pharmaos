@@ -15,7 +15,11 @@ export async function trainForecast(sql: postgres.Sql) {
   console.log(`\nDemand model trained in ${ms} ms (as of ${model.asOf}, synthetic demo data)`);
   console.log(`  rows ${m.trainRows.toLocaleString("en-IN")} · features ${model.featureNames.length} · λ ${model.lambda}`);
   console.log(`  λ validation (last 14 days before the holdout): ${m.validation.map((v) => `λ ${v.lambda} → ${pct(v.wape)}`).join(" · ")}`);
-  console.log(`  holdout (last 14 days, never seen in training): ML error ${pct(m.mlWape)} vs average ${pct(m.baselineWape)}`);
+  console.log(`  holdout (last 14 days, never seen in training), daily error: ML blend ${pct(m.mlWape)} vs average ${pct(m.baselineWape)}`);
+  if (m.horizon)
+    console.log(
+      `  14-day demand error (what a plan orders on): ML blend ${pct(m.horizon.blend)} · ML alone ${pct(m.horizon.ml)} · trend-aware average ${pct(m.horizon.average)} · old 0.6·d7+0.4·d28 ${pct(m.horizon.oldAverage)}`,
+    );
   console.log(`  SKUs using ML: ${m.skusUsingMl} of ${perSku.length} (the rest keep the average because ML did not win for them)`);
   return model;
 }

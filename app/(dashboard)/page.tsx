@@ -197,8 +197,8 @@ function AttentionPanel({ data, pipeline }: { data: CommandCenter; pipeline: PoP
       n: data.stockoutRisk,
       icon: PackageX,
       tone: "stockout" as const,
-      title: `${data.stockoutRisk} SKU${data.stockoutRisk === 1 ? "" : "s"} will run out before delivery`,
-      note: `${data.belowReorderPoint} more below reorder point`,
+      title: `${data.stockoutRisk} SKU${data.stockoutRisk === 1 ? "" : "s"} run out before stock arrives`,
+      note: `${data.stockoutActionable} can be ordered in a new plan · ${data.stockoutWaiting} wait for a PO already on its way`,
       href: planHref,
     },
     {

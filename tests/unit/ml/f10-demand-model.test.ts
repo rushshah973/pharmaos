@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { addDays } from "@/lib/business-logic/dates";
 import { computeDemand } from "@/lib/business-logic/demand";
-import { baselineDaily, defaultMethod, wape } from "@/lib/ml/backtest";
+import { baselineDaily, blendDaily, defaultMethod, reactiveDaily, trendDaily, wape } from "@/lib/ml/backtest";
 import { buildFeatures, featureNames } from "@/lib/ml/features";
 import { forecastRecursive } from "@/lib/ml/forecast";
 import { type RidgeModel, solveRidge } from "@/lib/ml/ridge";
@@ -90,18 +90,34 @@ describe("F10 WAPE and the default-method rule", () => {
     expect(wape([0, 0], [1, 2])).toBeNull();
   });
 
-  it("baseline = 0.6 × mean of the last 7 days + 0.4 × mean of the last 28", () => {
+  it("on a demand spike the average is the fast-reacting 0.6 × d7 + 0.4 × d28", () => {
     const history = [...Array.from({ length: 21 }, () => 0), ...Array.from({ length: 7 }, () => 7)];
     expect(baselineDaily(history)).toBeCloseTo(0.6 * 7 + 0.4 * (49 / 28), 12);
+    expect(reactiveDaily(history)).toBeCloseTo(0.6 * 7 + 0.4 * (49 / 28), 12);
   });
 
-  it("uses ML only with ≥ 28 days of history and ML WAPE ≤ 0.95 × baseline WAPE", () => {
-    expect(defaultMethod({ historyDays: 28, mlWape: 0.18, baselineWape: 0.27 })).toBe("ml");
-    expect(defaultMethod({ historyDays: 40, mlWape: 0.19, baselineWape: 0.2 })).toBe("ml"); // exactly 5% better
-    expect(defaultMethod({ historyDays: 40, mlWape: 0.195, baselineWape: 0.2 })).toBe("baseline"); // only 2.5% better
+  it("the trend-aware average: the 28-day mean when flat, the projected trend when it is clear, capped at ×1.5", () => {
+    const flat = Array.from({ length: 56 }, (_, i) => [3, 5, 4, 4, 6, 2, 4][i % 7]);
+    expect(trendDaily(flat)).toBeCloseTo(4, 10);
+    expect(baselineDaily(flat)).toBeCloseTo(4, 10);
+    // 1% growth a day: the trend is projected ~3 weeks past the 28-day mean's centre, so the rate is above d28.
+    const growing = Array.from({ length: 56 }, (_, i) => 10 * 1.01 ** i);
+    const d28 = growing.slice(-28).reduce((a, b) => a + b, 0) / 28;
+    expect(trendDaily(growing)).toBeGreaterThan(d28 * 1.1);
+    expect(trendDaily(growing)).toBeLessThanOrEqual(d28 * 1.5);
+    // A step from 0 to 8 is not extrapolated past the cap.
+    const step = [...Array.from({ length: 28 }, () => 0), ...Array.from({ length: 28 }, () => 8)];
+    expect(trendDaily(step)).toBeLessThanOrEqual(8 * 1.5 + 1e-9);
+    // Fewer than 56 days: no trend, the 28-day mean.
+    expect(trendDaily(growing.slice(-40))).toBeCloseTo(growing.slice(-28).reduce((a, b) => a + b, 0) / 28, 10);
+  });
+
+  it("the ML blend is 50/50 ML and the average, and is the default with ≥ 28 days unless ML is far off", () => {
+    expect(blendDaily(6, 4)).toBe(5);
+    expect(defaultMethod({ historyDays: 28, mlWape: 0.5, baselineWape: 0.5 })).toBe("ml");
+    expect(defaultMethod({ historyDays: 40, mlWape: 0.62, baselineWape: 0.5 })).toBe("ml"); // within 1.25×
+    expect(defaultMethod({ historyDays: 40, mlWape: 0.7, baselineWape: 0.5 })).toBe("baseline"); // ML far off
     expect(defaultMethod({ historyDays: 27, mlWape: 0.1, baselineWape: 0.5 })).toBe("baseline"); // too little history
-    expect(defaultMethod({ historyDays: 40, mlWape: 0.2, baselineWape: 0.2 })).toBe("baseline"); // tie
-    expect(defaultMethod({ historyDays: 40, mlWape: 0, baselineWape: 0 })).toBe("baseline"); // tie at zero
     expect(defaultMethod({ historyDays: 40, mlWape: null, baselineWape: null })).toBe("baseline");
   });
 });
@@ -145,25 +161,31 @@ describe("F10 engine demand method", () => {
     explain: { intercept: 4, top: [] },
   };
 
+  // 28 days of sales and history: the average is their mean, 4.
+  const first = addDays(asOf, -27);
+
   it("uses the baseline without a model", () => {
-    const d = computeDemand(sales, asOf, "2026-01-01");
+    const d = computeDemand(sales, asOf, first);
     expect(d.method).toBe("baseline");
     expect(d.methodChosenBy).toBe("no-model");
     expect(d.avgDailyDemand).toBe(4);
     expect(d.forecast14).toEqual([]);
   });
 
-  it("uses ML when the default rule picked it, with the honest reason", () => {
-    const d = computeDemand(sales, asOf, "2026-01-01", undefined, forecast);
+  it("uses the ML blend when the default rule picked it, with the honest reason", () => {
+    const d = computeDemand(sales, asOf, first, undefined, forecast);
     expect(d.method).toBe("ml");
-    expect(d.avgDailyDemand).toBe(6);
+    expect(d.ml).toBe(6);
     expect(d.baseline).toBe(4);
-    expect(d.methodReason).toBe("ML error 20% vs average 40% on the last 14 days → using ML");
+    expect(d.avgDailyDemand).toBe(5); // 0.5 × 6 + 0.5 × 4
+    expect(d.methodReason).toBe(
+      "ML blend error 20% vs average 40% on the last 14 days → using the ML blend (ML + trend-aware average, the most accurate on 14-day demand)",
+    );
     expect(d.forecast14[0]).toEqual({ date: "2026-10-22", units: 6 });
   });
 
   it("honours a Demand Agent override", () => {
-    const d = computeDemand(sales, asOf, "2026-01-01", undefined, { ...forecast, override: { method: "baseline", reason: "Spike is a one-off festival order" } });
+    const d = computeDemand(sales, asOf, first, undefined, { ...forecast, override: { method: "baseline", reason: "Spike is a one-off festival order" } });
     expect(d.method).toBe("baseline");
     expect(d.methodChosenBy).toBe("demand-agent");
     expect(d.avgDailyDemand).toBe(4);

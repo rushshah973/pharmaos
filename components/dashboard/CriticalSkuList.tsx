@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CircleCheck, MapPin, ArrowUpRight } from "lucide-react";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { SkuStatusPill } from "@/components/layout/SkuStatusPill";
+import { formatDisplayDate } from "@/lib/format/date";
 import { dec, formatINR } from "@/lib/money";
 import type { CriticalSku } from "@/lib/services/dashboard";
 
@@ -25,7 +26,7 @@ export function CriticalSkuList({ skus, latestPlanId, totalAtRisk }: { skus: Cri
         <div>
           <h2 className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">Critical SKUs</h2>
           <p className="text-fg-2">
-            Lowest cover first · {totalAtRisk} at stockout risk, showing the top {skus.length}
+            Soonest to run out first (each PO counted on its delivery day) · {totalAtRisk} at stockout risk, showing the top {skus.length}
           </p>
         </div>
       </header>
@@ -72,7 +73,21 @@ export function CriticalSkuList({ skus, latestPlanId, totalAtRisk }: { skus: Cri
                           <span className="max-xl:sr-only">Open in plan</span> <ArrowUpRight className="size-3.5" aria-hidden />
                         </Link>
                       ) : (
-                        <span className="px-2 text-[12.5px] text-fg-3 max-xl:sr-only">Not in a plan</span>
+                        <span className="px-2 text-[12.5px] text-fg-3 max-xl:sr-only">
+                          {s.shortBeforeDelivery && s.nextArrival ? (
+                            <>
+                              Waiting for{" "}
+                              <Link href={`/purchase-orders/${s.nextArrival.poId}`} className="font-mono text-fg-2 hover:text-fg-1 hover:underline">
+                                {s.nextArrival.poNumber ?? "PO"}
+                              </Link>{" "}
+                              · {formatDisplayDate(s.nextArrival.date)}
+                            </>
+                          ) : s.bridge ? (
+                            "Bridge top-up in a new plan"
+                          ) : (
+                            "Not in a plan"
+                          )}
+                        </span>
                       )}
                       <Link
                         href={`/warehouse?sku=${encodeURIComponent(s.sku)}`}

@@ -15,7 +15,7 @@ type OfferEvidence = {
 type Evidence = {
   product?: { sku?: string; brandName?: string };
   stock?: { cover?: number | null; stockPosition?: number };
-  policy?: { reorderPoint?: number; leadFastest?: number };
+  policy?: { reorderPoint?: number; leadFastest?: number; arrivalDay?: number | null };
   offers?: OfferEvidence[];
   chosenOfferId?: string | null;
   qty?: number;
@@ -64,6 +64,13 @@ export function explainLine(evidenceJson: Record<string, unknown>, current?: Cur
   const order = `${packs(qty)}${free} from ${chosen.supplierCode}`;
   if (cover === null) {
     out.push(`Ordering ${order}; there is no recent demand to measure cover against.`);
+  } else if (reasons.has("BRIDGE_UNTIL_DELIVERY")) {
+    const arrival = ev.policy?.arrivalDay ?? null;
+    out.push(
+      `Bridge top-up: enough stock is already on order, but the shelf empties in about ${days(Math.round(cover * 10) / 10)}` +
+        (arrival !== null ? `, before that PO arrives in ${days(arrival)}.` : ", before that PO arrives.") +
+        ` Ordering ${order}, which delivers in ${days(lead)}, covers only the days in between.`,
+    );
   } else if (reasons.has("STOCKOUT_BEFORE_DELIVERY")) {
     // Say plainly what lead time means here: even ordering today, the shelf is empty until the delivery lands.
     const gap = Math.max(0, lead - cover);

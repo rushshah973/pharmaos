@@ -13,7 +13,7 @@ export function isCandidate(
 }
 
 /** Round a raw quantity up to the pack multiple, then up to the MOQ (only when something is needed). */
-function roundToPackRules(raw: number, moq: number, packMultiple: number): number {
+export function roundToPackRules(raw: number, moq: number, packMultiple: number): number {
   if (raw <= 0) return 0;
   const packs = dec(raw).dividedBy(packMultiple).ceil().times(packMultiple).toNumber();
   return Math.max(packs, moq);

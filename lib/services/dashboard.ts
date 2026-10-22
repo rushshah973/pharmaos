@@ -1,7 +1,7 @@
 // Command Center metrics (implementationplan.md §7.7). Stock figures are computed live by the engine
 // on the current context; spend and approvals come from the saved plans.
 import type postgres from "postgres";
-import { addDays } from "@/lib/business-logic/dates";
+import { addDays, daysBetween } from "@/lib/business-logic/dates";
 import { analyseSku } from "@/lib/business-logic/engine";
 import { criticalityWeight } from "@/lib/business-logic/priority";
 import type { Criticality, Money, SkuStatus } from "@/lib/business-logic/types";
@@ -24,6 +24,11 @@ export type CriticalSku = {
   atRiskValue: Money;
   /** The SKU's line in the latest open plan, for "Open in plan". */
   planLineId: string | null;
+  /** The earliest PO on order and its arrival day count; the shelf empties before it when shortBeforeDelivery. */
+  nextArrival: { poId: string; poNumber: string | null; date: string; inDays: number } | null;
+  shortBeforeDelivery: boolean;
+  /** A new plan buys a bridge top-up for the gap (a faster supplier delivers before the PO). */
+  bridge: boolean;
 };
 
 /** A SKU that is fine today but will reach its reorder point within the week (the forward-looking view). */
@@ -50,6 +55,10 @@ export type CommandCenter = {
   proposedSpend: Money;
   totalSkus: number;
   stockoutRisk: number;
+  /** Stockout-risk SKUs a new order can still help (normal order or bridge top-up). */
+  stockoutActionable: number;
+  /** Stockout-risk SKUs already on a PO that arrives before any new order could: they wait for that delivery. */
+  stockoutWaiting: number;
   belowReorderPoint: number;
   expiryExposure: Money;
   /** In-plan lines not yet on a purchase order (open plans). */
@@ -133,6 +142,9 @@ export async function getCommandCenter(sql: postgres.Sql = getSql()): Promise<Co
       leadTimeDays: a.leadFastest,
       atRiskValue: a.expiry.atRiskValue,
       planLineId: lineByProduct.get(product.id) ?? null,
+      nextArrival: a.nextArrival ? { ...a.nextArrival, inDays: Math.max(0, daysBetween(asOf, a.nextArrival.date)) } : null,
+      shortBeforeDelivery: a.shortBeforeDelivery,
+      bridge: a.reasons.includes("BRIDGE_UNTIL_DELIVERY"),
     }));
 
   // Forward-looking: SKUs above their reorder point today that will cross it within a week at forecast demand.
@@ -182,6 +194,8 @@ export async function getCommandCenter(sql: postgres.Sql = getSql()): Promise<Co
     proposedSpend: latest?.proposed_total ?? "0.00",
     totalSkus: analysed.length,
     stockoutRisk: analysed.filter((x) => x.a.status === "STOCKOUT_RISK").length,
+    stockoutActionable: analysed.filter((x) => x.a.status === "STOCKOUT_RISK" && x.a.candidate).length,
+    stockoutWaiting: analysed.filter((x) => x.a.status === "STOCKOUT_RISK" && !x.a.candidate && x.a.nextArrival !== null).length,
     belowReorderPoint: analysed.filter((x) => x.a.status === "BELOW_ROP").length,
     expiryExposure: sumMoney(analysed.map((x) => x.a.expiry.atRiskValue)).toFixed(2),
     linesAwaitingPo: pending?.lines ?? 0,
