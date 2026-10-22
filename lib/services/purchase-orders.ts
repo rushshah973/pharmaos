@@ -124,7 +124,7 @@ export async function sendPo(poId: string, who: Who = owner(), sql: postgres.Sql
 // Reads and CSV export (§10.3, §7.7)
 // ---------------------------------------------------------------------------
 
-export type PoFilter = "all" | "awaiting" | "ready" | "sent" | "external";
+export type PoFilter = "all" | "pharmaos" | "awaiting" | "ready" | "sent" | "external";
 
 export type PoListItem = {
   id: string;
@@ -164,7 +164,9 @@ export async function listPurchaseOrders(filter: PoFilter = "all", limit = 100, 
           ? sql`po.status = 'sent'`
           : filter === "external"
             ? sql`po.source_plan_id is null`
-            : sql`true`;
+            : filter === "pharmaos"
+              ? sql`po.source_plan_id is not null`
+              : sql`true`;
   return sql<PoListItem[]>`
     select po.id, po.po_number as "poNumber", po.status, s.supplier_code as "supplierCode", s.name as "supplierName",
       (select count(*)::int from purchase_order_lines l where l.po_id = po.id) as lines,

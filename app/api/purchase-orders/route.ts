@@ -2,9 +2,9 @@ import { connection, NextResponse } from "next/server";
 import { handle } from "@/lib/api/http";
 import { type PoFilter, listPurchaseOrders } from "@/lib/services/purchase-orders";
 
-const FILTERS: PoFilter[] = ["all", "awaiting", "ready", "sent", "external"];
+const FILTERS: PoFilter[] = ["all", "pharmaos", "awaiting", "ready", "sent", "external"];
 
-// GET /api/purchase-orders?filter=all|awaiting|ready|sent|external — newest first.
+// GET /api/purchase-orders?filter=all|pharmaos|awaiting|ready|sent|external — newest first.
 export async function GET(req: Request) {
   await connection(); // outside handle(): Next rejects it on purpose to stop prerendering
   return handle(async () => {

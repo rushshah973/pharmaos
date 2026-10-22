@@ -2,28 +2,32 @@ import { ShieldAlert } from "lucide-react";
 import { formatINR } from "@/lib/money";
 import type { SupplierPo } from "@/lib/services/plans";
 
-/** One chip per supplier: the PO it would get if every line were approved, flagged above the approval limit. */
+/** A draft: how the plan would split into POs (one per supplier) if ordered as it stands. No PO exists until lines
+ * are approved or the Order Agent runs; the Supplier Agent may still change a line's supplier. */
 export function SupplierPoStrip({ pos, approvalLimit }: { pos: SupplierPo[]; approvalLimit: string }) {
   if (pos.length === 0) return null;
   const limit = formatINR(approvalLimit, { paise: false });
   const gated = pos.filter((p) => p.needsApproval).length;
   return (
-    <section className="surface p-5" aria-label="Projected purchase orders">
+    <section className="surface p-5" aria-label="Draft supplier split">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">Projected purchase orders</h2>
+        <h2 className="flex items-center gap-2 text-[17px] leading-[24px] font-normal tracking-[-0.015em] text-fg-1">
+          Draft supplier split
+          <span className="rounded-full border border-dashed border-white/25 px-2 py-0.5 text-[11px] font-normal text-fg-2">Not ordered yet</span>
+        </h2>
         {/* State the outcome for this plan, not only the rule, so nobody reads the rule as a pending request. */}
         <p className={`text-[12.5px] ${gated > 0 ? "text-expiry" : "text-fg-3"}`}>
-          One PO per supplier ·{" "}
+          No POs created yet: they are made when you approve lines or the agents run ·{" "}
           {gated > 0
-            ? `${gated} PO${gated === 1 ? " is" : "s are"} above ${limit} and will need the Owner's approval before sending`
-            : `no Owner approval needed: every PO is at or below ${limit}`}
+            ? `${gated} supplier${gated === 1 ? "" : "s"} above ${limit} would need the Owner's approval`
+            : `every supplier is at or below ${limit}`}
         </p>
       </div>
       <ul className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-6">
         {pos.map((po) => (
           <li
             key={po.supplierId}
-            className={`rounded-lg border bg-surface-2 px-3 py-2.5 ${po.needsApproval ? "border-expiry/40" : "border-border"}`}
+            className={`rounded-lg border border-dashed bg-surface-2/60 px-3 py-2.5 ${po.needsApproval ? "border-expiry/50" : "border-white/15"}`}
             title={po.supplierName}
           >
             <div className="flex items-center justify-between gap-2">

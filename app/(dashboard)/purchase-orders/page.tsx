@@ -17,7 +17,7 @@ import { type PoFilter, type PoListItem, type PoPipeline, countAwaitingApproval,
 export const metadata: Metadata = { title: "Purchase Orders" };
 
 const FILTERS: { id: PoFilter; label: string }[] = [
-  { id: "all", label: "All" },
+  { id: "pharmaos", label: "PharmaOS orders" },
   { id: "awaiting", label: "Awaiting Owner approval" },
   { id: "ready", label: "Ready to send" },
   { id: "sent", label: "On the way" },
@@ -42,8 +42,9 @@ export default function PurchaseOrdersPage({ searchParams }: PageProps<"/purchas
 async function PoList({ searchParams }: Pick<PageProps<"/purchase-orders">, "searchParams">) {
   await connection();
   const q = await searchParams;
-  const raw = typeof q.filter === "string" ? q.filter : "all";
-  const filter = (FILTERS.some((f) => f.id === raw) ? raw : "all") as PoFilter;
+  // Default: the POs PharmaOS made (plans and agents); the seeded purchase history has its own tab.
+  const raw = typeof q.filter === "string" ? q.filter : "pharmaos";
+  const filter = (FILTERS.some((f) => f.id === raw) ? raw : "pharmaos") as PoFilter;
   let data: { pos: PoListItem[]; awaiting: number; pipeline: PoPipeline; approvalLimit: string };
   try {
     const [pos, awaiting, pipeline, state] = await Promise.all([listPurchaseOrders(filter), countAwaitingApproval(), getPoPipeline(), resolvePlanningState()]);
@@ -58,7 +59,7 @@ async function PoList({ searchParams }: Pick<PageProps<"/purchase-orders">, "sea
         {FILTERS.map((f) => (
           <Link
             key={f.id}
-            href={f.id === "all" ? "/purchase-orders" : `/purchase-orders?filter=${f.id}`}
+            href={f.id === "pharmaos" ? "/purchase-orders" : `/purchase-orders?filter=${f.id}`}
             aria-current={f.id === filter ? "page" : undefined}
             className={cn(
               "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12.5px] font-medium transition-colors duration-150",
@@ -75,8 +76,14 @@ async function PoList({ searchParams }: Pick<PageProps<"/purchase-orders">, "sea
       {data.pos.length === 0 ? (
         <EmptyState
           icon={FileText}
-          title={filter === "awaiting" ? "Nothing waiting for the Owner" : "No purchase orders here yet"}
-          description={filter === "awaiting" ? "POs above the approval limit appear here until the Owner approves or rejects them." : "Approve lines on a purchase plan to create purchase orders."}
+          title={filter === "awaiting" ? "Nothing waiting for the Owner" : filter === "pharmaos" ? "No PharmaOS purchase orders yet" : "No purchase orders here yet"}
+          description={
+            filter === "awaiting"
+              ? "POs above the approval limit appear here until the Owner approves or rejects them."
+              : filter === "pharmaos"
+                ? "Create a plan, then run the procurement agents or approve its lines: one PO per supplier appears here. The stockist's earlier purchases are under Earlier purchases."
+                : "Approve lines on a purchase plan to create purchase orders."
+          }
         />
       ) : (
         <section className="surface overflow-hidden">
