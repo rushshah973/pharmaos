@@ -13,26 +13,26 @@ const STEPS = [
   {
     icon: LineChart,
     title: "Forecast demand",
-    text: "An ML model trained on the sales history predicts packs per day for the next 14 days. Where it doesn't beat the simple average for a medicine, PharmaOS says so and uses the average.",
-    stat: "14.0% vs 16.9% 14-day error (backtest)",
+    text: "Predicts packs per day for the next 14 days.",
+    stat: "14.0% error vs 16.9% before",
   },
   {
     icon: ClipboardList,
     title: "Plan reorders",
-    text: "Every SKU gets a reorder point and an order-by date. The plan lists what to buy today, most urgent first, with the cheapest supplier that can still deliver in time.",
-    stat: "500 SKUs analysed in about 2 seconds",
+    text: "What to buy today, most urgent first.",
+    stat: "500 SKUs in about 2 seconds",
   },
   {
     icon: FileCheck2,
     title: "Approve & send",
-    text: "One purchase order per supplier, with GST and freight. Orders up to ₹10,00,000 go out right away; anything larger waits for the Owner's approval.",
-    stat: "₹10,00,000 per-PO Owner limit",
+    text: "One PO per supplier, sent automatically.",
+    stat: "Above ₹10 L waits for the Owner",
   },
   {
     icon: PackageCheck,
     title: "Receive stock",
-    text: "When the delivery arrives, book each line with its batch, expiry and bin. Short-dated stock is refused and the bin is checked for space before stock lands.",
-    stat: "Expiry under 90 days is refused",
+    text: "Batch, expiry and bin, straight onto the shelf.",
+    stat: "Short-dated stock refused",
   },
 ];
 
@@ -44,7 +44,7 @@ export function Tour() {
 
   return (
     <section id="how-it-works" className="mx-auto max-w-[1240px] px-6 pt-32">
-      <SectionHeading eyebrow="How it works" title="From sales history to stock on the shelf, in four steps" lead="The same four steps every morning. The engine does the maths; you see why, and you stay in control." />
+      <SectionHeading eyebrow="How it works" title="Four steps, every morning" />
 
       {/* Wide screens: sticky demo, steps scroll past. */}
       <div ref={ref} className="relative mt-14 hidden h-[340vh] lg:block">
@@ -143,7 +143,7 @@ function ForecastDemo() {
         <text x={W - 70} y="24" fill="#ff8d4d" fontSize="11">Forecast</text>
       </svg>
       <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.6 }} className="text-[12px] text-fg-3">
-        Trained on the history, tested on 14 days it never saw. 492 of 500 SKUs use it; the rest keep the average.
+        Tested on 14 days it never saw.
       </motion.p>
     </div>
   );
@@ -178,7 +178,7 @@ function PlanDemo() {
         ))}
       </div>
       <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.1 }} className="mt-4 text-[12px] text-fg-3">
-        Order-by date = the day stock reaches the reorder point at forecast demand, so you order before the shelf is empty.
+        Ordered before the shelf is empty.
       </motion.p>
     </div>
   );
@@ -195,7 +195,7 @@ function SendDemo() {
         <PoRow no="PO-1016" sup="Padmavati Pharma Agencies" amt="₹11,00,151" owner sendAt={2.6} />
       </div>
       <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 3.2 }} className="mt-4 text-[12px] text-fg-3">
-        Sending is simulated in this demo: nothing is emailed. Every step is in the activity log.
+        Simulated: nothing is emailed.
       </motion.p>
     </div>
   );
