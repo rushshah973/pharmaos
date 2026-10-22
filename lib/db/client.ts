@@ -14,17 +14,19 @@ export function getSql(): Sql {
     throw new Error("DATABASE_URL is not set. Copy .env.example to .env.local and fill it in.");
   }
 
+  // Supabase's session pooler (port 5432) gives each app connection its own database client and allows only
+  // pool_size of them at once (15 on the free tier). A long-lived local server keeps 4. On Vercel every
+  // function instance has its own pool, so each keeps at most 2 and lets idle ones go after 5 s and every
+  // one go after a minute; otherwise a few instances fill the pooler (EMAXCONNSESSION) and pages fail.
+  // Do not use the transaction pooler (port 6543): postgres.js queries get stuck on it mid-query.
+  // Prepared statements stay on: without them every parameterised query costs an extra round trip.
+  const serverless = Boolean(process.env.VERCEL);
   const sql = postgres(url, {
-    // Small on purpose: with prepared statements, parallel reads pipeline on few connections, and each
-    // new connection must prepare every statement once (slow to a far-away database).
-    max: 4,
-    // Use Supabase's session pooler (port 5432); parallel queries hang on the transaction pooler (6543).
-    // Prepared statements stay on (the session pooler supports them): without them every parameterised
-    // query costs an extra round trip and stops pipelining, which is ~10× slower to a far-away database.
+    max: serverless ? 2 : 4,
     prepare: true,
-    // Close idle connections after 20 s and give up connecting after 15 s: the pooler / network drops idle
-    // sockets, and a dead pooled connection otherwise hangs a request until the OS read timeout.
-    idle_timeout: 20,
+    idle_timeout: serverless ? 5 : 20,
+    ...(serverless ? { max_lifetime: 60 } : {}),
+    // Give up connecting after 15 s, so a dead pooled connection never hangs a request.
     connect_timeout: 15,
   });
 
