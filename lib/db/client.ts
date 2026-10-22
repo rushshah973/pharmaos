@@ -25,10 +25,11 @@ export function getSql(): Sql {
   const url = serverless && process.env.DATABASE_POOLER !== "session" ? transactionPoolerUrl(raw) : raw;
   const transactionMode = /:6543(\/|$)/.test(url);
   const sql = postgres(url, {
-    max: serverless ? 2 : 4,
+    max: transactionMode ? 10 : serverless ? 2 : 4,
     prepare: !transactionMode,
     idle_timeout: serverless ? 5 : 20,
     ...(serverless ? { max_lifetime: 60 } : {}),
+    ...(transactionMode ? ({ max_pipeline: 1 } as unknown as postgres.Options<Record<string, never>>) : {}),
     // Give up connecting after 15 s, so a dead pooled connection never hangs a request.
     connect_timeout: 15,
   });
