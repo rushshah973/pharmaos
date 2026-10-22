@@ -124,9 +124,9 @@ export function AgentRunPanel({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-[640px] max-w-[calc(100vw-2rem)] gap-0 overflow-y-auto border-l border-border-strong bg-[rgba(18,18,21,0.92)] p-0 shadow-(--shadow-pop) backdrop-blur-2xl data-[side=right]:sm:max-w-[640px]"
+        className="w-[640px] max-w-[calc(100vw-2rem)] gap-0 overflow-y-auto border-l border-border-strong bg-[rgba(14,12,36,0.92)] p-0 shadow-(--shadow-pop) backdrop-blur-2xl data-[side=right]:sm:max-w-[640px]"
       >
-        <header className="sticky top-0 z-10 border-b border-white/[0.06] bg-[rgba(18,18,21,0.85)] px-6 pt-5 pb-4 backdrop-blur-xl">
+        <header className="sticky top-0 z-10 border-b border-white/[0.06] bg-[rgba(14,12,36,0.85)] px-6 pt-5 pb-4 backdrop-blur-xl">
           <div className="flex items-center gap-2.5 pr-8">
             <span className="glass-pill flex size-8 items-center justify-center text-brand">
               <Bot className="size-4" strokeWidth={1.6} aria-hidden />

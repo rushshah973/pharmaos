@@ -7,7 +7,7 @@ export function LogoMark({ size = 24, className }: { size?: number; className?: 
       <defs>
         <linearGradient id="pharmaos-mark" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse">
           <stop stopColor="#FFFFFF" />
-          <stop offset="1" stopColor="#34D36E" />
+          <stop offset="1" stopColor="#A597FF" />
         </linearGradient>
       </defs>
       {[0, 1, 2, 3, 4].map((i) => {

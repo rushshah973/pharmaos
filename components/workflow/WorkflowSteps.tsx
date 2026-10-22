@@ -59,7 +59,7 @@ export function WorkflowRail({ steps, current }: { steps: RailStep[]; current: S
                   className={cn(
                     "flex size-9 shrink-0 items-center justify-center rounded-full text-[13px] font-medium",
                     state === "done" && "bg-healthy/15 text-healthy ring-1 ring-healthy/30",
-                    state === "current" && "bg-brand text-black shadow-[0_0_24px_rgba(52,211,110,0.55)]",
+                    state === "current" && "bg-brand text-black shadow-[0_0_24px_rgba(157,140,255,0.6)]",
                     state === "next" && "bg-white/[0.06] text-fg-2 ring-1 ring-white/10",
                   )}
                 >
