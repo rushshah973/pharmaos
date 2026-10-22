@@ -29,7 +29,7 @@ import { apiCall, errorMessage } from "@/lib/api/client";
 import type { WarningCode } from "@/lib/business-logic/types";
 import { REASON_ORDER, REASON_TEXT, WARNING_TEXT } from "@/lib/format/codes";
 import { formatINR, sumMoney } from "@/lib/money";
-import type { LineView, PlanStatus } from "@/lib/services/plans";
+import type { LineView, OnOrderItem, PlanStatus } from "@/lib/services/plans";
 import { requestLine } from "./drawer/line-store";
 import { ApproveDialog } from "./ApproveDialog";
 import { ReasonDialog, type ReasonTarget } from "./ReasonDialog";
@@ -75,12 +75,15 @@ export function PlanTable({
   planStatus,
   lines,
   approvalLimit,
+  onOrder = [],
   children,
 }: {
   planId: string;
   planStatus: PlanStatus;
   lines: LineView[];
   approvalLimit: string;
+  /** Lines on POs from earlier plans, by SKU: a line here is only a top-up on top of them. */
+  onOrder?: OnOrderItem[];
   /** Rendered between the table and the selection footer (the "Not in this plan" list). */
   children?: React.ReactNode;
 }) {
@@ -91,6 +94,11 @@ export function PlanTable({
   const locked = planStatus === "approved" || planStatus === "rejected";
 
   const rows = useMemo(() => [...lines].sort((a, b) => a.rank - b.rank), [lines]);
+  const onOrderBySku = useMemo(() => {
+    const m = new Map<string, OnOrderItem[]>();
+    for (const i of onOrder) m.set(i.productId, [...(m.get(i.productId) ?? []), i]);
+    return m;
+  }, [onOrder]);
   const pickable = rows.filter(selectable);
   // Drop selections of lines that are no longer selectable (after a refresh).
   const chosen = rows.filter((l) => selected.has(l.id) && selectable(l));
@@ -161,6 +169,7 @@ export function PlanTable({
                 <PlanRow
                   key={l.id}
                   line={l}
+                  onOrder={onOrderBySku.get(l.productId)}
                   planId={planId}
                   locked={locked}
                   checked={selected.has(l.id)}
@@ -183,6 +192,7 @@ export function PlanTable({
 
 function PlanRow({
   line: l,
+  onOrder,
   planId,
   locked,
   checked,
@@ -191,6 +201,7 @@ function PlanRow({
   onOpen,
 }: {
   line: LineView;
+  onOrder?: OnOrderItem[];
   planId: string;
   locked: boolean;
   checked: boolean;
@@ -234,6 +245,15 @@ function PlanRow({
             ) : (
               <Tag className="border-healthy/30 text-healthy">On PO</Tag>
             ))}
+          {onOrder && onOrder.length > 0 && (
+            <Link
+              href={`/purchase-orders/${onOrder[0].poId}`}
+              title={`Already on order: ${onOrder.map((i) => `${i.poNumber} (${i.qty} packs)`).join(", ")}. Counted as incoming, so this line is only a top-up.`}
+              className="rounded border border-excess/30 px-1.5 font-mono text-[10.5px] leading-4 font-medium text-excess hover:bg-excess-bg"
+            >
+              +{onOrder.reduce((n, i) => n + i.qty, 0)} on order
+            </Link>
+          )}
         </div>
         <div className="max-w-[168px] truncate text-[12.5px] text-fg-2" title={`${l.brandName} · ${l.strength} · ${l.packSize}/pack`}>
           {l.brandName} · {l.strength} · {l.packSize}/pack

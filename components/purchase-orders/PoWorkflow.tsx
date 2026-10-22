@@ -41,7 +41,7 @@ export function PoWorkflow({ pipeline, approvalLimit }: { pipeline: PoPipeline; 
       n: 4,
       icon: Send,
       title: "Send to supplier",
-      text: "Marks the PO as sent to its supplier (simulated, nothing is emailed). It then counts as incoming stock.",
+      text: "Marks the PO as sent to its supplier (simulated, nothing is emailed). From step 2 on, new plans already count its stock as on order.",
       count: pipeline.sent,
       unit: "sent (simulated)",
       href: "/purchase-orders?filter=sent",

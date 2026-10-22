@@ -105,7 +105,21 @@ export type LineView = {
   poStatus: string | null;
 };
 
-export type PlanView = PlanSummary & { lines: LineView[] };
+/** A line on a PharmaOS PO from ANOTHER plan that is not yet received (ready → sent): stock this plan counts as on order. */
+export type OnOrderItem = {
+  productId: string;
+  sku: string;
+  brandName: string;
+  strength: string;
+  poId: string;
+  poNumber: string;
+  poStatus: "ready" | "pending_approval" | "approved" | "sent";
+  supplierName: string;
+  qty: number;
+  expectedDeliveryDate: string | null;
+};
+
+export type PlanView = PlanSummary & { lines: LineView[]; alreadyOnOrder: OnOrderItem[] };
 export type LineWithEvidence = LineView & { evidence: Record<string, unknown>; dataSource: string };
 
 const COUNTED_STATUSES: ReadonlySet<RecommendationStatus> = new Set(["proposed", "edited", "approved_for_po"]);
@@ -273,10 +287,26 @@ function toLineView(r: LineRow): LineView {
 }
 
 export async function getPlan(planId: string, sql: SqlHandle = getSql()): Promise<PlanView> {
-  const [plan, rows] = await Promise.all([selectPlan(sql, planId), selectLines(sql, planId)]);
+  const [plan, rows, alreadyOnOrder] = await Promise.all([selectPlan(sql, planId), selectLines(sql, planId), selectOnOrder(sql, planId)]);
   if (!plan) throw notFound("Plan", planId);
   const lines = rows.map(toLineView);
-  return { ...summarize(plan, lines), lines };
+  return { ...summarize(plan, lines), lines, alreadyOnOrder };
+}
+
+/** PharmaOS PO lines from other plans that are not yet received: the plan engine counts them as incoming stock. */
+function selectOnOrder(sql: SqlHandle, planId: string) {
+  return sql<OnOrderItem[]>`
+    select l.product_id as "productId", p.sku, p.brand_name as "brandName", p.strength,
+      po.id as "poId", po.po_number as "poNumber", po.status as "poStatus", s.name as "supplierName",
+      l.quantity_packs as qty, to_char(po.expected_delivery_date, 'YYYY-MM-DD') as "expectedDeliveryDate"
+    from purchase_order_lines l
+    join purchase_orders po on po.id = l.po_id
+    join products p on p.id = l.product_id
+    join suppliers s on s.id = po.supplier_id
+    where po.source_plan_id is not null and po.source_plan_id <> ${planId}
+      and po.status in ('ready', 'pending_approval', 'approved', 'sent')
+    order by p.sku, po.po_number
+  `.execute();
 }
 
 export type PlanListItem = {
@@ -482,9 +512,10 @@ export async function analyseOne(
   sql: SqlHandle,
   productId: string,
   state: PlanningState,
-  override?: DemandOverride | null,
+  override: DemandOverride | null | undefined,
+  planId: string,
 ): Promise<{ sku: SkuContext; analysis: SkuAnalysis }> {
-  const ctx = await loadPlanningContext(sql, state.asOf, state.scenarioId, productId);
+  const ctx = await loadPlanningContext(sql, state.asOf, state.scenarioId, productId, { excludePlanId: planId });
   const sku = ctx.skus[0];
   if (!sku) throw new ServiceError("INVALID_SKU", 400, "The product is no longer active.");
   if (override) {
@@ -622,7 +653,7 @@ export async function editLine(
       action = change.status === "deferred" ? "line.deferred" : "line.rejected";
     } else {
       // qty, offer or restore: re-check against fresh data for this SKU, with the Demand Agent's method if one is saved.
-      const { sku, analysis } = await analyseOne(tx, before.productId, state, change.kind === "restore" ? null : await lineOverride(tx, lineId));
+      const { sku, analysis } = await analyseOne(tx, before.productId, state, change.kind === "restore" ? null : await lineOverride(tx, lineId), planId);
       const { asOf } = state;
       const supplierOf = (o: OfferInput) => sku.suppliers[o.supplierId];
       const engineOfferId = analysis.chosen?.offerId ?? null;
@@ -747,10 +778,11 @@ export async function recalculatePlan(planId: string, opts: { actor?: Actor } = 
 
   return sql.begin(async (tx) => {
     const t0 = performance.now();
-    const [plan, lineRows, { asOf, scenarioId, approvalLimit }] = await Promise.all([
+    const [plan, lineRows, { asOf, scenarioId, approvalLimit }, alreadyOnOrder] = await Promise.all([
       selectPlan(tx, planId, true),
       selectLines(tx, planId),
       resolvePlanningState(tx),
+      selectOnOrder(tx, planId),
     ]);
     if (!plan) throw notFound("Plan", planId);
     if (LOCKED_PLAN.has(plan.status)) {
@@ -758,7 +790,7 @@ export async function recalculatePlan(planId: string, opts: { actor?: Actor } = 
     }
 
     const beforeLines = lineRows.map(toLineView);
-    const ctx = await loadPlanningContext(tx, asOf, scenarioId);
+    const ctx = await loadPlanningContext(tx, asOf, scenarioId, undefined, { excludePlanId: planId });
     const skuById = new Map(ctx.skus.map((s) => [s.product.id, s]));
 
     // Partition the saved lines (§7.5): approved lines are frozen, rejected and owner-deferred lines stay as they are,
@@ -869,7 +901,7 @@ export async function recalculatePlan(planId: string, opts: { actor?: Actor } = 
       `[plans] recalculatePlan ${planId}: ₹${total}, ${changed.length} lines changed, ${impact.posNeedingApproval} POs above the limit, in ${Math.round(performance.now() - t0)} ms`,
     );
 
-    return { ...summarize(saved!, afterLines), lines: afterLines };
+    return { ...summarize(saved!, afterLines), lines: afterLines, alreadyOnOrder };
   });
 }
 
@@ -952,7 +984,7 @@ export async function applyDemandDecision(
     const beforeSnap = snap(ev?.method ?? "baseline", ev?.d ?? null, before);
     if ((ev?.method ?? "baseline") === decision.method) return { changed: false, before: beforeSnap, after: beforeSnap };
 
-    const { sku, analysis: a } = await analyseOne(tx, before.productId, state, decision);
+    const { sku, analysis: a } = await analyseOne(tx, before.productId, state, decision, planId);
     const offer = a.chosen ? sku.offers.find((o) => o.id === a.chosen!.offerId) : undefined;
     const buy = !!(a.candidate && offer && a.totals && a.qty > 0);
     const supplier = offer ? sku.suppliers[offer.supplierId] : undefined;

@@ -55,7 +55,7 @@ export function PoTimeline({ po }: { po: PoDetail }) {
       title: "Delivery",
       state: sent ? "current" : "todo",
       detail: po.expectedDeliveryDate
-        ? `Expected ${formatDisplayDate(po.expectedDeliveryDate)}${sent ? " · counts as incoming stock in new plans" : ""}`
+        ? `Expected ${formatDisplayDate(po.expectedDeliveryDate)}${sent || (po.sourcePlanId && !rejected) ? " · counted as on order in new plans" : ""}`
         : "No date yet",
     },
   ];

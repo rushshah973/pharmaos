@@ -4,14 +4,18 @@ import { ENGINE_CONFIG, type EngineConfig } from "./config";
 import { addDays } from "./dates";
 import type { IncomingInput, IsoDate, SkuStatus } from "./types";
 
+/** PO statuses whose stock is already on order: seeded 'open', and PharmaOS POs from 'ready' up to 'sent'. */
+export const ON_ORDER_STATUSES = ["open", "ready", "pending_approval", "approved", "sent"] as const;
+const ON_ORDER: ReadonlySet<string> = new Set(ON_ORDER_STATUSES);
+
 /**
- * Σ packs (+ free) on POs with status 'open' (seeded) or 'sent' (PharmaOS, simulated) expected on or before
- * asOf + planning horizon. Received / cancelled POs never count; unsent PharmaOS POs are never passed in.
+ * Σ packs (+ free) on POs already placed (ON_ORDER_STATUSES) expected on or before asOf + planning horizon.
+ * Received, cancelled and rejected POs never count.
  */
 export function confirmedIncoming(incoming: IncomingInput[], asOf: IsoDate, config: EngineConfig = ENGINE_CONFIG): number {
   const horizonEnd = addDays(asOf, config.planningHorizonDays);
   return incoming
-    .filter((i) => (i.status === "open" || i.status === "sent") && i.expectedDeliveryDate <= horizonEnd)
+    .filter((i) => ON_ORDER.has(i.status) && i.expectedDeliveryDate <= horizonEnd)
     .reduce((sum, i) => sum + i.quantityPacks + i.freeQty, 0);
 }
 

@@ -256,7 +256,7 @@ export const TOOLS: Tool[] = [
       const lines = p.lines.filter((l) => lineIds.includes(l.id));
       if (lines.length === 0) throw new ServiceError("LINE_NOT_FOUND", 404, "None of those lines are in this plan.");
       const state = await resolvePlanningState();
-      const ctx = await loadPlanningContext(getSql(), state.asOf, state.scenarioId, [...new Set(lines.map((l) => l.productId))]);
+      const ctx = await loadPlanningContext(getSql(), state.asOf, state.scenarioId, [...new Set(lines.map((l) => l.productId))], { excludePlanId: planId });
       const byId = new Map(ctx.skus.map((s) => [s.product.id, s]));
       return {
         data: {

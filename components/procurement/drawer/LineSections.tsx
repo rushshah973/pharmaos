@@ -60,7 +60,7 @@ export function StockSection({ detail }: { detail: LineDetail }) {
         <Figure label="On hand" value={packs(stock.onHand)} note="eligible batches" />
         <Figure label="Reserved" value={packs(stock.reserved)} note="for open orders" />
         <Figure label="Available" value={packs(stock.available)} note="sells before expiry" />
-        <Figure label="Incoming" value={packs(stock.incoming)} note={`${stock.incomingLines.filter((l) => l.status === "open").length} open PO line(s)`} />
+        <Figure label="Incoming" value={packs(stock.incoming)} note={`${stock.incomingLines.length} PO line(s) on order`} />
       </div>
       <div className="grid grid-cols-4 gap-4 px-1">
         <Figure label="Position" value={packs(stock.position)} note="available + incoming" />

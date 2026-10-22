@@ -132,10 +132,12 @@ export type BalanceInput = {
   reservedQty: number;
 };
 
-/** A line on a confirmed PO: seeded external 'open', or a PharmaOS PO once 'sent'. Unsent PharmaOS POs are never passed here. */
+/** A line on a PO already placed: seeded external 'open', or a PharmaOS PO that is ready, pending approval, approved or sent. */
 export type IncomingInput = {
   poId: string;
-  status: "open" | "received" | "cancelled" | "sent"; // 'sent' = a PharmaOS PO marked sent (simulated)
+  poNumber?: string;
+  // 'open' = seeded external PO; the rest are PharmaOS POs ('sent' is simulated)
+  status: "open" | "received" | "cancelled" | "sent" | "ready" | "pending_approval" | "approved";
   expectedDeliveryDate: IsoDate;
   quantityPacks: number;
   freeQty: number;

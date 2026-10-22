@@ -127,6 +127,6 @@ export async function analyseLine(planId: string, lineId: string, sql: SqlHandle
   ]);
   if (!line) throw new ServiceError("LINE_NOT_FOUND", 404, `Line ${lineId} is not in this plan.`);
   const override = line.d?.method ? { method: line.d.method, reason: line.d.reason ?? "" } : null;
-  const { sku, analysis } = await analyseOne(sql, line.productId, state, override);
+  const { sku, analysis } = await analyseOne(sql, line.productId, state, override, planId);
   return { line, sku, analysis, override, state };
 }

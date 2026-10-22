@@ -27,12 +27,16 @@ function groupBy<T>(rows: T[], key: (r: T) => string): Map<string, T[]> {
   return m;
 }
 
-/** `productId` limits the context to one SKU or a list of SKUs (suppliers are always all loaded). */
+/**
+ * `productId` limits the context to one SKU or a list of SKUs (suppliers are always all loaded). `excludePlanId`
+ * leaves that plan's own POs out of incoming stock, so a plan's lines are never "covered" by the POs made from them.
+ */
 export async function loadPlanningContext(
   sql: SqlHandle,
   asOf: IsoDate,
   scenarioId: string,
   productId?: string | string[],
+  opts: { excludePlanId?: string } = {},
 ): Promise<PlanningContext> {
   const [products, suppliers, offers, sales, firstSales, batches, balances, incoming, latestModel] = await Promise.all([
     listActiveProducts(sql, productId),
@@ -42,7 +46,7 @@ export async function loadPlanningContext(
     listFirstSaleDates(sql, asOf, productId),
     listBatches(sql, productId),
     listBalances(sql, productId),
-    listOpenIncoming(sql, productId),
+    listOpenIncoming(sql, productId, opts.excludePlanId),
     loadLatestModel(sql),
   ]);
 
@@ -69,6 +73,7 @@ export async function loadPlanningContext(
     })),
     incoming: (incomingBy.get(product.id) ?? []).map((i) => ({
       poId: i.poId,
+      poNumber: i.poNumber,
       status: i.status,
       expectedDeliveryDate: i.expectedDeliveryDate,
       quantityPacks: i.quantityPacks,

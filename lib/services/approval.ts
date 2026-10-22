@@ -124,7 +124,7 @@ export async function approveLines(
     }
 
     // 4. Re-check every line against FRESH data and every hard stop.
-    const ctx = await loadPlanningContext(tx, state.asOf, state.scenarioId, [...new Set(lines.map((l) => l.product_id))]);
+    const ctx = await loadPlanningContext(tx, state.asOf, state.scenarioId, [...new Set(lines.map((l) => l.product_id))], { excludePlanId: planId });
     const skuById = new Map(ctx.skus.map((s) => [s.product.id, s]));
     const failures: { lineId: string; sku: string; codes: HardStopCode[] }[] = [];
     const priced: { line: LineRow; offer: OfferInput; totals: LineTotals; supplierId: string; lead: number }[] = [];

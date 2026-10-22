@@ -8,6 +8,7 @@ import { ErrorState } from "@/components/layout/ErrorState";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ImpactCard } from "@/components/procurement/ImpactCard";
 import { type DrawerPayload, LineDrawer } from "@/components/procurement/drawer/LineDrawer";
+import { AlreadyOnOrderList } from "@/components/procurement/AlreadyOnOrderList";
 import { NotInPlanList } from "@/components/procurement/NotInPlanList";
 import { PlanStatusPill } from "@/components/procurement/PlanStatusPill";
 import { PlanTable } from "@/components/procurement/PlanTable";
@@ -101,8 +102,9 @@ async function Plan({ params }: { params: PageProps<"/procurement/[planId]">["pa
       <PlanSummaryCard key={plan.id} planId={plan.id} initial={plan.aiSummary} />
       <ImpactCard impact={plan.impact} approvalLimit={plan.approvalLimit} />
       <SupplierPoStrip pos={plan.supplierPos} approvalLimit={plan.approvalLimit} />
-      <PlanTable planId={plan.id} planStatus={plan.status} lines={inPlan} approvalLimit={plan.approvalLimit}>
+      <PlanTable planId={plan.id} planStatus={plan.status} lines={inPlan} approvalLimit={plan.approvalLimit} onOrder={plan.alreadyOnOrder}>
         <NotInPlanList planId={plan.id} planStatus={plan.status} lines={notInPlan} />
+        <AlreadyOnOrderList items={plan.alreadyOnOrder} lines={plan.lines} />
       </PlanTable>
     </div>
   );

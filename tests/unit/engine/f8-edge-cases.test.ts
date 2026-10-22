@@ -38,6 +38,17 @@ describe("F8 edge cases", () => {
     expect(confirmedIncoming(incoming, AS_OF)).toBe(32);
   });
 
+  it("unsent PharmaOS POs (ready, awaiting the Owner, approved) count as on order, so a new plan does not buy the same stock again", () => {
+    const d = addDaysUtc(AS_OF, 5);
+    const incoming = [
+      makeIncoming({ poId: "r", status: "ready", expectedDeliveryDate: d, quantityPacks: 10 }),
+      makeIncoming({ poId: "p", status: "pending_approval", expectedDeliveryDate: d, quantityPacks: 20 }),
+      makeIncoming({ poId: "a", status: "approved", expectedDeliveryDate: d, quantityPacks: 30 }),
+      makeIncoming({ poId: "s", status: "sent", expectedDeliveryDate: d, quantityPacks: 40 }),
+    ];
+    expect(confirmedIncoming(incoming, AS_OF)).toBe(100);
+  });
+
   it("reserved stock is subtracted exactly once", () => {
     const batches = [makeBatch({ id: "b1" })];
     const balances = [

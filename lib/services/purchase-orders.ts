@@ -1,6 +1,6 @@
 // Owner approval and (simulated) sending of PharmaOS purchase orders (implementationplan.md §7.6a).
 // Each action is one transaction with the PO row locked. Sending is SIMULATED: no email, no API call —
-// nothing leaves the app; a sent PO only changes status and then counts as incoming stock in later plans.
+// nothing leaves the app; a sent PO only changes status. From 'ready' on, its stock counts as on order in later plans.
 import type postgres from "postgres";
 import { ServiceError } from "@/lib/api/errors";
 import { getSql } from "@/lib/db/client";
