@@ -159,7 +159,8 @@ up the active scenario.
   to SUP-02 and kept 14 lines; that switch cut the order from 880 to 15 packs and is now refused by a guardrail
   (`QTY_CUT_TOO_FAR`), so expect it as a rejected decision instead.
 - **Order Agent** validates the lines and creates POs through the same approval service as the Approve button:
-  **Ready** up to ₹10,00,000, **Pending approval** above it. It cannot send or Owner-approve.
+  POs up to ₹10,00,000 are then **sent automatically** (simulated, nothing is emailed) and show as **Sent** in Orders;
+  POs above it wait for the Owner and are sent as soon as the Owner approves. No AI can Owner-approve.
 
 **Timing:** a run takes 40–100 seconds. The panel opens with how it works, then shows each agent's one-line result
 ("Checked 15 medicines · changed 10 forecasts", "Created 6 purchase orders · none need the Owner"); only the lines an
@@ -217,9 +218,9 @@ only where it wins for a SKU (492 of 500), and each drawer shows both errors, in
 
 **2. "What can the AI agents actually do? Could they buy something by mistake?"**
 They choose a forecast method per SKU (never a number), switch to a supplier offer that passes every check, and
-create POs through the same approval code as the human button: idempotent and audited. They cannot send a PO,
-Owner-approve one, reject a plan or change the approval limit; those tools don't exist for any AI. Sending is
-simulated, so nothing leaves the app. If Gemini fails or is slow, the agents change nothing and a person approves by hand.
+create POs through the same approval code as the human button: idempotent and audited. POs within the ₹10 L limit
+are then sent automatically (simulated: nothing leaves the app); anything larger waits for the Owner. No AI can
+Owner-approve a PO, reject a plan or change the approval limit; those tools don't exist for any AI. If Gemini fails or is slow, the agents change nothing and a person approves by hand.
 
 **3. "Why is there no purchase budget?"**
 The engine orders what each SKU needs to avoid a stockout, ranked by loss prevented per rupee. The Owner controls
