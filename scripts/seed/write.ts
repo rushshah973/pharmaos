@@ -79,7 +79,7 @@ export async function writeDataset(
     await tx`
       update app_state set
         active_scenario_id = 'baseline',
-        po_approval_limit = 400000,
+        po_approval_limit = 1000000,
         as_of_date = null,
         synthetic_seed = ${data.meta.seed},
         seeded_at = now(),

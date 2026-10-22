@@ -190,7 +190,7 @@ export const TOOLS: Tool[] = [
   }),
   tool({
     name: "get_po_projection",
-    description: "The purchase order each supplier would get if every counted line of the plan were approved: lines, total, and whether it is above the Owner approval limit (₹4,00,000 by default).",
+    description: "The purchase order each supplier would get if every counted line of the plan were approved: lines, total, and whether it is above the Owner approval limit (₹10,00,000 by default; editable).",
     schema: z.object({ planId }),
     handler: async ({ planId }) => {
       const p = await getPlan(planId);

@@ -90,4 +90,4 @@ for (const m of methods) {
   const a = acc[m];
   console.log(`${m.padEnd(31)} ${pct(a.rate, a.total).padStart(12)}             ${pct(a.bias, a.total).padStart(6)}   ${pct(a.realised, a.total).padStart(12)}        ${pct(a.daily, a.dailyTotal).padStart(8)}`);
 }
-console.log("\nDaily error stays near 50% for every method: daily demand is random (Poisson) around the rate.");
+console.log("\nDaily error stays far above the 14-day error for every method: daily demand is random (Poisson) around the rate.");

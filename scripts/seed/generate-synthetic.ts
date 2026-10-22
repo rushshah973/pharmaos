@@ -220,11 +220,12 @@ export type GenerateOptions = {
 
 export const PRODUCT_COUNT = 500;
 export const SALES_DAYS = 90;
-/** Demo capacity proxy per bin, in packs (sized so 500 SKUs fit in 240 bins). */
-const BIN_CAPACITY = { min: 250, max: 1000 };
-const MEDIAN_PACKS_PER_DAY = 4;
-const MIN_PACKS_PER_DAY = 0.5;
-const MAX_PACKS_PER_DAY = 30;
+/** Demo capacity proxy per bin, in packs (sized so 500 SKUs at about three weeks of stock fit in 240 bins). */
+const BIN_CAPACITY = { min: 800, max: 2000 };
+/** A mid-size stockist: about ₹15–20 Cr of purchases a year across 500 SKUs. */
+const MEDIAN_PACKS_PER_DAY = 12;
+const MIN_PACKS_PER_DAY = 1.5;
+const MAX_PACKS_PER_DAY = 90;
 const DEFAULT_ZERO_DAY_SHARE = 0.6;
 const RISK_WINDOW_DAYS = 90;
 const SHORT_DATED_CAP = 0.15;
@@ -503,7 +504,7 @@ export function generate(profile: Profile, asOf: string, seed = 42, options: Gen
   for (const p of products) {
     const units: number[] = [];
     demandUnits.set(p.id, units);
-    const kind = rng.weighted([["stable", 0.4], ["intermittent", 0.2], ["growing", 0.15], ["declining", 0.15], ["spike", 0.1]] as const);
+    const kind = rng.weighted([["stable", 0.45], ["intermittent", 0.2], ["growing", 0.16], ["declining", 0.16], ["spike", 0.03]] as const);
     const base = clamp(MEDIAN_PACKS_PER_DAY * sampleFromQuantiles(rng, demandRatio), MIN_PACKS_PER_DAY, MAX_PACKS_PER_DAY);
     demandBySku[p.sku] = { kind, basePacksPerDay: Math.round(base * 100) / 100 };
     for (let t = 0; t < SALES_DAYS; t++) {
@@ -609,8 +610,12 @@ export function generate(profile: Profile, asOf: string, seed = 42, options: Gen
     const soldHistory: number[] = [];
     const orderUp = (packs: number) => Math.max(usual.moq, Math.ceil(packs / usual.pack_multiple) * usual.pack_multiple);
 
-    // Opening stock: 10–30 days of cover in 1–2 lots received over the previous months.
-    const opening = Math.round(base * rng.int(10, 30));
+    // Opening stock: 20–40 days of cover in 1–2 lots received over the previous months.
+    const opening = Math.round(base * rng.int(20, 40));
+    // Manual ordering is inconsistent: each SKU has its own trigger (4–14 days of cover beyond the lead time) and
+    // top-up level (25–40 days), so on any day some SKUs are already short of what a planner would want.
+    const triggerDays = rng.int(4, 14);
+    const topUpDays = rng.int(25, 40);
     const lots = opening > 20 && rng.chance(0.5) ? 2 : 1;
     for (let k = 0; k < lots; k++) {
       const batch = makeBatch(p, usual, -rng.int(10, 120), rng.chance(shortShare));
@@ -640,8 +645,8 @@ export function generate(profile: Profile, asOf: string, seed = 42, options: Gen
       }
       salesHistory.push({ product_id: p.id, sale_date: today, units_sold: sold, data_source: DATA_SOURCE });
       soldHistory.push(sold);
-      // 3. Review days: the owner's rule of thumb — if stock + on order covers less than lead + 6 days of
-      //    recent sales, order up to two weeks beyond the lead time. Busy days mean ~10% of reviews are missed.
+      // 3. Review days: the owner's rule of thumb — if stock + on order covers less than lead + this SKU's
+      //    trigger days of recent sales, order up to its top-up level. Busy days mean ~10% of reviews are missed.
       const dow = new Date(`${today}T00:00:00Z`).getUTCDay();
       if (!reviewDays.has(dow) || rng.chance(0.1)) continue;
       const recent = soldHistory.slice(-14);
@@ -650,8 +655,8 @@ export function generate(profile: Profile, asOf: string, seed = 42, options: Gen
       const onHand = sellable.reduce((n, bt) => n + (stockByBatch.get(bt.id) ?? 0), 0);
       const onOrder = myOrders.filter((o) => !o.cancelled && o.arrivalDay > t).reduce((n, o) => n + o.qty, 0);
       const lead = usual.lead_time_days;
-      if (onHand + onOrder >= avg * (lead + 6)) continue;
-      const qty = Math.min(usual.available_qty, orderUp(avg * (lead + 14) - onHand - onOrder));
+      if (onHand + onOrder >= avg * (lead + triggerDays)) continue;
+      const qty = Math.min(usual.available_qty, orderUp(avg * (lead + topUpDays) - onHand - onOrder));
       if (qty <= 0) continue;
       const delay = rng.chance(lateChance) ? rng.int(1, 3) : 0;
       // Now and then an order is cancelled straight away (out of stock at the distributor); the next review re-orders.

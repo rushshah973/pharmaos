@@ -301,12 +301,14 @@ export function injectDemoCases(data: SyntheticDataset, seed = 42): DemoCases {
     }
   }
   reindex();
-  const moreStockout = pickProducts((pid) => ambientOrCool(pid) && !hasIncoming(pid) && eligibleOffers(idx, pid, asOf).length > 0, 9, "fast");
+  // Stockout risk on demo day is rare: the 3 fast SKUs above have a little stock left (less than their fastest
+  // delivery covers) and 2 more are already empty. The rest of the catalogue is mostly healthy.
+  const moreStockout = pickProducts((pid) => ambientOrCool(pid) && !hasIncoming(pid) && eligibleOffers(idx, pid, asOf).length > 0, 2, "fast");
   const stockout = [...fastWithTwoOffers, ...moreStockout];
   for (const pid of stockout) {
     used.add(pid);
     const s = skuState(data, idx, pid, asOf);
-    setEligibleStock(pid, Math.floor(s.dbar * s.lFastest * 0.4));
+    setEligibleStock(pid, moreStockout.includes(pid) ? 0 : Math.floor(s.dbar * s.lFastest * 0.5));
   }
   reindex();
 

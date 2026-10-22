@@ -98,3 +98,22 @@ export const runAgentsBody = z
 
 /** PATCH /api/settings: the Owner approval limit in rupees (a PO above it needs the Owner). */
 export const settingsBody = z.object({ poApprovalLimit: z.number().positive().max(1e9) }).strict();
+
+/** POST /api/purchase-orders/[id]/receive: what arrived, per line. */
+export const receiveBody = z
+  .object({
+    lines: z
+      .array(
+        z.object({
+          lineId: z.uuid(),
+          qty: z.number().int().min(0).max(1_000_000),
+          batchNumber: z.string().trim().max(24),
+          expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          binId: z.uuid(),
+        }),
+      )
+      .min(1)
+      .max(200),
+    note: z.string().trim().max(500).optional(),
+  })
+  .strict();

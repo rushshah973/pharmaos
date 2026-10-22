@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { analyseSku, buildPlan } from "@/lib/business-logic/engine";
 import { AS_OF, addDaysUtc, makeBalance, makeBatch, makeSku } from "@/tests/fixtures/engine";
 
-// d̄ = 9/day, offer lead 4, MOQ 20, pack 10 → ROP 63, target 126.
+// d̄ = 9/day, offer lead 4, MOQ 20, pack 10 → safety 45, ROP 81, target 207.
 // One batch of 100 packs whose sell-by date is `sellableDays` away: it sells 9 × sellableDays, the rest is at risk.
 function skuWithNearExpiryBatch(sellableDays: number) {
   return makeSku({
@@ -19,16 +19,16 @@ describe("expiry reduction", () => {
     expect(a.status).toBe("STOCKOUT_RISK");
     expect(a.expiry.atRiskQty).toBeCloseTo(82, 10);
     expect(a.reasons).not.toContain("EXPIRY_REDUCED_QTY");
-    expect(a.qty).toBe(110); // target 126 − 18 = 108 → 110
+    expect(a.qty).toBe(190); // target 207 − 18 = 189 → 190
     expect(a.warnings).toContain("AT_RISK_BATCHES");
     expect(a.expiryAvoidedValue).toBe("0.00");
   });
 
   it("a BELOW_ROP (not urgent) line with at-risk stock is still cut to ROP", () => {
-    const a = analyseSku(skuWithNearExpiryBatch(6)); // eligible 54 → cover 6 ≥ 4, 54 < ROP 63
+    const a = analyseSku(skuWithNearExpiryBatch(6)); // eligible 54 → cover 6 ≥ 4, 54 < ROP 81
     expect(a.status).toBe("BELOW_ROP");
     expect(a.reasons).toContain("EXPIRY_REDUCED_QTY");
-    expect(a.qty).toBe(20); // ROP 63 − 54 = 9 → 10 → MOQ 20 (full order would be 80)
+    expect(a.qty).toBe(30); // ROP 81 − 54 = 27 → 30 (full order would be 207 − 54 = 153 → 160)
     expect(a.expiryAvoidedValue).toBe("0.00"); // reduced quantity is not counted as expiry avoided
   });
 

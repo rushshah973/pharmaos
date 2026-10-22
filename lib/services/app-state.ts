@@ -1,4 +1,5 @@
 import type postgres from "postgres";
+import { ENGINE_CONFIG } from "@/lib/business-logic/config";
 import { getSql } from "@/lib/db/client";
 import { resolveAsOfDate } from "./as-of";
 
@@ -23,7 +24,7 @@ export async function getShellState(sql: postgres.Sql = getSql()): Promise<Shell
   return {
     scenarioId: row?.scenario_id ?? "baseline",
     scenarioName: row?.scenario_name ?? "Baseline",
-    approvalLimit: row?.approval_limit ?? "400000.00",
+    approvalLimit: row?.approval_limit ?? ENGINE_CONFIG.poApprovalLimit,
     asOf,
   };
 }

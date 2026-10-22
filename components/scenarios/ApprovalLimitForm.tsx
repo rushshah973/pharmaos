@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { apiCall, errorMessage } from "@/lib/api/client";
 import { formatINR } from "@/lib/money";
 
-/** The Owner approval limit (default ₹4,00,000): a supplier PO above it waits for the Owner. PATCH /api/settings. */
+/** The Owner approval limit (default ₹10,00,000): a supplier PO above it waits for the Owner. PATCH /api/settings. */
 export function ApprovalLimitForm({ current }: { current: string }) {
   const router = useRouter();
   const [, startTransition] = useTransition();

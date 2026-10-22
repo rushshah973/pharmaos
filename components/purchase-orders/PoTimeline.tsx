@@ -11,6 +11,7 @@ type StepState = "done" | "current" | "todo" | "skipped" | "failed";
 export function PoTimeline({ po }: { po: PoDetail }) {
   const rejected = po.status === "rejected";
   const sent = po.status === "sent";
+  const received = po.status === "received";
   const ownerDone = po.ownerDecision?.decision === "approved";
   const steps: { title: string; detail: React.ReactNode; state: StepState }[] = [
     {
@@ -42,9 +43,9 @@ export function PoTimeline({ po }: { po: PoDetail }) {
     },
     {
       title: `Sent to ${po.supplierName}`,
-      state: sent ? "done" : rejected ? "todo" : po.status === "ready" || po.status === "approved" ? "current" : "todo",
-      detail: sent
-        ? `${formatDateTime(po.sentAt!)} by ${po.sentBy} · simulated, nothing was emailed`
+      state: sent || received ? "done" : rejected ? "todo" : po.status === "ready" || po.status === "approved" ? "current" : "todo",
+      detail: (sent || received) && po.sentAt
+        ? `${formatDateTime(po.sentAt)} by ${po.sentBy} · simulated, nothing was emailed`
         : rejected
           ? "Will not be sent (rejected)"
           : po.status === "pending_approval"
@@ -52,11 +53,13 @@ export function PoTimeline({ po }: { po: PoDetail }) {
             : "Ready: press “Send to supplier (simulated)” above",
     },
     {
-      title: "Delivery",
-      state: sent ? "current" : "todo",
-      detail: po.expectedDeliveryDate
-        ? `Expected ${formatDisplayDate(po.expectedDeliveryDate)}${sent || (po.sourcePlanId && !rejected) ? " · counted as on order in new plans" : ""}`
-        : "No date yet",
+      title: received ? "Received" : "Delivery",
+      state: received ? "done" : sent ? "current" : "todo",
+      detail: received
+        ? `Received${po.receivedAt ? ` ${formatDateTime(po.receivedAt)}` : ""}${po.receivedBy ? ` by ${po.receivedBy}` : ""} · stock is in the warehouse`
+        : po.expectedDeliveryDate
+          ? `Expected ${formatDisplayDate(po.expectedDeliveryDate)}${sent || (po.sourcePlanId && !rejected) ? " · counted as on order in new plans" : ""}${sent ? " · press “Receive goods” when it arrives" : ""}`
+          : "No date yet",
     },
   ];
 

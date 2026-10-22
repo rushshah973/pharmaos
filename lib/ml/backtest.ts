@@ -1,9 +1,10 @@
 // §6.2a — WAPE, the averages, the ML blend and the deterministic default-method rule.
 //
 // Measured on the synthetic data against TRUE demand (npm run eval:forecast, 14-day totals, the quantity a plan
-// orders on): the old average 0.6·d7 + 0.4·d28 is noisy (15.5% error) and lags trends; the 28-day average is
-// steadier (13.3%); ML alone 12.0%; ML blended 50/50 with the trend-aware average below 11.3%. Daily error
-// cannot go much below ~50% here: daily demand is Poisson noise around the rate.
+// orders on; mid-size stockist volumes): the old average 0.6·d7 + 0.4·d28 is noisy (12.0% error) and lags trends;
+// ML alone 10.9%; the trend-aware average 7.7% and ML blended 50/50 with it 7.9% (the blend is the default: it
+// was the more accurate of the two at lower volumes, and the two are within noise here). Daily error stays
+// near 35% for any method: daily demand is Poisson noise around the rate.
 import { ENGINE_CONFIG } from "@/lib/business-logic/config";
 
 export type DemandMethod = "ml" | "baseline";

@@ -2,71 +2,64 @@
   "asOf": "2026-10-21",
   "seed": 42,
   "stockout": [
-    "PHX-0056",
-    "PHX-0068",
-    "PHX-0070",
-    "PHX-0112",
-    "PHX-0179",
-    "PHX-0214",
-    "PHX-0219",
-    "PHX-0333",
-    "PHX-0395",
-    "PHX-0458",
-    "PHX-0464",
-    "PHX-0470"
+    "PHX-0081",
+    "PHX-0083",
+    "PHX-0115",
+    "PHX-0133",
+    "PHX-0167"
   ],
   "expiry": [
-    "PHX-0028",
-    "PHX-0037",
-    "PHX-0053",
-    "PHX-0098",
-    "PHX-0178",
-    "PHX-0191",
-    "PHX-0238",
-    "PHX-0316",
-    "PHX-0467"
+    "PHX-0003",
+    "PHX-0026",
+    "PHX-0031",
+    "PHX-0082",
+    "PHX-0212",
+    "PHX-0230",
+    "PHX-0333",
+    "PHX-0378",
+    "PHX-0449"
   ],
   "excess": [
-    "PHX-0065",
-    "PHX-0150",
-    "PHX-0165",
-    "PHX-0335",
-    "PHX-0401",
-    "PHX-0463"
+    "PHX-0033",
+    "PHX-0090",
+    "PHX-0176",
+    "PHX-0236",
+    "PHX-0284",
+    "PHX-0405"
   ],
   "priceAnomaly": [
-    "PHX-0011",
-    "PHX-0104",
-    "PHX-0354"
+    "PHX-0093",
+    "PHX-0235",
+    "PHX-0324"
   ],
   "capacity": [
-    "PHX-0078",
-    "PHX-0414"
+    "PHX-0048",
+    "PHX-0220"
   ],
   "cheapestTooSlow": [
-    "PHX-0070",
-    "PHX-0112",
-    "PHX-0333"
+    "PHX-0081",
+    "PHX-0133",
+    "PHX-0167"
   ],
   "schemeSkip": [
-    "PHX-0050",
-    "PHX-0190"
+    "PHX-0084",
+    "PHX-0279"
   ],
   "staleQuote": [
-    "PHX-0093",
-    "PHX-0168"
+    "PHX-0171",
+    "PHX-0234"
   ],
   "unmapped": [
-    "PHX-0202",
-    "PHX-0234",
-    "PHX-0250"
+    "PHX-0002",
+    "PHX-0376",
+    "PHX-0450"
   ],
   "spike": [
-    "PHX-0291",
-    "PHX-0384",
-    "PHX-0444"
+    "PHX-0030",
+    "PHX-0392",
+    "PHX-0500"
   ],
   "noEligibleOffer": [
-    "PHX-0488"
+    "PHX-0032"
   ]
 }

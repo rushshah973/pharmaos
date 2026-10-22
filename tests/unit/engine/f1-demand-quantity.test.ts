@@ -17,17 +17,18 @@ describe("F1 demand and quantity", () => {
     expect(d.dailySeries).toHaveLength(28);
   });
 
-  it("safety 27.6, ROP 64.4, target 128.8 at L = 4", () => {
-    expect(safetyStock(9.2)).toBeCloseTo(27.6, 10);
-    expect(reorderPoint(9.2, 4)).toBeCloseTo(64.4, 10);
-    expect(targetStock(9.2, 4)).toBeCloseTo(128.8, 10);
+  // Policy: 5 days of safety stock, 14-day review period (about three weeks of stock at target).
+  it("safety 46, ROP 82.8, target 211.6 at L = 4", () => {
+    expect(safetyStock(9.2)).toBeCloseTo(46, 10);
+    expect(reorderPoint(9.2, 4)).toBeCloseTo(82.8, 10);
+    expect(targetStock(9.2, 4)).toBeCloseTo(211.6, 10);
   });
 
-  it("stock 40 < ROP 64.4 → candidate; qRaw 88.8 → q 90", () => {
+  it("stock 40 < ROP 82.8 → candidate; qRaw 171.6 → q 180", () => {
     expect(isCandidate({ avgDailyDemand: 9.2, stockPosition: 40, leadFastest: 4 })).toBe(true);
     const q = orderQuantity({ avgDailyDemand: 9.2, stockPosition: 40, leadTimeDays: 4, moq: 20, packMultiple: 10, hasAtRiskBatches: false });
-    expect(q.qRaw).toBeCloseTo(88.8, 10);
-    expect(q.q).toBe(90);
+    expect(q.qRaw).toBeCloseTo(171.6, 10);
+    expect(q.q).toBe(180);
     expect(q.reasons).not.toContain("EXPIRY_REDUCED_QTY");
   });
 

@@ -21,7 +21,7 @@
 | R2 | Money uses `lib/money.ts` (decimal.js). Never use JS floats for rupees. DB money columns are `numeric`; postgres.js returns them as strings — pass strings into `dec()`. |
 | R3 | Every quantity is an integer number of **packs**. |
 | R4 | The browser is never the source of truth for totals. The server recomputes on every edit and on approval. |
-| R5 | Only `lib/services/approval.ts` (`approveLines`) creates purchase orders, inside one DB transaction, idempotently. It is called by the approve endpoint (a human click) and by exactly one AI: the pipeline's **Order Agent** (section 9.5), create only, audited as actor `agent`. A PO whose grand total is above the Owner approval limit (₹4,00,000) is created `pending_approval` and cannot be sent until the Owner approves it. No AI can send a PO, Owner-approve a PO, reject a plan or change the approval limit. |
+| R5 | Only `lib/services/approval.ts` (`approveLines`) creates purchase orders, inside one DB transaction, idempotently. It is called by the approve endpoint (a human click) and by exactly one AI: the pipeline's **Order Agent** (section 9.5), create only, audited as actor `agent`. A PO whose grand total is above the Owner approval limit (₹10,00,000) is created `pending_approval` and cannot be sent until the Owner approves it. No AI can send a PO, Owner-approve a PO, reject a plan or change the approval limit. |
 | R6 | Nothing ever leaves the app: "Send to supplier" is simulated (status `sent`, always labelled "simulated — nothing was emailed"). No email, API or payment integration. Statuses "ordered" or "confirmed" never appear. |
 | R7 | Every mutation writes an `audit_logs` row (section 13). |
 | R8 | Every screen shows the data-source badge ("Synthetic demo data"), and detail views show each record's `data_source` label. Never call generated data real, and never present a supplier price as a real quote. |
@@ -41,7 +41,7 @@
 | Charts | Recharts 3 | Only on Recommendation Detail (demand history) and the ROI model |
 | 3D | three 0.186 + @react-three/fiber 9 + @react-three/drei 10 | Installed |
 | Database | Supabase Postgres (or any Postgres 15+) via **postgres.js** with `DATABASE_URL` | Real transactions for approval; no Supabase SDK needed |
-| Migrations | Plain SQL in `db/migrations/`, applied by `npm run db:migrate` | `001_init.sql`, `002_approval_limit.sql` (removes the budget, adds the PO approval limit), `003_ml_and_agents.sql` (demand model + agent runs) |
+| Migrations | Plain SQL in `db/migrations/`, applied by `npm run db:migrate` | `001_init.sql`, `002_approval_limit.sql` (removes the budget, adds the PO approval limit), `003_ml_and_agents.sql` (demand model + agent runs), later files up to `006_goods_receipt.sql` (`005` raises the Owner limit to ₹10,00,000; `006` adds goods receipt columns) |
 | Validation | Zod 4 | API inputs, tool inputs, seed rows |
 | Money | decimal.js via `lib/money.ts` | Already written and tested |
 | AI | Google Gemini via `@google/genai` 2.30 (TypeScript), model from `GEMINI_MODEL`, default `gemini-flash-latest`. Manual function-calling loop, mode `AUTO`, automatic function calling disabled | Team choice; explicit workflow; no agent framework |
@@ -92,6 +92,8 @@ pharmaos/
 ├── db/migrations/001_init.sql         ✅ full schema + default scenarios + app_state
 ├── db/migrations/002_approval_limit.sql  no budget; app_state.po_approval_limit; PO statuses ready/pending_approval/approved/sent/rejected; seasonal_surge scenario
 ├── db/migrations/003_ml_and_agents.sql   forecast_models, sku_forecast_metrics, agent_runs, agent_steps
+├── db/migrations/005_scale_and_limit.sql po_approval_limit default 1000000
+├── db/migrations/006_goods_receipt.sql   purchase_orders.received_at / received_by, purchase_order_lines.received_qty
 ├── data/
 │   ├── reference/                     ✅ reference datasets (git-ignored) + sources.json + profile.json
 │   └── synthetic/                     generated CSV snapshots for inspection (git-ignored)
@@ -246,7 +248,7 @@ The schema is `db/migrations/001_init.sql` plus `002_approval_limit.sql` (drops 
 | `inventory_locations` | Bins | Hierarchy warehouse → zone → aisle → rack → shelf → bin; stable `bin_code`; x/y/z for 3D; `capacity_units` is a demo proxy in packs |
 | `batches` | Lots | `expiry_date`, `quality_status` (`released` is the only sellable status), `unit_cost` per pack for at-risk value |
 | `inventory_balances` | Stock by batch and bin | `location_id` null = unmapped stock; `reserved_qty ≤ on_hand_qty`; unique per batch + location |
-| `scenarios`, `app_state` | Demo control | `app_state` is a singleton row: active scenario, `po_approval_limit` (default ₹4,00,000), optional as-of date |
+| `scenarios`, `app_state` | Demo control | `app_state` is a singleton row: active scenario, `po_approval_limit` (default ₹10,00,000), optional as-of date |
 | `purchase_plans` | One planning run | No budget columns (dropped in `002_approval_limit.sql`); `impact_json` stores the Impact Card incl. `supplierTotals` |
 | `purchase_recommendations` | One line per SKU in a plan | `in_basket` = buyable line in the plan (false only for "no eligible offer" lines; owner defer/reject is the `status`); `status` lifecycle in section 7.4; `evidence_json` holds every input and intermediate value |
 | `purchase_orders` | POs | Seeded external: `open` (counts as incoming stock) · `received` · `cancelled`. Created by PharmaOS on approval: `ready` · `pending_approval` (grand total > `po_approval_limit`) · `approved` · `sent` (simulated; counts as incoming stock) · `rejected`. `sent_at`, `sent_by`; `unique (idempotency_key, supplier_id)` |
@@ -343,7 +345,7 @@ Use `faker.seed(42)` and `prng.ts` (`mulberry32(42)`) everywhere; never `Math.ra
 | products | 500 SKUs (`PRODUCT_COUNT`) | Forms, pack patterns and category mix from the profile (defaults: tablet, capsule, syrup, injection, ointment, drops; analgesic, antibiotic, antidiabetic, cardiac, gastro, respiratory, vitamins, dermatology); 10% `cool`, 5% `cold_chain`; criticality 10% life_saving, 30% chronic, 45% acute, 15% otc; `ptr` sampled from the category's **PTR-estimate** quantiles (listed price × 0.80, section 5.4; default ₹15–₹900); category assigned from the profile's `categoryShare` (composition keyword map, `other` excluded); `unit_margin` = 8–10% of ptr; `shelf_life_days` 540–1095; GST 5% or 12% |
 | suppliers | 8 (`SUP-01`…`SUP-08`) | 6 approved, 1 `pending`, 1 `blocked`; lead times as Indian pharma distribution runs: approved local distributors 1, 1, 2, 2 and 3 days, plus one **manufacturer-direct** channel at 6 days (cheaper, slower: the "cheaper but too slow" trade-off); pending/blocked 2–4 days; reliability 60–98 (drives late deliveries in the simulation); payment terms 15, 21, 30, 45 or 60 days; one approved supplier with null reliability (tests "missing data scores 0") |
 | supplier_offers | 1–4 per SKU (mostly 2–3); the first is the SKU's usual distributor (approved, never the direct channel) | `price_type = 'supplier_quote'`; `unit_price` = ptr × 0.80–0.90 from distributors, × 0.74–0.80 from the manufacturer-direct channel (stockist buys below PTR); MOQ ∈ {1, 5, 10, 20}; pack_multiple ∈ {1, 5, 10}; available 50–2,000; lead time = supplier default ± 1 (min 1); freight ₹0–₹1.50 per pack; schemes on ~15% of offers (`10+1`, `20+3`, `5+1`); `quoted_at` = as-of − 1…20 days (≈10% older than 14 days = stale); `valid_until` = `quoted_at` + 7…30 days (≈5% already expired) |
-| sales_history | 90 days ending on as-of, every product (zero days included as rows) | Demand **shape** from `dailyDemandQuantiles` (its spread relative to its median), **rescaled** so each SKU's base demand sits at a stockist level: median 4 packs/day, clamped to 0.5–30 packs/day (the sample's absolute level comes from 5 drugs across 5 states and an unknown unit, so it is not used). Weekly shape from `weekdayFactors` (flat if missing). Profile per SKU: 40% stable (Poisson), 20% intermittent (zero-day share from the profile, default 60%), 15% growing (+1%/day), 15% declining (−1%/day), 10% spike (last 5 days × 3). These are customer **demand**; recorded `units_sold` = what the daily-operations simulation (below) could actually sell from stock, so a stockout shows as lost sales |
+| sales_history | 90 days ending on as-of, every product (zero days included as rows) | Demand **shape** from `dailyDemandQuantiles` (its spread relative to its median), **rescaled** so each SKU's base demand sits at a mid-size stockist level (≈ ₹15 Cr of sales a year): median 12 packs/day, clamped to 1.5–90 packs/day (the sample's absolute level comes from 5 drugs across 5 states and an unknown unit, so it is not used). Weekly shape from `weekdayFactors` (flat if missing). Profile per SKU: 45% stable (Poisson), 20% intermittent (zero-day share from the profile, default 60%), 16% growing (+1%/day), 16% declining (−1%/day), 3% spike (last 5 days × 3). The simulated stockist reviews each SKU twice a week with its own rule of thumb (reorder below lead + 4–14 days of cover, top up to lead + 25–40 days), so on demo day most SKUs are healthy and the plan's lines still have days of stock left. These are customer **demand**; recorded `units_sold` = what the daily-operations simulation (below) could actually sell from stock, so a stockout shows as lost sales |
 | inventory_locations | 240 bins | Aisles A–E; each aisle has a left and right rack row; 6 racks per row; 4 shelves per rack (5 × 2 × 6 × 4 = 240). `bin_code` = `A-L-03-2` (aisle-side-rack-shelf). Coordinates: `x = aisleIndex × 4 + (side === 'L' ? -1 : 1)`, `z = rackIndex × 1.2`, `y = (shelf − 1) × 0.7`. Aisle E = `cold_chain` + `cool`; the rest `ambient`. Capacity 250–1,000 packs (demo proxy, sized so 500 SKUs fit at ~70% fill). 4 bins `inactive` |
 | batches | What the simulation left: opening lots plus one lot per delivery (1–6 per SKU) | Opening stock = 10–30 days of cover in 1–2 lots received 10–120 days before the window; every delivery creates a lot on its arrival date with `expiry_date` = arrival + shelf life − age at receipt (30–180 days; a short-dated share, as before, arrives much closer to expiry); `unit_cost` = the offer price ± 3%. Kept: lots that still hold stock, plus each SKU's latest receipt. Exceptions: 3 lots received in the last 3 days still in `quarantine` (awaiting QC), 1 `recalled`, 2 that expired on the shelf |
 | inventory_balances | Each remaining lot in 1–2 bins of a matching storage class (ambient → aisles A–D, cool → E right, cold_chain → E left; never an inactive bin) | `on_hand_qty` = the lot's stock at as-of after FEFO sales, within bin capacity; `reserved_qty` 0–10% of on hand (customer orders not yet dispatched); 3 balances with `location_id = null` (received, not yet put away) |
@@ -452,12 +454,12 @@ confirmedIncoming = Σ quantity_packs (+ free_qty) of lines on POs with status '
                     and expected_delivery_date ≤ asOf + 14 days
 stockPosition     = eligibleAvailable + confirmedIncoming
 ```
-(Reserved stock is subtracted once, inside `available`. PharmaOS POs count as incoming only once `sent`; `ready`, `pending_approval`, `approved` and `rejected` POs do not.)
+(Reserved stock is subtracted once, inside `available`. PharmaOS POs count as incoming from the moment they exist (`open`, `ready`, `pending_approval`, `approved`, `sent`), each on its expected delivery date, so a new plan never re-orders what an earlier plan already ordered; `rejected` and `received` POs do not count — a received PO's stock is already on hand.)
 
-For a given lead time L (days) and review period R = 7:
+For a given lead time L (days) and review period R = 14 (about three weeks of stock at target, a mid-size stockist's practice):
 ```
-cover   = stockPosition / d̄                         only if d̄ > 0
-safety  = max(2, d̄ × 3)
+cover   = days until stock runs out, each PO on its delivery day (= stockPosition / d̄ with no gap)   only if d̄ > 0
+safety  = max(2, d̄ × 5)
 ROP     = d̄ × L + safety
 target  = d̄ × (L + R) + safety
 reorderInDays = max(0, (stockPosition − ROP) / d̄)   rounded down to 0.1 day; null if d̄ = 0
@@ -556,9 +558,9 @@ Spend control is the **Owner approval limit**, applied per purchase order, not p
 ```
 supplierTotals = for each supplier of counted lines (in_basket and status proposed / edited / approved_for_po):
                    { supplierId, supplierCode, lines, total = Σ lineTotal, needsApproval = total > poApprovalLimit }
-poApprovalLimit = app_state.po_approval_limit        default ₹4,00,000; strictly above needs approval (= ₹4,00,000 does not)
+poApprovalLimit = app_state.po_approval_limit        default ₹10,00,000; strictly above needs approval (= ₹10,00,000 does not)
 ```
-The projection uses the same totals as the POs that approval creates (one PO per supplier; grand total incl. GST and freight). It is a workflow gate on **sending** a PO (§7.6), not a hard stop. Tested: a supplier total of exactly ₹4,00,000.00 → `needsApproval = false`; ₹4,00,000.01 → `true`.
+The projection uses the same totals as the POs that approval creates (one PO per supplier; grand total incl. GST and freight). It is a workflow gate on **sending** a PO (§7.6), not a hard stop. Tested: a supplier total of exactly ₹10,00,000.00 → `needsApproval = false`; ₹10,00,000.01 → `true`.
 
 ### 6.10 Plan Impact Card (`impact.ts`)
 
@@ -657,7 +659,7 @@ In **one transaction**:
 
 - `approvePo(poId, { note? }, userId)`: only from `pending_approval` → `approved`; `approvals` row (entity `purchase_order`, decision `approved`); audit `po.approved`. Other states → 409 `PO_LOCKED`.
 - `rejectPo(poId, reason, userId)`: only from `pending_approval` → `rejected` (reason ≥ 3 chars); approvals row; audit `po.rejected`. Its recommendation lines stay `approved_for_po` (they are not re-planned automatically).
-- `sendPo(poId, userId)`: only from `ready` or `approved` → `sent`, `sent_at = now()`, `sent_by`; audit `po.sent`. From `pending_approval` → 409 `APPROVAL_REQUIRED` ("This PO is above ₹4,00,000 and needs Owner approval before it can be sent"); `sent` / `rejected` → 409 `PO_LOCKED`. **Simulated:** nothing leaves the app (no email, no API call); the UI says "Marked as sent — simulated, nothing was emailed". A `sent` PO counts as confirmed incoming stock in later plans.
+- `sendPo(poId, userId)`: only from `ready` or `approved` → `sent`, `sent_at = now()`, `sent_by`; audit `po.sent`. From `pending_approval` → 409 `APPROVAL_REQUIRED` ("This PO is above ₹10,00,000 and needs Owner approval before it can be sent"); `sent` / `rejected` → 409 `PO_LOCKED`. **Simulated:** nothing leaves the app (no email, no API call); the UI says "Marked as sent — simulated, nothing was emailed". A `sent` PO counts as confirmed incoming stock in later plans.
 - The approval check reads the PO's stored status, which was set from its grand total at creation; the limit applies at creation time (changing the limit later does not re-gate existing POs).
 
 ### 7.7 Other services
@@ -687,6 +689,7 @@ All bodies validated with Zod (`lib/validation/api.ts`). Errors return `{ error:
 | `POST /api/purchase-orders/[id]/approve` | `{ note?: string }` | PO (`approved`) | 404, 409 `PO_LOCKED` |
 | `POST /api/purchase-orders/[id]/reject` | `{ reason: string (≥3) }` | PO (`rejected`) | 400, 404, 409 `PO_LOCKED` |
 | `POST /api/purchase-orders/[id]/send` | — | PO (`sent`, simulated) | 404, 409 `APPROVAL_REQUIRED` / `PO_LOCKED` |
+| `GET /api/purchase-orders/[id]/receive` · `POST /api/purchase-orders/[id]/receive` | — · `{ lines: [{ lineId, qty (0 … ordered + free), batchNumber, expiryDate (≥ as-of + 90 d), binId }], note? }` | receipt draft (full quantities, batch numbers, suggested bins) · `{ status: 'received', packs, shortLines, bins }`; creates batches and stock balances, audit `po.received` | 404, 409 `PO_NOT_RECEIVABLE` (only `sent` or seeded `open`), 422 `RECEIPT_INVALID` (per-line problems) |
 | `POST /api/purchase-orders/[id]/export` | — | `text/csv` download (status unchanged) | 404 |
 | `PATCH /api/settings` | `{ poApprovalLimit: number>0 }` | settings | 400 |
 | `GET /api/warehouse/layout` | — | bins with geometry | — |
@@ -729,7 +732,7 @@ All tools return the `ToolResult` contract (`lib/validation/tool-contract.ts`). 
 | `get_supplier_offers` | `{ sku }` | offers incl. excluded ones with codes |
 | `compare_supplier_offers` | `{ sku }` | factors and scores, winner, reasons |
 | `get_price_history` | `{ sku }` | past offer prices and batch costs |
-| `get_po_projection` | `{ planId }` | projected PO per supplier, total, and whether it is above the ₹4,00,000 Owner approval limit |
+| `get_po_projection` | `{ planId }` | projected PO per supplier, total, and whether it is above the ₹10,00,000 Owner approval limit |
 | `get_plan` | `{ planId }` | lines (rank, sku, qty, supplier, total, status, reasons) + impact |
 | `build_plan_preview` | `{}` | **preview only** (not saved) of a fresh plan on the current context |
 | `recalculate_plan` | `{ planId }` | runs `recalculatePlan` (a saved, audited change, actor `agent`) |
@@ -753,8 +756,9 @@ Rules:
 - Use search_products to resolve product names. If more than one product matches, list them and
   ask which one; never assume a strength, form or pack size.
 - You cannot approve, reject or send purchase orders. If asked, explain that the user approves
-  lines with the Approve button, that any PO above ₹4,00,000 needs the Owner's approval before
-  it can be sent, and that sending is simulated: nothing leaves the app.
+  lines with the Approve button, that any PO above the Owner approval limit (get_po_projection
+  gives it) needs the Owner's approval before it can be sent, and that sending is simulated:
+  nothing leaves the app.
 - Never suggest substituting one medicine for another. Quality, recall and safety questions go
   to a human reviewer.
 - When a tool fails, say what information is missing.
@@ -826,7 +830,7 @@ Notes:
 | Agent | Tools | Terminal tool | Guardrail (code) | Effect |
 |---|---|---|---|---|
 | **Demand Agent** | `get_sales_history`, `get_demand_forecasts {sku}` (baseline, ML, both WAPEs, default method, flags, 14-day ML series), `get_inventory_position` | `submit_demand_decisions { decisions: [{ sku, method: 'ml' \| 'baseline', reason (≥ 10 chars) }] }` | The agent picks a **method**, never a number: d̄ = that method's tool value. Unknown SKU or a SKU outside the run → rejected step | For each decision that differs from the line's current method, the SKU is re-analysed with that method and the line updated (qty, totals, `evidence.demandDecision { method, reason, by: 'demand-agent' }`); audit actor_type `agent`, actor_id `demand-agent`, action `agent.demand_decided` |
-| **Supplier Agent** | `compare_supplier_offers {sku, planId}` (re-analyses the SKU with the line's **current demand method** — the one the Demand Agent chose — so every offer's quantity, availability check, urgency/cover rule, scheme and totals reflect that forecast), `get_po_projection`, `get_approval_limit` | `submit_supplier_decisions { decisions: [{ sku, offerId, reason }] }` | The offer must have **no exclusion codes** and pass every hard stop for the line's quantity (same validation as `editLine`); otherwise the decision is rejected and logged and the line keeps its offer | Applied through `editLine` with actor `supplier-agent` (action `line.edited`, reason = the agent's reason, `evidence.supplierDecision`). It may trade speed for price, consolidate SKUs onto one supplier to save freight, or keep a supplier PO under the ₹4,00,000 Owner limit |
+| **Supplier Agent** | `compare_supplier_offers {sku, planId}` (re-analyses the SKU with the line's **current demand method** — the one the Demand Agent chose — so every offer's quantity, availability check, urgency/cover rule, scheme and totals reflect that forecast), `get_po_projection`, `get_approval_limit` | `submit_supplier_decisions { decisions: [{ sku, offerId, reason }] }` | The offer must have **no exclusion codes** and pass every hard stop for the line's quantity (same validation as `editLine`); otherwise the decision is rejected and logged and the line keeps its offer | Applied through `editLine` with actor `supplier-agent` (action `line.edited`, reason = the agent's reason, `evidence.supplierDecision`). It may trade speed for price, consolidate SKUs onto one supplier to save freight, or keep a supplier PO under the ₹10,00,000 Owner limit |
 | **Order Agent** | `get_plan`, `validate_po { lineIds }`, `create_purchase_orders { lineIds }` | `submit_order_summary { created: [poId], skipped: [{ sku, reason }] }` | `create_purchase_orders` calls `approveLines` with actor `order-agent` and `idempotencyKey` = the run id (a retry never duplicates POs); lines with hard stops are skipped with their codes | POs created as `ready` (≤ limit) or `pending_approval` (> limit). It can **never** send a PO, Owner-approve a PO, reject a plan or change the approval limit — those tools do not exist for any AI |
 
 - **Fallback:** no `GEMINI_API_KEY`, API error, timeout, non-`STOP` finish, or an invalid terminal call after 2 retries → the Demand and Supplier agents fall back to the deterministic defaults (no changes, a `fallback` step); the Order Agent in fallback creates **no** POs and reports "AI unavailable — review and approve manually". The run ends with status `fallback`, and the UI says so plainly.
@@ -898,7 +902,7 @@ Money: `formatINR()` → "₹2,00,000" (no paise on KPI tiles, paise in tables a
 
 #### Layout
 - Sidebar 240 px (`--surface-1`), collapsible to a 64 px icon rail (and auto-collapsed below 1024 px). Logo mark + wordmark at the top; nav items 36 px tall, 16 px lucide icons (stroke 1.75), active item = `--surface-3` background + 2 px accent bar on the left; data-source badge and demo user pinned at the bottom.
-- Top bar 56 px, sticky, `--bg` at 80% with `backdrop-blur`, hairline bottom border: breadcrumb/page title left; scenario chip, as-of date, "Approval above ₹4,00,000" right.
+- Top bar 56 px, sticky, `--bg` at 80% with `backdrop-blur`, hairline bottom border: breadcrumb/page title left; scenario chip, as-of date, "Approval above ₹10,00,000" right.
 - Page header: title + one-line description + primary action on the right.
 
 #### Components
@@ -923,7 +927,7 @@ Money: `formatINR()` → "₹2,00,000" (no paise on KPI tiles, paise in tables a
 
 #### Signature moments (polish these most — they are the demo)
 1. Command Center hero: at-risk SKUs, ₹ at expiry risk and POs awaiting Owner approval, with the **Create Purchase Plan** button.
-2. Plan Impact Card with counting numbers and the supplier PO strip (Owner approval badge above ₹4,00,000).
+2. Plan Impact Card with counting numbers and the supplier PO strip (Owner approval badge above ₹10,00,000).
 3. A ranked plan table that reads like a decision list (reason chips, Why? on hover).
 4. The line drawer: demand chart + supplier comparison + live formulas.
 5. The 3D warehouse: dark scene, soft lighting, emissive heatmap bins, smooth camera fly-to.
@@ -937,7 +941,7 @@ Before committing a UI step: run the dev server, take a screenshot at **1440 × 
 ### 10.2 Shell (`app/(dashboard)/layout.tsx`)
 
 - Left sidebar (lucide icons, see §10.1 Layout): logo + wordmark; Command Center `/`, Procurement `/procurement`, 3D Warehouse `/warehouse`, Purchase Orders `/purchase-orders`, Activity Log `/activity`, Data & Scenarios `/data`; `DataSourceBadge` ("Synthetic demo data") and demo user at the bottom.
-- Top bar (sticky, blurred): page title / breadcrumb; active scenario chip (if not baseline), as-of date, "Approval above ₹4,00,000" (from `app_state.po_approval_limit`).
+- Top bar (sticky, blurred): page title / breadcrumb; active scenario chip (if not baseline), as-of date, "Approval above ₹10,00,000" (from `app_state.po_approval_limit`).
 - `<Toaster />` (sonner) in the root layout.
 
 ### 10.3 Screens
@@ -951,10 +955,10 @@ Before committing a UI step: run the dev server, take a screenshot at **1440 × 
 **Procurement list (`/procurement`)**: table of plans (created, total, lines, POs needing approval, status, scenario) + Create button.
 
 **Procurement Plan (`/procurement/[planId]`)**
-- Top: **Plan Impact Card** (section 6.10 fields, large numbers, one line of explanation each) + **supplier PO strip**: one chip per supplier with its projected PO total, an amber "Owner approval" badge when above ₹4,00,000.
+- Top: **Plan Impact Card** (section 6.10 fields, large numbers, one line of explanation each) + **supplier PO strip**: one chip per supplier with its projected PO total, an amber "Owner approval" badge when above ₹10,00,000.
 - Plan table (sorted by rank): checkbox, rank, SKU (brand, strength, pack), status badge, cover (days), qty (+ free), supplier code, effective cost/pack, lead time, line total, flags (icons with tooltips), reason (short), actions (Why?, Edit, Defer, Reject).
 - "Not in this plan" section below: owner-deferred / rejected lines (with reason and ₹ risk, "Restore" action) and SKUs with no eligible offer.
-- Footer bar: selected count and total → **Approve selected** (generates a fresh `idempotencyKey` with `crypto.randomUUID()` when the dialog opens; button disabled while the request runs) → confirmation dialog listing POs per supplier and marking which will need Owner approval (> ₹4,00,000) → success toast with links.
+- Footer bar: selected count and total → **Approve selected** (generates a fresh `idempotencyKey` with `crypto.randomUUID()` when the dialog opens; button disabled while the request runs) → confirmation dialog listing POs per supplier and marking which will need Owner approval (> ₹10,00,000) → success toast with links.
 - **Reject plan** (reason required).
 - **Recalculate** (plain button: fresh data and the active scenario).
 - **Run procurement agents** (section 9.5) → **Agent Run** panel (Sheet, 640 px): three agent cards in order with status (waiting / thinking / done / fallback), the tool calls as a timeline (tool name, ok, ms, one-line result), the decisions table (SKU, decision, reason, accepted or rejected by the guardrail), and the results (lines changed → drawer links, POs created → PO links, which need Owner approval). Live by polling; finished runs stay viewable under "Past runs".
@@ -967,7 +971,7 @@ Before committing a UI step: run the dev server, take a screenshot at **1440 × 
 
 **Activity & Audit (`/activity`)**: table (time, actor type/id, action, entity, before → after summary, reason), filter by action/entity, "Load more".
 
-**Data & Scenarios (`/data`)**: data summary (rows per table, as-of date, seed) and the **Data sources** list from `data_sources` (name, link, label, what it informed); scenario cards (5) with Run / Reset; **Demand model** card (trained at, training rows, features, global ML vs baseline WAPE, SKUs using ML, "trained on synthetic demo data", Retrain button calling the training service); Owner approval limit input (default ₹4,00,000, `PATCH /api/settings`); **ROI model** (section 11 of `problemstatement.md`) with sliders for each assumption and live totals, labelled "Illustrative model — edit the assumptions".
+**Data & Scenarios (`/data`)**: data summary (rows per table, as-of date, seed) and the **Data sources** list from `data_sources` (name, link, label, what it informed); scenario cards (5) with Run / Reset; **Demand model** card (trained at, training rows, features, global ML vs baseline WAPE, SKUs using ML, "trained on synthetic demo data", Retrain button calling the training service); Owner approval limit input (default ₹10,00,000, `PATCH /api/settings`); **ROI model** (section 11 of `problemstatement.md`) with sliders for each assumption and live totals, labelled "Illustrative model — edit the assumptions".
 
 ---
 
@@ -991,7 +995,7 @@ Running a scenario sets `app_state.active_scenario_id` (audited) and its effects
 |---|---|---|
 | `demand_spike` | Multiply the last 5 days of sales × 3 for the 3 SKUs listed in `demo-cases.json` (`spike`) | Higher d̄, lower cover, larger qty, higher rank; `DEMAND_SPIKE` flag |
 | `supplier_delay` | Preferred supplier (most wins in the baseline plan) lead time + 5 days, its prices + 8% | Re-ranked suppliers; urgent lines move to a faster supplier |
-| `seasonal_surge` | Monsoon fever season: the last 10 days of sales × 4 for SKUs in categories `analgesic`, `antibiotic`, `respiratory` | Larger quantities; at least one supplier PO crosses ₹4,00,000 → Owner approval badge, `pending_approval` on approve (P24 checks this and tunes the multiplier if not) |
+| `seasonal_surge` | Monsoon fever season: the last 10 days of sales × 4 for SKUs in categories `analgesic`, `antibiotic`, `respiratory` | Larger quantities; at least one supplier PO crosses ₹10,00,000 → Owner approval badge, `pending_approval` on approve (P24 checks this and tunes the multiplier if not) |
 | `expiry_risk` | The largest batch of PHX-0178 (a `demo-cases.json` `expiry` SKU, named in params) gets expiry = as-of + 92 days: just past the 90-day sell-by window, so a little still sells (at 60 days none could and the SKU turned stockout risk; at 130 days nothing needed ordering) | At-risk value appears, reorder reduced or blocked, bin turns amber |
 | `baseline` | none | — |
 
@@ -1027,9 +1031,9 @@ Every row: `actor_type` (`user` | `system` | `agent` | `tool`), `actor_id` (DEMO
 ### 14.1 Unit fixtures (hand-computed — these numbers must match exactly)
 
 **F1 Demand and quantity.** Last 7 days sold `[10, 12, 8, 10, 10, 14, 6]` (sum 70); last 28 days sum 224. Offer: L = 4, pack_multiple = 10, MOQ = 20. Stock position = 40.
-- d7 = 10, d28 = 8, d̄ = 0.6 × 10 + 0.4 × 8 = **9.2** (baseline method: the fixture has no forecast model)
-- safety = max(2, 27.6) = **27.6**; ROP = 9.2 × 4 + 27.6 = **64.4**; target = 9.2 × 11 + 27.6 = **128.8**
-- 40 < 64.4 → candidate; qRaw = 88.8 → ceil(8.88) × 10 = **90**; max(90, 20) = **90**
+- d7 = 10, d28 = 8; with under 56 days of history the trend-aware average is the 28-day mean, so d̄ = **8** (the policy figures below use d̄ = 9.2 directly)
+- safety = max(2, 9.2 × 5) = **46**; ROP = 9.2 × 4 + 46 = **82.8**; target = 9.2 × 18 + 46 = **211.6**
+- 40 < 82.8 → candidate; qRaw = 171.6 → ceil(17.16) × 10 = **180**; max(180, 20) = **180**
 - cover = 40 / 9.2 = **4.3478…** days
 
 **F2 Effective cost with scheme.** price ₹20, GST 12%, freight ₹0.50, scheme 10+1 taken: 20 × 1.12 × 10/11 + 0.50 = **₹20.8636** (4 dp). Without scheme: **₹22.9000**.
@@ -1046,7 +1050,7 @@ Every row: `actor_type` (`user` | `system` | `agent` | `tool`), `actor_id` (DEMO
 - cover = 4: A (L 7 > 4) is dropped (`TOO_SLOW_FOR_COVER`, line gets `CHEAPER_OFFER_TOO_SLOW`) → **B wins**.
 - Supplier with null reliability → C_rel = 0 (not 100).
 
-**F6 Plan assembly and approval limit.** Candidates L1 ₹3,000 (p 5), L2 ₹2,500 (p 4), L3 ₹1,500 (p 3): all three are in the plan, ranked L1, L2, L3, plan total ₹7,000 (no budget, nothing deferred). Supplier projection: lines for SUP-A totalling exactly ₹4,00,000.00 → `needsApproval = false`; ₹4,00,000.01 → `true`; `posNeedingApproval` counts only the latter.
+**F6 Plan assembly and approval limit.** Candidates L1 ₹3,000 (p 5), L2 ₹2,500 (p 4), L3 ₹1,500 (p 3): all three are in the plan, ranked L1, L2, L3, plan total ₹7,000 (no budget, nothing deferred). Supplier projection: lines for SUP-A totalling exactly ₹10,00,000.00 → `needsApproval = false`; ₹10,00,000.01 → `true`; `posNeedingApproval` counts only the latter.
 
 **F7 Scheme skip** (tests the `ordering.ts` scheme function in isolation). d̄ = 1, stock position 100, shelf life 540, P = 20, F = 3, q = 10, pack 10: qScheme = 20, received 23 → (100 + 23)/1 = 123 < 450 → **taken**. Same with d̄ = 0.2: 615 ≥ 450 and q < P → **SCHEME_SKIPPED_EXPIRY**, expiryAvoided = 10 × effective cost.
 
@@ -1068,7 +1072,7 @@ Seed a tiny fixture DB → create plan → edit qty → approve twice with the s
 - [ ] Command Center numbers match a direct SQL count.
 - [ ] A plan includes every SKU that needs stock (no budget); the supplier PO strip matches the POs that approval creates.
 - [ ] Edit preview shows the new total and supplier PO totals before saving.
-- [ ] Approve creates POs grouped by supplier; double-click creates nothing extra; a PO above ₹4,00,000 is `pending_approval` and Send returns 409 `APPROVAL_REQUIRED` until the Owner approves it.
+- [ ] Approve creates POs grouped by supplier; double-click creates nothing extra; a PO above ₹10,00,000 is `pending_approval` and Send returns 409 `APPROVAL_REQUIRED` until the Owner approves it.
 - [ ] 3D: click bin shows the right batches; heatmap modes change colours; `?sku=` focuses; 2D toggle works.
 - [ ] Each scenario run + recalculate changes the numbers; Reset restores them.
 - [ ] With `GEMINI_API_KEY` removed, Why? and Ask still respond (deterministic), and an agent run ends `fallback` with no changes and no POs.
@@ -1097,10 +1101,10 @@ Verify: `profile.json` contains no names or rows; `npm run db:reset && npm run s
 - [ ] `dates.ts`, `types.ts`, `demand.ts`, `expiry.ts`, `inventory.ts`, `ordering.ts`, `supplier-scoring.ts`, `totals.ts`, `priority.ts`, `impact.ts`, `validation.ts`, `engine.ts` (section 6).
 - [ ] Write fixtures F1–F9 as tests **first** (hour 3), then implement until green.
 - [ ] `lib/db/queries/*` and `lib/services/context.ts` (`loadPlanningContext`).
-- [ ] Temporary script `scripts/debug-plan.ts` that prints the top 20 lines and the supplier PO totals (any above ₹4,00,000 flagged) to eyeball results.
+- [ ] Temporary script `scripts/debug-plan.ts` that prints the top 20 lines and the supplier PO totals (any above ₹10,00,000 flagged) to eyeball results.
 - [ ] Switch `inject-demo-cases.ts` and `validate.ts` from their temporary stage-1 helpers to the engine functions, then `npm run db:reset && npm run seed` again (validation must still pass).
 
-Verify: `npm run test` all green (F1–F9); debug plan shows urgent SKUs first and the supplier PO totals with any above ₹4,00,000 flagged.
+Verify: `npm run test` all green (F1–F9); debug plan shows urgent SKUs first and the supplier PO totals with any above ₹10,00,000 flagged.
 
 ### Stage 3 — Procurement UI and demand model (hours 9–19) · P0
 
@@ -1120,7 +1124,7 @@ Verify: create a plan in the browser; open a line; edit qty → preview → save
 - [ ] Purchase Orders list + detail (actions by status) + CSV export + print view.
 - [ ] Activity screen.
 
-Verify: approve 5 lines across 3 suppliers → 3 POs (`ready`, or `pending_approval` above ₹4,00,000), totals match; Send works on `ready`, is refused with `APPROVAL_REQUIRED` on `pending_approval`, works after Owner approval; click Approve twice fast / replay the same request → no duplicates; audit shows every action; reject plan → no POs.
+Verify: approve 5 lines across 3 suppliers → 3 POs (`ready`, or `pending_approval` above ₹10,00,000), totals match; Send works on `ready`, is refused with `APPROVAL_REQUIRED` on `pending_approval`, works after Owner approval; click Approve twice fast / replay the same request → no duplicates; audit shows every action; reject plan → no POs.
 
 ### Stage 5 — Warehouse (hours 22–27) · P0
 
@@ -1145,7 +1149,7 @@ Verify: "Why did you choose Supplier B instead of Supplier A for <SKU>?" cites t
 - [ ] `apply.ts`, `scenarios.ts`, routes, Data & Scenarios screen, scenario chip in top bar, ROI model.
 - [ ] Loading/empty/error/stale states on every screen; keyboard focus visible; numbers right-aligned.
 
-Verify: run Seasonal surge → recalculate → the ML forecast rises for the surged categories → at least one supplier PO above ₹4,00,000 with the Owner approval badge; Supplier delay re-ranks; Reset restores baseline numbers.
+Verify: run Seasonal surge → recalculate → the ML forecast rises for the surged categories → at least one supplier PO above ₹10,00,000 with the Owner approval badge; Supplier delay re-ranks; Reset restores baseline numbers.
 
 ### Stage 8 — Freeze and rehearse (hours 39–42)
 
@@ -1190,7 +1194,7 @@ P2 stretch (only if ahead at hour 27): ghost cartons polish, simulated put-away 
 2. **(0:30) Create plan.** One click → ranked plan with every SKU that needs stock. Impact Card: stockouts covered, total spend, POs per supplier.
 3. **(1:00) Why this line?** Open a stockout SKU: demand chart with the dashed ML forecast and the accuracy line ("ML error 18% vs average 27% → using ML"), stock position, expiry, supplier comparison. Ask "Why Supplier B instead of A?" — the answer cites the drawer's numbers.
 4. **(1:45) Warehouse.** Locate the SKU in 3D, switch stockout → expiry heatmap, click its bin.
-5. **(2:20) Disruption.** Run Seasonal surge → recalculate → quantities rise and one supplier PO crosses ₹4,00,000 (amber Owner approval badge).
+5. **(2:20) Disruption.** Run Seasonal surge → recalculate → quantities rise and one supplier PO crosses ₹10,00,000 (amber Owner approval badge).
 6. **(2:50) Agents.** Click **Run procurement agents**: watch the Demand Agent pick ML or the average per SKU, the Supplier Agent switch one supplier (with its reason, checked by the guardrail), and the Order Agent create the POs — one needs Owner approval. Every tool call is in the trace.
 7. **(3:20) Owner and send.** Open the large PO: `pending_approval`, Send is blocked → Owner approves → Send (simulated) → the audit log shows the agents' and the humans' actions.
 8. **(3:45) Close.** "The engine and the ML model calculate, three agents decide within guardrails, a human sends and the Owner approves large orders — and nothing leaves the app." Show the ROI model.
@@ -1204,7 +1208,7 @@ P2 stretch (only if ahead at hour 27): ghost cartons polish, simulated put-away 
 - [ ] Procurement run returns ranked recommendations with reasons and supporting values.
 - [ ] Stock position, cover, reorder qty, rounding, expiry, scoring, plan assembly, approval limit and totals pass F1–F9.
 - [ ] Supplier selection excludes stale/expired offers, unavailable stock, unapproved suppliers and mismatched products.
-- [ ] Every PO above ₹4,00,000 needs Owner approval before it can be sent; owner-deferred / rejected lines and their reasons are visible.
+- [ ] Every PO above ₹10,00,000 needs Owner approval before it can be sent; owner-deferred / rejected lines and their reasons are visible.
 - [ ] Editing qty/supplier recalculates on the server, with preview.
 - [ ] Approving selected lines creates POs grouped by supplier (`ready` / `pending_approval`) plus audit records; repeated approval creates no duplicates; sending is simulated and labelled so.
 - [ ] Reject/defer changes totals and is audited.
@@ -1213,7 +1217,7 @@ P2 stretch (only if ahead at hour 27): ghost cartons polish, simulated put-away 
 - [ ] LLM failure does not break any workflow.
 - [ ] The demand model is trained, backtested and stored; each SKU uses ML only where its backtest beats the baseline, and the UI shows both errors honestly.
 - [ ] An agent run makes real, guarded decisions (forecast method, supplier, POs), stores every step, and audits every change; without the API key it ends `fallback` and changes nothing.
-- [ ] No action is labelled ordered/confirmed; every "sent" is labelled simulated; no PO above ₹4,00,000 reaches `sent` without an Owner approval.
+- [ ] No action is labelled ordered/confirmed; every "sent" is labelled simulated; no PO above ₹10,00,000 reaches `sent` without an Owner approval.
 - [ ] `npm run check` and `npm run build` pass.
 
 ---
@@ -1226,7 +1230,7 @@ P2 stretch (only if ahead at hour 27): ghost cartons polish, simulated put-away 
 4. Show where this SKU and its batches are located in the warehouse.
 5. Show expiry risk in the warehouse and identify affected purchase recommendations.
 6. Change this order to 60 packs and recalculate the total, the supplier's PO total and MOQ/pack constraints. *(the agent explains that edits are made in the Edit dialog and runs `validate_po` to check 60 packs; it does not edit lines itself)*
-7. Prepare POs for approved lines and send them. *(the agent explains the Approve button, the Owner approval above ₹4,00,000 and that sending is simulated; it cannot create, approve or send POs)*
+7. Prepare POs for approved lines and send them. *(the agent explains the Approve button, the Owner approval above ₹10,00,000 and that sending is simulated; it cannot create, approve or send POs)*
 
 ## Appendix B — Reason and warning codes
 

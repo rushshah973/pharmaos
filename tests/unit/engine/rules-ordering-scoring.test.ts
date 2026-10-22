@@ -9,10 +9,10 @@ import { AS_OF, makeOffer, makeSupplier } from "@/tests/fixtures/engine";
 
 describe("§6.5 ordering rules", () => {
   it("at-risk batches reduce the order to ROP − stock (EXPIRY_REDUCED_QTY)", () => {
-    // d̄ 9.2, L 4: ROP 64.4 → raw 24.4 → 30 (pack 10); target would give 90.
+    // d̄ 9.2, L 4: ROP 82.8 → raw 42.8 → 50 (pack 10); target would give 180.
     const q = orderQuantity({ avgDailyDemand: 9.2, stockPosition: 40, leadTimeDays: 4, moq: 20, packMultiple: 10, hasAtRiskBatches: true });
-    expect(q.qRaw).toBeCloseTo(24.4, 10);
-    expect(q.q).toBe(30);
+    expect(q.qRaw).toBeCloseTo(42.8, 10);
+    expect(q.q).toBe(50);
     expect(q.reasons).toEqual(["EXPIRY_REDUCED_QTY"]);
   });
 

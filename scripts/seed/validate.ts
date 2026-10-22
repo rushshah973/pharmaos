@@ -20,7 +20,7 @@ export type ValidationResult = { failures: string[]; notes: string[] };
 
 /** §5.6 counts: ">=" cases need at least n, the rest exactly n. */
 const CASE_RULES: Record<keyof DemoCases, { n: number; atLeast: boolean }> = {
-  stockout: { n: 10, atLeast: true },
+  stockout: { n: 5, atLeast: true },
   expiry: { n: 8, atLeast: true },
   excess: { n: 5, atLeast: true },
   priceAnomaly: { n: 3, atLeast: false },
@@ -162,7 +162,7 @@ export function validate(
   const largest = plan.supplierTotals[0];
   notes.push(
     `default plan: ${candidates.length} lines worth ₹${Math.round(Number(plan.planTotal)).toLocaleString("en-IN")} across ${plan.supplierTotals.length} supplier POs; ` +
-      `largest PO ₹${Math.round(Number(largest?.total ?? 0)).toLocaleString("en-IN")}; ${plan.impact.posNeedingApproval} above the ₹4,00,000 approval limit`,
+      `largest PO ₹${Math.round(Number(largest?.total ?? 0)).toLocaleString("en-IN")}; ${plan.impact.posNeedingApproval} above the ₹10,00,000 approval limit`,
   );
   if (candidates.length < 15) fail(`only ${candidates.length} candidate lines (need ≥ 15)`);
   if (plan.supplierTotals.length < 3) fail(`only ${plan.supplierTotals.length} supplier POs (need ≥ 3)`);

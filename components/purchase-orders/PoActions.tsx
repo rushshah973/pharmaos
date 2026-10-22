@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { Ban, Download, Loader2, Printer, Send, ShieldCheck } from "lucide-react";
+import { Ban, Download, Loader2, PackageCheck, Printer, Send, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { apiCall, errorMessage } from "@/lib/api/client";
 import type { PoStatus } from "@/lib/services/purchase-orders";
+import { ReceiveGoodsDialog } from "./ReceiveGoodsDialog";
 
 type Mode = "approve" | "reject" | null;
 
@@ -20,6 +21,7 @@ export function PoActions({ poId, poNumber, status, pharmaos }: { poId: string; 
   const [busy, setBusy] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>(null);
   const [text, setText] = useState("");
+  const [receiving, setReceiving] = useState(false);
 
   const done = (title: string, description: string) => {
     toast.success(title, { description });
@@ -84,6 +86,15 @@ export function PoActions({ poId, poNumber, status, pharmaos }: { poId: string; 
           <Button className="h-9 px-4" onClick={() => setMode("approve")} disabled={working}>
             <ShieldCheck className="size-4" strokeWidth={1.75} aria-hidden /> Approve as Owner
           </Button>
+        </>
+      )}
+      {(status === "sent" || status === "open") && (
+        <>
+          <Button className="h-9 px-4" onClick={() => setReceiving(true)} disabled={working}>
+            <PackageCheck className="size-4" strokeWidth={1.75} aria-hidden />
+            Receive goods
+          </Button>
+          {receiving && <ReceiveGoodsDialog poId={poId} poNumber={poNumber} open onOpenChange={setReceiving} />}
         </>
       )}
       {pharmaos && (status === "ready" || status === "approved") && (

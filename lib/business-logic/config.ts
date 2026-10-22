@@ -4,9 +4,9 @@ export const ENGINE_CONFIG = {
   /** Confirmed incoming POs count only if expected within this many days of as-of date. */
   planningHorizonDays: 14,
   /** R in the target-stock formula: days until the next purchase review. */
-  reviewPeriodDays: 7,
+  reviewPeriodDays: 14,
   /** Safety stock = max(minSafetyPacks, avg daily demand x safetyBufferDays). */
-  safetyBufferDays: 3,
+  safetyBufferDays: 5,
   minSafetyPacks: 2,
   /** A batch must be sold this many days before expiry (chemists refuse short-dated stock). */
   expiryRiskWindowDays: 90,
@@ -26,7 +26,7 @@ export const ENGINE_CONFIG = {
   /** w_crit multiplier in loss prevented per rupee. */
   criticalityWeights: { life_saving: 2, chronic: 1.5, acute: 1, otc: 0.7 },
   /** A purchase order whose grand total is ABOVE this (rupees) needs Owner approval before it can be sent. */
-  poApprovalLimit: "400000.00" as string, // a Money string; editable in app_state.po_approval_limit
+  poApprovalLimit: "1000000.00" as string, // ₹10,00,000; a Money string; editable in app_state.po_approval_limit
 } as const;
 
 export type EngineConfig = typeof ENGINE_CONFIG;

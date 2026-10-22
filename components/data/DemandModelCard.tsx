@@ -64,8 +64,8 @@ export function DemandModelCard({ model, skus, action }: { model: StoredModel | 
 
       <p className="mt-4 text-[12.5px] text-fg-3">
         The plan orders on 14-day demand, so that is the error that matters: |Σ14 forecast − Σ14 sold| ÷ Σ14 sold, pooled over SKUs. Per-day error stays near{" "}
-        {pct(m.mlWape)} for any method because daily sales of a few packs are random. On this synthetic data the true demand is known: against it the ML blend is off by about 11%
-        over 14 days, the old average by 15% (npm run eval:forecast).
+        {pct(m.mlWape)} for any method because daily sales of a few packs are random. On this synthetic data the true demand is known: against it the ML blend is off by about 8%
+        over 14 days, the old average by 12% (npm run eval:forecast).
       </p>
 
       <dl className="mt-5 grid gap-4 border-t border-border pt-5 text-[12.5px] md:grid-cols-3">
