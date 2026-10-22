@@ -88,7 +88,12 @@ export function WarehouseView({ layout, initial, planId }: { layout: WarehouseLa
   const can3d = webgl && !sceneFailed;
   const shown: View = view === "3d" && !can3d ? "grid" : view;
   const [focus, setFocus] = useState<{ binId: string; nonce: number } | null>(null);
-  const [selectedBinId, setSelectedBinId] = useState<string | null>(params.get("bin"));
+  // ?bin= takes a bin id or a bin code (links from Ask PharmaOS use the code, e.g. ?bin=C-L-03-2).
+  const [selectedBinId, setSelectedBinId] = useState<string | null>(() => {
+    const raw = params.get("bin");
+    if (!raw) return null;
+    return layout.bins.find((b) => b.id === raw || b.binCode.toUpperCase() === raw.toUpperCase())?.id ?? null;
+  });
   const [search, setSearch] = useState<ProductSearchHit | null>(null);
   const [heatmaps, setHeatmaps] = useState<Heatmaps>(initial);
   const [proposedState, setProposedState] = useState<"idle" | "loading" | "error">(mode === "proposed" && !initial.proposed ? "loading" : "idle");

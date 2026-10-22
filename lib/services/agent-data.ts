@@ -100,7 +100,7 @@ export async function planPreview(sql: SqlHandle = getSql()) {
     approvalLimit: result.approvalLimit,
     lineCount: lines.length,
     impact: result.impact,
-    supplierPos: result.supplierTotals.map((t) => ({ supplierCode: codes.get(t.supplierId) ?? t.supplierId, lines: t.lines, total: t.total, needsOwnerApproval: t.needsApproval })),
+    supplierPos: result.supplierTotals.map((t) => ({ supplierCode: codes.get(t.supplierId) ?? t.supplierId, lines: t.lines, total: t.total, ownerApproval: t.needsApproval ? "required" : "not required" })),
     topLines: lines.slice(0, 15).map((l) => ({ rank: l.rank, sku: l.sku, status: l.status, cover: l.cover, qty: l.qty, freeQty: l.freeQty, supplierCode: codes.get(l.supplierId ?? "") ?? null, lineTotal: l.totals?.lineTotal ?? null, reasons: l.reasons })),
   };
 }

@@ -54,6 +54,8 @@ export type PlanSummary = {
   createdAt: string;
   updatedAt: string;
   impact: ImpactCard;
+  /** The AI plan summary (§9.1): pending while the agent writes it, null when there is none (no key, failed). */
+  aiSummary: { status: "pending" | "done"; text: string | null; createdAt: string | null } | null;
 };
 
 export type LineView = {
@@ -175,7 +177,39 @@ function summarize(r: PlanRow, lines: LineView[], override?: { total?: Money; im
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     impact: { ...impact, poCount: supplierPos.length, posNeedingApproval: supplierPos.filter((p) => p.needsApproval).length },
+    aiSummary: readSummary(r.assumptions),
   };
+}
+
+function readSummary(assumptions: unknown): PlanSummary["aiSummary"] {
+  const a = (assumptions ?? {}) as { summaryStatus?: string; summary?: { text?: string; createdAt?: string } };
+  if (a.summaryStatus === "done" && a.summary?.text) return { status: "done", text: a.summary.text, createdAt: a.summary.createdAt ?? null };
+  if (a.summaryStatus === "pending") return { status: "pending", text: null, createdAt: null };
+  return null;
+}
+
+/**
+ * Stores the AI plan summary in assumptions_json (or clears the pending flag when it failed). Audited as the agent.
+ * The summary is commentary only; it never changes a number in the plan.
+ */
+export async function savePlanSummary(planId: string, text: string | null, sql: postgres.Sql = getSql()): Promise<void> {
+  const patch = text ? { summaryStatus: "done", summary: { text, createdAt: new Date().toISOString() } } : { summaryStatus: "failed" };
+  await sql.begin(async (tx) => {
+    await Promise.all([
+      tx`update purchase_plans set assumptions_json = coalesce(assumptions_json, '{}'::jsonb) || ${tx.json(patch)} where id = ${planId}`.execute(),
+      writeAudit(
+        {
+          actorType: "agent",
+          actorId: "ask-pharmaos",
+          action: text ? "plan.summary_written" : "plan.summary_failed",
+          entityType: "plan",
+          entityId: planId,
+          after: text ? { characters: text.length } : { reason: "AI unavailable" },
+        },
+        tx,
+      ),
+    ]);
+  });
 }
 
 type LineRow = Omit<LineView, "totals" | "counted"> & {
@@ -462,7 +496,15 @@ export async function createPlan(
   // The id is generated here so the plan, its lines and the audit row go out in one pipelined round trip.
   const planId = crypto.randomUUID();
   await sql.begin(async (tx) => {
-    const assumptions = { config: ENGINE_CONFIG, asOf, scenarioId, approvalLimit, priorities: input.priorities ?? null };
+    const assumptions = {
+      config: ENGINE_CONFIG,
+      asOf,
+      scenarioId,
+      approvalLimit,
+      priorities: input.priorities ?? null,
+      // The AI summary is written after the response (non-blocking) only when a Gemini key is configured.
+      summaryStatus: process.env.GEMINI_API_KEY?.trim() ? "pending" : "off",
+    };
     // Pipelining: a raw query is sent only when awaited, unless .execute() is called; the async helpers send on call.
     // So every raw query below calls .execute(), and the statements reach the database in array order.
     await Promise.all([

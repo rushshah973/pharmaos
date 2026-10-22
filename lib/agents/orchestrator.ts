@@ -64,7 +64,9 @@ export async function runAgent({ message, planId }: { message: string; planId?: 
       const calls = response.functionCalls ?? [];
       if (calls.length === 0) {
         const text = response.text?.trim();
-        return text ? { reply: text, toolCalls, references: [...references.values()], source: "agent" } : fallback("the model returned no text");
+        if (!text) return fallback("the model returned no text");
+        const note = asksToAct(message) ? await policyNote() : null;
+        return { reply: note ? `${text}\n\n${note}` : text, toolCalls, references: [...references.values()], source: "agent" };
       }
 
       contents.push(candidate.content); // exactly as returned
@@ -115,4 +117,24 @@ async function deterministicReply(planId?: string): Promise<string> {
   } catch {
     return `${note} The plan could not be loaded.`;
   }
+}
+
+/** The user asked PharmaOS to edit, approve, create or send something (which it cannot do). */
+function asksToAct(message: string): boolean {
+  return /\b(change|edit|set|update|approve|reject|create|prepare|place|raise|send|submit|order)\b/i.test(message) && /\b(po|pos|purchase orders?|order|line|qty|quantity|packs?)\b/i.test(message);
+}
+
+/**
+ * A fixed note (app text, not model output) appended when the user asks the agent to act: who does each step, the
+ * Owner rule and that sending is simulated. Keeps the answer complete whatever the model chose to say.
+ */
+async function policyNote(): Promise<string> {
+  const { approvalLimit } = await resolvePlanningState();
+  return [
+    "**What happens next (you do these steps; PharmaOS AI cannot):**",
+    "- Change a quantity or supplier in the line's **Edit** dialog.",
+    "- Approve lines with the **Approve** button; PharmaOS then creates one purchase order per supplier.",
+    `- A purchase order above **${formatINR(approvalLimit, { paise: false })}** needs the **Owner's approval** before it can be sent.`,
+    "- **Sending is simulated**: nothing leaves the app.",
+  ].join("\n");
 }

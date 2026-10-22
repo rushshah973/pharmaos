@@ -30,8 +30,9 @@ A plain-English companion to `prompts.md`. For every prompt: **what it does**, *
 | P20 | 2D grid and panels | ✅ |
 | P21 | 3D scene | ✅ |
 | P22 | Tools and orchestrator | ✅ (live test passed on gemini-flash-lite-latest; gemini-3.8-flash returned 503/504 high demand on 22 Oct) |
-| P23 | Ask panel, Why? and plan summary | ⏭ |
-| P24–P28 | … (plus P22B, P23B after P23) | ⬜ |
+| P23 | Ask panel, Why? and plan summary | ✅ |
+| P22B | Agent pipeline: Demand, Supplier and Order agents | ⏭ |
+| P23B, P24–P28 | … | ⬜ |
 
 > Budget cap removed; ₹4,00,000 per-PO Owner approval added (after P13).
 >
@@ -251,14 +252,14 @@ Each stage builds on the one before. The engine (stage 2) needs the data (stage 
 - **You will see:** Test questions answered with numbers that come from the tools — once with the Gemini key, once without.
 - **Why it matters:** This chat agent explains and can recalculate, but can never approve, create or send a PO, and never invents a number. (Creating POs is reserved for the guarded Order Agent in P22B.)
 
-### P23 — Ask panel, Why? and plan summary ⏭
+### P23 — Ask panel, Why? and plan summary ✅
 
 - **What it does:** Puts the AI into the dashboard: an "Ask PharmaOS" side panel, AI answers behind each **Why?** button, and a short AI summary above a new plan. Tests all 7 demo questions.
 - **Creates or changes:** `AskPanel`, Why? popover updates, plan summary.
 - **You will see:** Natural-language answers with links to SKUs and bins, and a clear "calculated" label when the AI is off.
 - **Why it matters:** "Dashboard, not chatbot" — AI where it helps, and everything still works without it.
 
-### P22B — Agent pipeline: Demand, Supplier and Order agents ⬜
+### P22B — Agent pipeline: Demand, Supplier and Order agents ⏭
 
 - **What it does:** Builds three AI agents that take real decisions, one after another, for the most urgent lines of a plan. The **Demand Agent** looks at each SKU's sales and both forecasts (ML and average, with their measured errors) and picks which one to trust — it can only pick a method, never type a number. The **Supplier Agent** compares the offers and the supplier PO totals and may switch a supplier (faster, cheaper, fewer suppliers, or keeping a PO under the ₹4,00,000 Owner limit) — but only to an offer that passes every rule. The **Order Agent** checks the lines and creates the purchase orders through the same approval code a human uses. Every decision is checked by code before it takes effect; rejected decisions are recorded, not applied.
 - **Creates or changes:** `lib/agents/pipeline/` (shared tool loop, the three agents, the run), `/api/agents/run` and the run-status routes, the `agent_runs` / `agent_steps` trace, audit entries, and tests with a scripted fake Gemini.

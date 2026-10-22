@@ -8,7 +8,9 @@ import type { FunctionDeclaration } from "@google/genai";
 import { ServiceError } from "@/lib/api/errors";
 import { getSql } from "@/lib/db/client";
 import { candidateBin, type PutawayBin } from "@/lib/business-logic/putaway";
+import { lineTotals, needsOwnerApproval } from "@/lib/business-logic/totals";
 import { hardStops } from "@/lib/business-logic/validation";
+import { dec, formatINR } from "@/lib/money";
 import { type ToolResult, toolError, toolOk } from "@/lib/validation/tool-contract";
 import { analyseSkuCode, binIdForCode, expiryExposureTop, planPreview, priceHistory, salesHistory } from "@/lib/services/agent-data";
 import { resolvePlanningState } from "@/lib/services/as-of";
@@ -116,7 +118,8 @@ export const TOOLS: Tool[] = [
     schema: z.object({ sku }),
     handler: async ({ sku }) => {
       const { analysis: a } = await analyseSkuCode(sku);
-      return { data: { sku: a.sku, batches: a.expiry.batches, notCounted: a.expiry.ineligible } };
+      const strip = <T extends { batchId: string }>({ batchId: _id, ...rest }: T) => (void _id, rest);
+      return { data: { sku: a.sku, batches: a.expiry.batches.map(strip), notCounted: a.expiry.ineligible.map(strip) } };
     },
   }),
   tool({
@@ -126,7 +129,8 @@ export const TOOLS: Tool[] = [
     handler: async ({ sku }) => {
       if (sku) {
         const { analysis: a } = await analyseSkuCode(sku);
-        return { data: { sku: a.sku, atRiskQty: a.expiry.atRiskQty, atRiskValue: a.expiry.atRiskValue, batches: a.expiry.batches.filter((b) => b.atRiskQty > 0) } };
+        const batches = a.expiry.batches.filter((b) => b.atRiskQty > 0).map((b) => ({ batchNumber: b.batchNumber, expiryDate: b.expiryDate, atRiskQty: b.atRiskQty, atRiskValue: b.atRiskValue }));
+        return { data: { sku: a.sku, atRiskQty: a.expiry.atRiskQty, atRiskValue: a.expiry.atRiskValue, batches } };
       }
       const top = await expiryExposureTop(20);
       return { data: top, refs: top.rows.slice(0, 5).map((r) => ({ type: "product", id: r.sku, label: `${r.sku} ${r.brandName}` })) };
@@ -191,7 +195,7 @@ export const TOOLS: Tool[] = [
     handler: async ({ planId }) => {
       const p = await getPlan(planId);
       return {
-        data: { planId, planTotal: p.proposedTotal, approvalLimit: p.approvalLimit, supplierPos: p.supplierPos.map((s) => ({ supplierCode: s.supplierCode, supplierName: s.supplierName, lines: s.lines, total: s.total, needsOwnerApproval: s.needsApproval })) },
+        data: { planId, planTotal: p.proposedTotal, approvalLimit: p.approvalLimit, supplierPos: p.supplierPos.map((s) => ({ supplierCode: s.supplierCode, supplierName: s.supplierName, lines: s.lines, total: s.total, ownerApproval: s.needsApproval ? "required" : "not required" })) },
         refs: p.supplierPos.filter((s) => s.needsApproval).map((s) => ({ type: "supplier", id: s.supplierCode, label: `${s.supplierCode} ${s.supplierName}` })),
       };
     },
@@ -209,7 +213,7 @@ export const TOOLS: Tool[] = [
           status: p.status,
           planTotal: p.proposedTotal,
           approvalLimit: p.approvalLimit,
-          supplierPos: p.supplierPos.map((s) => ({ supplierCode: s.supplierCode, lines: s.lines, total: s.total, needsOwnerApproval: s.needsApproval })),
+          supplierPos: p.supplierPos.map((s) => ({ supplierCode: s.supplierCode, lines: s.lines, total: s.total, ownerApproval: s.needsApproval ? "required" : "not required" })),
           lineCount: p.lines.length,
           lines: lines.map((l) => ({ rank: l.rank, lineId: l.id, sku: l.sku, brandName: l.brandName, strength: l.strength, skuStatus: l.skuStatus, lineStatus: l.status, counted: l.counted, qty: l.qty, freeQty: l.freeQty, supplierCode: l.supplierCode, coverDays: l.cover, lineTotal: l.totals.lineTotal, reasons: l.reasons, poNumber: l.poNumber })),
         },
@@ -231,16 +235,23 @@ export const TOOLS: Tool[] = [
     handler: async ({ planId }) => {
       const p = await recalculatePlan(planId, { actor: AGENT_ACTOR });
       return {
-        data: { planId, status: p.status, planTotal: p.proposedTotal, supplierPos: p.supplierPos.map((s) => ({ supplierCode: s.supplierCode, lines: s.lines, total: s.total, needsOwnerApproval: s.needsApproval })) },
+        data: { planId, status: p.status, planTotal: p.proposedTotal, supplierPos: p.supplierPos.map((s) => ({ supplierCode: s.supplierCode, lines: s.lines, total: s.total, ownerApproval: s.needsApproval ? "required" : "not required" })) },
         refs: [{ type: "plan", id: planId, label: "Recalculated plan" }],
       };
     },
   }),
   tool({
     name: "validate_po",
-    description: "Checks plan lines against every hard stop (pack multiple, MOQ, availability, quote validity, approved supplier, recall) with fresh data. Writes nothing.",
-    schema: z.object({ planId, lineIds: z.array(z.uuid()).min(1).max(50).describe("Line ids from get_plan") }),
-    handler: async ({ planId, lineIds }) => {
+    description:
+      "Checks plan lines against every hard stop (pack multiple, MOQ, availability, quote validity, approved supplier, recall) with fresh data. " +
+      "Give qty to check a proposed quantity instead of the current one: it returns the line total and the supplier's PO total at that quantity. " +
+      "Writes nothing: the user makes changes in the line's Edit dialog and approves with the Approve button.",
+    schema: z.object({
+      planId,
+      lineIds: z.array(z.uuid()).min(1).max(50).describe("Line ids from get_plan"),
+      qty: z.number().int().min(1).max(100000).optional().describe("Proposed quantity in packs to check (optional)"),
+    }),
+    handler: async ({ planId, lineIds, qty }) => {
       const p = await getPlan(planId);
       const lines = p.lines.filter((l) => lineIds.includes(l.id));
       if (lines.length === 0) throw new ServiceError("LINE_NOT_FOUND", 404, "None of those lines are in this plan.");
@@ -250,11 +261,40 @@ export const TOOLS: Tool[] = [
       return {
         data: {
           planId,
+          // What the user does next; the agent cannot do any of it. Tell the user all four steps.
+          nextStepsForUser: [
+            "Nothing was changed: this was a check only.",
+            "1. Change the quantity in the line's Edit dialog (PharmaOS AI cannot edit lines).",
+            "2. Approve the line with the Approve button (PharmaOS AI cannot approve or create purchase orders).",
+            `3. A supplier PO above ${formatINR(p.approvalLimit, { paise: false })} needs the Owner's approval before it can be sent.`,
+            "4. Sending a PO is simulated: nothing leaves the app.",
+          ],
           lines: lines.map((l) => {
             const s = byId.get(l.productId);
             const offer = s?.offers.find((o) => o.id === l.offerId);
-            const stops = hardStops({ product: s?.product, offer, supplier: offer ? s?.suppliers[offer.supplierId] : undefined, qty: l.qty, asOf: state.asOf, batches: s?.batches ?? [] });
-            return { lineId: l.id, sku: l.sku, qty: l.qty, supplierCode: l.supplierCode, moq: offer?.moq ?? null, packMultiple: offer?.packMultiple ?? null, availableQty: offer?.availableQty ?? null, hardStops: stops, warnings: l.warnings, ok: stops.length === 0 };
+            const checkQty = qty ?? l.qty;
+            const stops = hardStops({ product: s?.product, offer, supplier: offer ? s?.suppliers[offer.supplierId] : undefined, qty: checkQty, asOf: state.asOf, batches: s?.batches ?? [] });
+            const newLine = offer?.unitPrice ? lineTotals({ qty: checkQty, unitPrice: offer.unitPrice, taxRate: offer.taxRate, freightPerPack: offer.freightPerPack }).lineTotal : null;
+            const po = p.supplierPos.find((x) => x.supplierId === l.supplierId);
+            const newPoTotal = po && newLine && l.counted ? dec(po.total).minus(l.totals.lineTotal).plus(newLine).toFixed(2) : null;
+            return {
+              lineId: l.id,
+              sku: l.sku,
+              currentQty: l.qty,
+              checkedQty: checkQty,
+              supplierCode: l.supplierCode,
+              moq: offer?.moq ?? null,
+              packMultiple: offer?.packMultiple ?? null,
+              availableQty: offer?.availableQty ?? null,
+              currentLineTotal: l.totals.lineTotal,
+              lineTotalAtCheckedQty: newLine,
+              supplierPoTotalNow: po?.total ?? null,
+              supplierPoTotalAtCheckedQty: newPoTotal,
+              ownerApprovalAtCheckedQty: newPoTotal ? (needsOwnerApproval(newPoTotal, p.approvalLimit) ? "required" : "not required") : null,
+              hardStops: stops,
+              warnings: l.warnings,
+              ok: stops.length === 0,
+            };
           }),
         },
       };

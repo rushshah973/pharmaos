@@ -4,6 +4,7 @@ import { useState } from "react";
 import { MessageCircleQuestion } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { RichText, SourceTag } from "@/components/agent/RichText";
 import { apiCall, errorMessage } from "@/lib/api/client";
 
 type Explanation = { text: string; source: "agent" | "deterministic" };
@@ -49,8 +50,11 @@ export function WhyButton({ planId, lineId, sku }: { planId: string; lineId: str
           <p className="text-stockout">{state.text}</p>
         ) : (
           <>
-            <p className="text-[13.5px] leading-5 text-fg-1">{state.text}</p>
-            <p className="text-[11.5px] text-fg-3">{state.source === "agent" ? "Explained by PharmaOS AI from the line's evidence" : "Calculated from the line's evidence"}</p>
+            <div className="flex items-center gap-2">
+              <SourceTag source={state.source === "agent" ? "agent" : "deterministic"} />
+              <span className="text-[11.5px] text-fg-3">{state.source === "agent" ? "PharmaOS AI, from the line's data" : "Calculated from the line's evidence"}</span>
+            </div>
+            <RichText text={state.text ?? ""} planId={planId} />
           </>
         )}
       </PopoverContent>
