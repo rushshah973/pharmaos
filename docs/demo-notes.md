@@ -1,6 +1,6 @@
 # PharmaOS — demo notes (3–4 minutes)
 
-Click path for the live demo at <https://pharmaos-gold.vercel.app>, following `implementationplan.md` §17.
+Click path for the live demo at <https://pharmaos-gold.vercel.app> (landing page; the app itself is at `/dashboard`), following `implementationplan.md` §17.
 Every number below was read from the running app on 22 Oct 2026, right after a fresh reseed
 (`npm run db:reset && DEMO_AS_OF_DATE=2026-10-21 npm run seed`). With the same seed the engine gives the same
 numbers every time. Agent decisions come from Gemini and can differ from run to run, so read them off the trace.
@@ -24,7 +24,7 @@ numbers every time. Agent decisions come from Gemini and can differ from run to 
 
 ## 1. (0:00) The pain — Command Center
 
-**Click:** open the app (Command Center). Point at the **Synthetic demo data** badge, top right.
+**Click:** open <https://pharmaos-gold.vercel.app>: the landing page plays a 20-second product demo in its hero. Click **Open dashboard** (top right) to reach the Command Center. Point at the **Synthetic demo data** badge, top right.
 
 **Say:** "A stockist with 500 SKUs. Some are about to run out, some will expire, and orders are placed by gut feel."
 

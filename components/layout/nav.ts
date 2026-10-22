@@ -12,7 +12,7 @@ export type NavItem = { href: string; label: string; icon: LucideIcon };
 
 // The six dashboard sections (implementationplan.md §10.2).
 export const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Command Center", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Command Center", icon: LayoutDashboard },
   { href: "/procurement", label: "Plans", icon: ClipboardList },
   { href: "/warehouse", label: "Warehouse", icon: Boxes },
   { href: "/purchase-orders", label: "Orders", icon: FileText },
@@ -21,9 +21,9 @@ export const NAV_ITEMS: NavItem[] = [
 ];
 
 export function isActive(pathname: string, href: string) {
-  return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function navItemFor(pathname: string): NavItem {
-  return NAV_ITEMS.find((item) => item.href !== "/" && isActive(pathname, item.href)) ?? NAV_ITEMS[0];
+  return NAV_ITEMS.find((item) => isActive(pathname, item.href)) ?? NAV_ITEMS[0];
 }

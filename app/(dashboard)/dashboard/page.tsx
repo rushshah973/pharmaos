@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { connection } from "next/server";
@@ -18,6 +19,8 @@ import { formatDateTime, formatDisplayDate } from "@/lib/format/date";
 import { formatINR } from "@/lib/money";
 import { type CommandCenter, getCommandCenter } from "@/lib/services/dashboard";
 import { type PoPipeline, getPoPipeline } from "@/lib/services/purchase-orders";
+
+export const metadata: Metadata = { title: "Command Center" };
 
 // Command Center (§10.3). The async component sits inside <Suspense> and calls connection() first.
 export default function CommandCenterPage() {

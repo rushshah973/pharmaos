@@ -18,7 +18,7 @@ export function TopBar({ demoUser }: { demoUser: string }) {
   return (
     <header className="sticky top-0 z-30 print:hidden">
       <div className="mx-auto flex h-[76px] w-full max-w-[1520px] items-center gap-4 px-8 max-lg:px-5">
-        <Link href="/" prefetch={false} aria-label="PharmaOS home" className="shrink-0 rounded-full">
+        <Link href="/" prefetch={false} aria-label="PharmaOS home page" className="shrink-0 rounded-full">
           <Logo wordmarkClassName="max-[1500px]:hidden" />
         </Link>
         <div className="flex min-w-0 flex-1 justify-center">
