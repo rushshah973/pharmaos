@@ -7,6 +7,7 @@
 import { formatINR } from "@/lib/money";
 import { resolvePlanningState } from "@/lib/services/as-of";
 import { type AgentName, StepLog, finishRun, getRun, selectRunLines, setRunSkus } from "@/lib/services/agent-runs";
+import { notifyOwnerOfRun } from "@/lib/services/notify";
 import { AGENT_SENDER, sendPo } from "@/lib/services/purchase-orders";
 import type { RunContext } from "./context";
 import { type DemandSummary, runDemandAgent } from "./demand-agent";
@@ -54,7 +55,8 @@ export async function runPipeline(runId: string, deps: { client?: ModelClient | 
       return await finishRun(runId, "fallback", `${AI_UNAVAILABLE} ${demandText(demand.result)} ${supplierText(supplier.result)} Order Agent: ${order.reason}.`);
     }
     const sent = await sendReadyPos(ctx, order.result);
-    await finishRun(runId, "succeeded", `${demandText(demand.result)} ${supplierText(supplier.result)} ${orderText(sent, state.approvalLimit)}`);
+    const email = await emailOwner(ctx, sent, demand.result.changed.length, supplier.result.switched.length, state.approvalLimit);
+    await finishRun(runId, "succeeded", `${demandText(demand.result)} ${supplierText(supplier.result)} ${orderText(sent, state.approvalLimit)}${email}`);
   } catch (err) {
     console.error("[agent run]", err);
     await finishRun(runId, "failed", "The run stopped on a server error; nothing after the error was applied.", err instanceof Error ? err.message.slice(0, 500) : String(err)).catch(() => {});
@@ -83,6 +85,19 @@ async function sendReadyPos(ctx: RunContext, o: OrderSummary): Promise<OrderSumm
   // The final word on the run's POs (the panel reads the last order decision).
   await ctx.log.add({ agent: "order", kind: "decision", input: { autoSend: true }, output: result });
   return result;
+}
+
+/** Emails the Owner a summary of the run's POs (never throws, ≤ 10 s) and records it in the trace; returns a note for
+ * the run summary ("" when email is not set up or nothing was ordered). */
+async function emailOwner(ctx: RunContext, o: OrderSummary, forecastsChanged: number, suppliersSwitched: number, approvalLimit: string): Promise<string> {
+  if (o.created.length === 0) return "";
+  const t0 = performance.now();
+  const r = await notifyOwnerOfRun({ runId: ctx.runId, planId: ctx.planId, asOf: ctx.asOf, approvalLimit, poIds: o.created.map((p) => p.poId), forecastsChanged, suppliersSwitched });
+  if (r.status === "skipped") return "";
+  await ctx.log
+    .add({ agent: "order", kind: "tool_call", toolName: "email_owner", input: { to: "owner" }, output: r.status === "sent" ? { ok: true, data: { emailed: true } } : { ok: false, error: { message: r.reason } }, ok: r.status === "sent", ms: Math.round(performance.now() - t0) })
+    .catch(() => {});
+  return r.status === "sent" ? " Summary emailed to the Owner." : " The summary email to the Owner could not be sent (the orders are unaffected).";
 }
 
 const demandText = (d: DemandSummary) =>
