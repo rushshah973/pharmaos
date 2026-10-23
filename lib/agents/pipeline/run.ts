@@ -123,7 +123,7 @@ const orderText = (o: OrderSummary, limit: string) => {
   const sent = o.created.filter((p) => p.status === "sent");
   return (
     `Order Agent: ${parts.join(" and ")}; ` +
-    (sent.length ? `sent ${sent.length} to the supplier${sent.length === 1 ? "" : "s"} automatically (simulated, nothing was emailed); ` : "") +
+    (sent.length ? `sent ${sent.length} to the supplier${sent.length === 1 ? "" : "s"} automatically (simulated: no supplier was emailed); ` : "") +
     (gated.length ? `${gated.map((p) => p.poNumber).join(", ")} wait${gated.length === 1 ? "s" : ""} for the Owner's approval (above ${formatINR(limit, { paise: false })}) and will be sent once approved.` : `none needs the Owner's approval.`) +
     (o.skipped.length ? ` Skipped: ${o.skipped.map((s) => `${s.sku} (${s.reason})`).join("; ")}.` : "")
   );
